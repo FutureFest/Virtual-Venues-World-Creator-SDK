@@ -1,0 +1,10 @@
+{
+  "name": "com.virtualvenues.worldcreator.sdk",
+  "displayName": "Virtual Venues World Creator SDK",
+  "version": "1.0.0",
+  "unity": "2023.2",
+  "description": "SDK to build FutureFest stages",
+  "keywords": [ "venues", "world", "creator", "sdk", "future", "fest", "stages" ],
+  "dependencies": {
+  }
+}
