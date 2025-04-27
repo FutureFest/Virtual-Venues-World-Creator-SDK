@@ -1,6 +1,6 @@
 {
     "name": "com.virtualvenues.worldcreator.sdk.runtime",
-    "rootNamespace": "",
+    "rootNamespace": "VirtualVenues.WorldCreator",
     "references": [],
     "includePlatforms": [],
     "excludePlatforms": [],
