@@ -26,6 +26,11 @@ namespace VirtualVenues.WorldCreator
         private float _sphereSize = 0.25f;
 #endif
 
+        private void Awake()
+        {
+            AddSpawnPoint(this);
+        }
+
         private static void AddSpawnPoint(SpawnPoint spawnPoint)
         {
             if (_instances.Contains(spawnPoint))
@@ -36,13 +41,9 @@ namespace VirtualVenues.WorldCreator
             onSpawnPointAdded?.Invoke(spawnPoint);
         }
 
-        private void Awake()
-        {
-            AddSpawnPoint(this);
-        }
 
 #if UNITY_EDITOR
-        [MenuItem("GameObject/VirtualVenues/Create Spawn Point", isValidateFunction: false, priority: 0)]
+        [MenuItem("GameObject/VirtualVenues/Spawn Point", isValidateFunction: false, priority: 0)]
         private static void CreateSpawnPoint(MenuCommand menuCommand)
         {
             GameObject go = new GameObject("SpawnPoint");
@@ -59,7 +60,7 @@ namespace VirtualVenues.WorldCreator
             Selection.activeObject = go;
         }
 
-        [MenuItem("GameObject/VirtualVenues/Create Spawn Point", isValidateFunction: true)]
+        [MenuItem("GameObject/VirtualVenues/Spawn Point", isValidateFunction: true)]
         private static bool ValidateCreateSpawnPoint(MenuCommand menuCommand)
         {
             return true;
