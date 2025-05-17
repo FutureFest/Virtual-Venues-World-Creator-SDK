@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 0c58b2fe28ad5ce4689308bdaa80c182
+TextScriptImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 196526
+  packageName: Starter Assets - ThirdPerson | Updates in new CharacterController
+    package
+  packageVersion: 1.1.5
+  assetPath: Assets/StarterAssets/license.txt
+  uploadId: 691128

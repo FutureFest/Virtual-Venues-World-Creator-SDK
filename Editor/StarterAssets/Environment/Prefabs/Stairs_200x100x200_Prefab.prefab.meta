@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: acd6c558248b8274993c0260ce68041d
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 196526
+  packageName: Starter Assets - ThirdPerson | Updates in new CharacterController
+    package
+  packageVersion: 1.1.5
+  assetPath: Assets/StarterAssets/Environment/Prefabs/Stairs_200x100x200_Prefab.prefab
+  uploadId: 691128

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: db826008b6b387548af6f079c60b4dc2
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 196526
+  packageName: Starter Assets - ThirdPerson | Updates in new CharacterController
+    package
+  packageVersion: 1.1.5
+  assetPath: Assets/StarterAssets/ThirdPersonController/Prefabs/PlayerFollowCamera.prefab
+  uploadId: 691128

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: f65aaf197f8941441aaf3d0e217411d2
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 196526
+  packageName: Starter Assets - ThirdPerson | Updates in new CharacterController
+    package
+  packageVersion: 1.1.5
+  assetPath: Assets/StarterAssets/ThirdPersonController/Prefabs/MainCamera.prefab
+  uploadId: 691128

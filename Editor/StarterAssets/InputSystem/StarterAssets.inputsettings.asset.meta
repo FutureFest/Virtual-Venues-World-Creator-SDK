@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: aaea536ded3cc9e49a753ef5c5f487c4
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 196526
+  packageName: Starter Assets - ThirdPerson | Updates in new CharacterController
+    package
+  packageVersion: 1.1.5
+  assetPath: Assets/StarterAssets/InputSystem/StarterAssets.inputsettings.asset
+  uploadId: 691128

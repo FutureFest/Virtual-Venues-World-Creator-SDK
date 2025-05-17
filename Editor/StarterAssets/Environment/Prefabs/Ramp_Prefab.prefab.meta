@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 5f07b077e446de045b85d26f149dd406
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 196526
+  packageName: Starter Assets - ThirdPerson | Updates in new CharacterController
+    package
+  packageVersion: 1.1.5
+  assetPath: Assets/StarterAssets/Environment/Prefabs/Ramp_Prefab.prefab
+  uploadId: 691128

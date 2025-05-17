@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 194743222e9971448982252c224d8af0
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 196526
+  packageName: Starter Assets - ThirdPerson | Updates in new CharacterController
+    package
+  packageVersion: 1.1.5
+  assetPath: Assets/StarterAssets/Environment/Art/Skybox/SkyboxLite.mat
+  uploadId: 691128
