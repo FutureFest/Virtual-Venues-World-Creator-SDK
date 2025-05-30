@@ -30,6 +30,11 @@ namespace VirtualVenues.WorldCreator
         public Vector2 TextureTiling => _tilingScale;
         public Transform Pivot => _pivot;
 
+        private void OnValidate()
+        {
+            _artistMesh.gameObject.hideFlags = HideFlags.HideInHierarchy;
+        }
+
         private void Awake()
         {
             if (_stage == null)

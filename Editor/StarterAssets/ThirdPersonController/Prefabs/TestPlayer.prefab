@@ -72,9 +72,33 @@ PrefabInstance:
       propertyPath: m_StreamingVersion
       value: 20230301
       objectReference: {fileID: 0}
+    - target: {fileID: 3842340622694535861, guid: 6ea0b04d5e26dd44d95e475d4332038a, type: 3}
+      propertyPath: m_RenderPostProcessing
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5542111180780342640, guid: 6ea0b04d5e26dd44d95e475d4332038a, type: 3}
+      propertyPath: field of view
+      value: 40
+      objectReference: {fileID: 0}
+    - target: {fileID: 5542111180780342640, guid: 6ea0b04d5e26dd44d95e475d4332038a, type: 3}
+      propertyPath: m_ForceIntoRT
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5542111180780342640, guid: 6ea0b04d5e26dd44d95e475d4332038a, type: 3}
+      propertyPath: far clip plane
+      value: 500
+      objectReference: {fileID: 0}
+    - target: {fileID: 5542111180780342640, guid: 6ea0b04d5e26dd44d95e475d4332038a, type: 3}
+      propertyPath: near clip plane
+      value: 0.2
+      objectReference: {fileID: 0}
     - target: {fileID: 5542111180780342640, guid: 6ea0b04d5e26dd44d95e475d4332038a, type: 3}
       propertyPath: orthographic size
       value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 5542111180780342640, guid: 6ea0b04d5e26dd44d95e475d4332038a, type: 3}
+      propertyPath: m_CullingMask.m_Bits
+      value: 2148007863
       objectReference: {fileID: 0}
     - target: {fileID: 5542111180780342647, guid: 6ea0b04d5e26dd44d95e475d4332038a, type: 3}
       propertyPath: m_LocalPosition.y
