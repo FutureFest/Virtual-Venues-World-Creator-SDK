@@ -9,10 +9,8 @@ using Auth0.AuthenticationApi.Models;
 using System.Linq;
 using System.Threading.Tasks;
 using Auth0.Api.Credentials;
-using System.Collections;
-using WorldPublisher;
 
-public class WorldMapPublisherEditor : EditorWindow
+public class WorldMapPublisherEditor_OLD : EditorWindow
 {
     private UnityEngine.Object _selectedScene;
     private bool isPublishing = false;
@@ -24,12 +22,6 @@ public class WorldMapPublisherEditor : EditorWindow
     private string versionedBundleName;
     // Base output folder for asset bundles
     private string outputFolder = "Assets/WorldMapAssetBundles";
-
-    // Bundle file paths for upload
-    private string umsFilePath;
-    private string upcFilePath;
-    private string umsFileName;
-    private string upcFileName;
 
     // AUTH
     [Header("UI Components")]
@@ -63,9 +55,6 @@ public class WorldMapPublisherEditor : EditorWindow
     private Credentials _credentials = null;
     private UserInfo _userInfo = null;
 
-    // Published world info
-    private World _currentWorld = null;
-
     [MenuItem("VirtualVenues/Publish World Map")]
     public static void ShowWindow()
     {
@@ -76,7 +65,6 @@ public class WorldMapPublisherEditor : EditorWindow
     {
         CheckAuth();
         PrePopulateSceneSelection();
-        RefreshCurrentWorld();
     }
 
     private void OnValidate()
@@ -90,13 +78,9 @@ public class WorldMapPublisherEditor : EditorWindow
         DrawLoginElements();
         GUILayout.Space(20);
 
-        if (!_loggedIn) { return; }
+        if(!_loggedIn) { return; }
 
         GUILayout.Label("World Map Publisher", EditorStyles.boldLabel);
-
-        // Show current published world info
-        DrawCurrentWorldInfo();
-        GUILayout.Space(10);
 
         // Scene selection field (only accepts SceneAsset)
         GUILayout.Label("Select Scene to Publish:");
@@ -106,7 +90,7 @@ public class WorldMapPublisherEditor : EditorWindow
 
         // Publish button (disabled if already publishing)
         GUI.enabled = !isPublishing;
-        if (GUILayout.Button("Publish World Map", GUILayout.Width(300)))
+        if (GUILayout.Button("Publish World Map"))
         {
             if (_selectedScene != null)
             {
@@ -115,27 +99,6 @@ public class WorldMapPublisherEditor : EditorWindow
             else
             {
                 EditorUtility.DisplayDialog("Error", "Please select a scene before publishing.", "OK");
-            }
-        }
-        GUI.enabled = true;
-
-        GUILayout.Space(10);
-
-        // Delete current world button
-        GUI.enabled = !isPublishing && _currentWorld != null;
-
-
-        GUIStyle styles = new GUIStyle();
-        styles.margin = new RectOffset(4, 4, 2, 2);
-        styles.alignment = TextAnchor.MiddleCenter;
-        GUI.backgroundColor = Color.red;
-        if (GUILayout.Button("Delete Current World", GUILayout.Width(300)))
-        {
-            if (EditorUtility.DisplayDialog("Confirm Delete",
-                "Are you sure you want to delete your current published world? This action cannot be undone.",
-                "Delete", "Cancel"))
-            {
-                DeleteCurrentWorld();
             }
         }
         GUI.enabled = true;
@@ -152,41 +115,6 @@ public class WorldMapPublisherEditor : EditorWindow
         }
     }
 
-    private void DrawCurrentWorldInfo()
-    {
-        GUILayout.Label("Current Published World:", EditorStyles.boldLabel);
-        if (_currentWorld != null)
-        {
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            GUILayout.Label($"Updated: {_currentWorld.updatedAt}");
-
-            // UMS URL with copy button
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("UMS URL:", GUILayout.Width(60));
-            EditorGUILayout.SelectableLabel(_currentWorld.umsUrl, GUILayout.Width(500));
-            if (GUILayout.Button("Copy", GUILayout.Width(50)))
-            {
-                EditorGUIUtility.systemCopyBuffer = _currentWorld.umsUrl;
-            }
-            EditorGUILayout.EndHorizontal();
-
-            // UPC URL with copy button
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("UPC URL:", GUILayout.Width(60));
-            EditorGUILayout.SelectableLabel(_currentWorld.upcUrl);
-            if (GUILayout.Button("Copy", GUILayout.Width(50)))
-            {
-                EditorGUIUtility.systemCopyBuffer = _currentWorld.upcUrl;
-            }
-            EditorGUILayout.EndHorizontal();
-
-            EditorGUILayout.EndVertical();
-        }
-        else
-        {
-            EditorGUILayout.HelpBox("No world currently published.", MessageType.Info);
-        }
-    }
 
     private void PrePopulateSceneSelection()
     {
@@ -209,77 +137,23 @@ public class WorldMapPublisherEditor : EditorWindow
             // Show a welcome message and the SignOut button
             _credentials = await AuthManager.Instance.Credentials.GetCredentials();
             _userInfo = await AuthManager.Instance.Auth0.GetUserInfoAsync(_credentials.AccessToken);
-
-            // Set the access token in the WorldsPublisherApi
-            if (_credentials != null && !string.IsNullOrEmpty(_credentials.AccessToken))
-            {
-                WorldsPublisherApi.SetAccessToken(_credentials.AccessToken, _credentials.ExpiresAt);
-            }
-        }
-        else
-        {
-            WorldsPublisherApi.ClearToken();
         }
     }
 
-    private async void RefreshCurrentWorld()
-    {
-        if (_loggedIn && WorldsPublisherApi.IsTokenValid)
-        {
-            try
-            {
-                _currentWorld = await WorldsPublisherApi.GetCurrentWorldAsync();
-
-                // Check if we got a world back
-                if (_currentWorld != null)
-                {
-                    Debug.Log($"Successfully loaded world");
-                }
-                else
-                {
-                    Debug.Log("No published world found for current user");
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"Failed to get current world: {ex.Message}");
-            }
-        }
-    }
-
-
-    private async void DeleteCurrentWorld()
-    {
-        try
-        {
-            await WorldsPublisherApi.DeleteCurrentWorldAsync();
-
-            // Success - clear the current world and show success message
-            _currentWorld = null;
-            EditorUtility.DisplayDialog("Success", "World deleted successfully!", "OK");
-        }
-        catch (Exception ex)
-        {
-            // Error - show error message
-            EditorUtility.DisplayDialog("Error", $"Failed to delete world: {ex.Message}", "OK");
-        }
-    }
 
     private void DrawLoginElements()
     {
-        //EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.BeginHorizontal();
         if (_loggedIn)
         {
-            if (_userInfo != null)
+            if(_userInfo != null)
             {
                 GUILayout.Label($"Hello {_userInfo.FullName}!", EditorStyles.boldLabel);
             }
 
-            if (GUILayout.Button("Sign Out", GUILayout.Width(100)))
+            if (GUILayout.Button("Sign Out"))
             {
                 AuthManager.Instance.Credentials.ClearCredentials();
-                WorldsPublisherApi.ClearToken();
-                _currentWorld = null;
                 CheckAuth();
                 ShowResult("");
             }
@@ -291,7 +165,7 @@ public class WorldMapPublisherEditor : EditorWindow
                 OnLoginButtonPressed();
             }
         }
-        //EditorGUILayout.EndHorizontal();
+        EditorGUILayout.EndHorizontal();
 
         if (_showInstructions)
         {
@@ -362,7 +236,6 @@ public class WorldMapPublisherEditor : EditorWindow
             {
                 CheckAuth();
             }
-            RefreshCurrentWorld();
             ShowResult("");
         }
         catch (Exception ex)
@@ -389,18 +262,13 @@ public class WorldMapPublisherEditor : EditorWindow
         _isErrorResults = error;
     }
 
+
     private void StartPublishing()
     {
         string assetPath = AssetDatabase.GetAssetPath(_selectedScene);
         if (string.IsNullOrEmpty(assetPath) || !assetPath.EndsWith(".unity"))
         {
             EditorUtility.DisplayDialog("Error", "Selected asset is not a valid Unity scene.", "OK");
-            return;
-        }
-
-        if (!WorldsPublisherApi.IsTokenValid)
-        {
-            EditorUtility.DisplayDialog("Error", "Please login first or your session has expired.", "OK");
             return;
         }
 
@@ -420,7 +288,7 @@ public class WorldMapPublisherEditor : EditorWindow
         {
             case 0:
                 // Build Linux asset bundle (UMS)
-                progress = 0.2f;
+                progress = 0.3f;
                 progressMessage = "Building UMS asset bundle for Linux...";
                 {
                     string assetPath = AssetDatabase.GetAssetPath(_selectedScene);
@@ -444,17 +312,13 @@ public class WorldMapPublisherEditor : EditorWindow
 
                     AssetBundleManifest manifest = BuildPipeline.BuildAssetBundles(linuxOutputFolder, BuildAssetBundleOptions.None, BuildTarget.StandaloneLinux64);
 
-                    // Store the UMS file path for upload
-                    umsFileName = $"ums_{versionedBundleName}".ToLower();
-                    umsFilePath = Path.Combine(linuxOutputFolder, umsFileName);
-
                     Debug.Log("[Step 0] Linux asset bundle built successfully.");
                 }
                 currentStep++;
                 break;
             case 1:
                 // Build WebGL asset bundle (UPC)
-                progress = 0.4f;
+                progress = 0.7f;
                 progressMessage = "Building UPC asset bundle for WebGL...";
                 {
                     string assetPath = AssetDatabase.GetAssetPath(_selectedScene);
@@ -477,177 +341,23 @@ public class WorldMapPublisherEditor : EditorWindow
                     }
 
                     BuildPipeline.BuildAssetBundles(webglOutputFolder, BuildAssetBundleOptions.None, BuildTarget.WebGL);
-
-                    // Store the UPC file path for upload
-                    upcFileName = $"upc_{versionedBundleName}".ToLower();
-                    upcFilePath = Path.Combine(webglOutputFolder, upcFileName);
-
                     Debug.Log("[Step 1] WebGL asset bundle built successfully.");
                 }
                 currentStep++;
                 break;
             case 2:
-                // Refresh AssetDatabase
-                progress = 0.5f;
+                // Refresh AssetDatabase and finish
+                progress = 1f;
                 progressMessage = "Refreshing AssetDatabase...";
                 Debug.Log("[Step 2] Refreshing AssetDatabase...");
                 AssetDatabase.Refresh();
-                currentStep++;
-                break;
-            case 3:
-                // Upload bundles to S3
-                progress = 0.6f;
-                progressMessage = "Starting upload to cloud...";
-                Debug.Log("[Step 3] Starting upload process...");
-
-                // Validate files exist
-                if (!File.Exists(umsFilePath))
-                {
-                    Debug.LogError($"UMS bundle not found at: {umsFilePath}");
-                    FinishWithError("UMS bundle file not found after build.");
-                    return;
-                }
-
-                if (!File.Exists(upcFilePath))
-                {
-                    Debug.LogError($"UPC bundle not found at: {upcFilePath}");
-                    FinishWithError("UPC bundle file not found after build.");
-                    return;
-                }
-
-
-
-                // Start the upload coroutine
-                UploadBundles(umsFilePath, upcFilePath);
-                currentStep++; // Move to next step to prevent re-entry
+                progressMessage = "Publishing Complete!";
+                Debug.Log("World Map published successfully!");
+                EditorUtility.DisplayDialog("Success", "World Map published successfully!", "OK");
+                isPublishing = false;
+                EditorApplication.update -= ProcessPublishingStep;
                 break;
         }
-    }
-
-    private async void UploadBundles(string umsBundlePath, string upcBundlePath)
-    {
-        await UploadBundlesAsync(umsBundlePath, upcBundlePath);
-    }
-
-    private async Task UploadBundlesAsync(string umsBundlePath, string upcBundlePath)
-    {
-        try
-        {
-            // Validate file paths first
-            if (!File.Exists(umsBundlePath))
-                throw new FileNotFoundException($"UMS bundle not found: {umsBundlePath}");
-            if (!File.Exists(upcBundlePath))
-                throw new FileNotFoundException($"UPC bundle not found: {upcBundlePath}");
-
-            // Read and validate file data
-            byte[] umsData = await ReadFileAsync(umsBundlePath);
-            byte[] upcData = await ReadFileAsync(upcBundlePath);
-
-            ValidateFileData(umsData, upcData);
-
-            // Generate unique filenames
-            //string uniqueUmsName = WorldsPublisherApi.GenerateUniqueFilename("ums", umsData);
-            //string uniqueUpcName = WorldsPublisherApi.GenerateUniqueFilename("upc", upcData);
-
-            //Debug.Log($"Generated filenames - UMS: {uniqueUmsName}, UPC: {uniqueUpcName}");
-
-            string umsFileName = Path.GetFileName(umsBundlePath);
-            string upcFileName = Path.GetFileName(upcBundlePath);
-
-            World uploadedWorld = await WorldsPublisherApi.UploadWorldAsync(umsFileName, upcFileName, umsData, upcData);
-
-            // Handle successful upload
-            await HandleUploadSuccess(uploadedWorld);
-        }
-        catch (FileNotFoundException ex)
-        {
-            FinishWithError($"File not found: {ex.Message}");
-        }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("token"))
-        {
-            FinishWithError("Authentication expired. Please log in again.");
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"Upload exception: {ex}");
-            FinishWithError($"Upload failed: {ex.Message}");
-        }
-        finally
-        {
-            CleanupPublishingProcess();
-        }
-    }
-
-    private async Task HandleUploadSuccess(World uploadedWorld)
-    {
-        _currentWorld = uploadedWorld;
-        progress = 1f;
-        progressMessage = "Publishing Complete!";
-
-        Debug.Log("World Map published and uploaded successfully!");
-        Debug.Log($"UMS URL: {uploadedWorld.umsUrl}");
-        Debug.Log($"UPC URL: {uploadedWorld.upcUrl}");
-
-        // Show success dialog on main thread
-        await Task.Run(() =>
-        {
-            EditorApplication.delayCall += () =>
-            {
-                EditorUtility.DisplayDialog("Success",
-                    $"World Map published successfully!\n\nUMS URL: {uploadedWorld.umsUrl}\nUPC URL: {uploadedWorld.upcUrl}",
-                    "OK");
-            };
-        });
-    }
-
-
-    private void CleanupPublishingProcess()
-    {
-        isPublishing = false;
-        EditorApplication.update -= ProcessPublishingStep;
-    }
-
-    private async Task<byte[]> ReadFileAsync(string filePath)
-    {
-        return await Task.Run(() => File.ReadAllBytes(filePath));
-    }
-
-
-    private void ValidateFileData(byte[] umsData, byte[] upcData)
-    {
-        if (umsData == null || umsData.Length == 0)
-            throw new InvalidDataException("UMS bundle is empty or invalid");
-
-        if (upcData == null || upcData.Length == 0)
-            throw new InvalidDataException("UPC bundle is empty or invalid");
-
-        // Add any additional validation logic here
-        const int maxFileSize = 100 * 1024 * 1024; // 100MB limit example
-        if (umsData.Length > maxFileSize)
-            throw new InvalidDataException($"UMS bundle too large: {umsData.Length} bytes (max: {maxFileSize})");
-
-        if (upcData.Length > maxFileSize)
-            throw new InvalidDataException($"UPC bundle too large: {upcData.Length} bytes (max: {maxFileSize})");
-    }
-
-    private float GetUploadProgress(string progressMessage)
-    {
-        if (progressMessage.Contains("Requesting upload URLs")) return 0.1f;
-        if (progressMessage.Contains("Uploading UMS")) return 0.3f;
-        if (progressMessage.Contains("Uploading UPC")) return 0.6f;
-        if (progressMessage.Contains("Confirming upload")) return 0.8f;
-        if (progressMessage.Contains("Fetching world info")) return 0.9f;
-        return 1.0f;
-    }
-
-    private void FinishWithError(string errorMessage)
-    {
-        Debug.LogError(errorMessage);
-        EditorUtility.DisplayDialog("Error", errorMessage, "OK");
-        isPublishing = false;
-        progress = 0f;
-        progressMessage = "";
-        EditorApplication.update -= ProcessPublishingStep;
     }
 
     private string GenerateVersionedBundleName(string assetPath)
@@ -671,21 +381,20 @@ public class WorldMapPublisherEditor : EditorWindow
 
         return versionedName;
     }
-
-
 }
 
-public static class EditorClipboardUtility
-{
-    public static void LabelWithCopyButton(string label, string value)
-    {
-        EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField(label);
-        EditorGUILayout.SelectableLabel(value);
-        if (GUILayout.Button("Copy", GUILayout.Width(50)))
-        {
-            EditorGUIUtility.systemCopyBuffer = value;
-        }
-        EditorGUILayout.EndHorizontal();
-    }
-}
+//public static class EditorClipboardUtility
+//{
+//    public static void LabelWithCopyButton(string label, string value)
+//    {
+//        EditorGUILayout.BeginHorizontal();
+//        EditorGUILayout.LabelField(label);
+//        EditorGUILayout.SelectableLabel(value);
+//        if (GUILayout.Button("Copy", GUILayout.Width(50)))
+//        {
+//            EditorGUIUtility.systemCopyBuffer = value;
+//        }
+//        EditorGUILayout.EndHorizontal();
+//    }
+//}
+
