@@ -11,8 +11,9 @@ using System.Threading.Tasks;
 using Auth0.Api.Credentials;
 using System.Collections;
 using WorldPublisher;
+using System.Globalization;
 
-public class WorldMapPublisherEditor : EditorWindow
+public class WorldPublisherEditor : EditorWindow
 {
     private UnityEngine.Object _selectedScene;
     private bool isPublishing = false;
@@ -69,7 +70,7 @@ public class WorldMapPublisherEditor : EditorWindow
     [MenuItem("VirtualVenues/Publish World Map")]
     public static void ShowWindow()
     {
-        GetWindow<WorldMapPublisherEditor>("Publish World Map");
+        GetWindow<WorldPublisherEditor>("World Publisher");
     }
 
     private void OnEnable()
@@ -82,6 +83,7 @@ public class WorldMapPublisherEditor : EditorWindow
     private void OnValidate()
     {
         CheckAuth();
+        RefreshCurrentWorld();
     }
 
     private void OnGUI()
@@ -158,12 +160,14 @@ public class WorldMapPublisherEditor : EditorWindow
         if (_currentWorld != null)
         {
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            GUILayout.Label($"Updated: {_currentWorld.updatedAt}");
 
+            DateTime publishTime = DateTime.Parse(_currentWorld.updatedAt, null, System.Globalization.DateTimeStyles.AdjustToUniversal);
+
+            GUILayout.Label($"Updated: {publishTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}");
             // UMS URL with copy button
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("UMS URL:", GUILayout.Width(60));
-            EditorGUILayout.SelectableLabel(_currentWorld.umsUrl, GUILayout.Width(500));
+            EditorGUILayout.SelectableLabel(_currentWorld.umsUrl);
             if (GUILayout.Button("Copy", GUILayout.Width(50)))
             {
                 EditorGUIUtility.systemCopyBuffer = _currentWorld.umsUrl;
@@ -215,6 +219,7 @@ public class WorldMapPublisherEditor : EditorWindow
             {
                 WorldsPublisherApi.SetAccessToken(_credentials.AccessToken, _credentials.ExpiresAt);
             }
+            RefreshCurrentWorld();
         }
         else
         {
@@ -267,7 +272,6 @@ public class WorldMapPublisherEditor : EditorWindow
 
     private void DrawLoginElements()
     {
-        //EditorGUILayout.BeginHorizontal();
         if (_loggedIn)
         {
             if (_userInfo != null)
@@ -291,7 +295,6 @@ public class WorldMapPublisherEditor : EditorWindow
                 OnLoginButtonPressed();
             }
         }
-        //EditorGUILayout.EndHorizontal();
 
         if (_showInstructions)
         {
@@ -545,17 +548,11 @@ public class WorldMapPublisherEditor : EditorWindow
 
             ValidateFileData(umsData, upcData);
 
-            // Generate unique filenames
-            //string uniqueUmsName = WorldsPublisherApi.GenerateUniqueFilename("ums", umsData);
-            //string uniqueUpcName = WorldsPublisherApi.GenerateUniqueFilename("upc", upcData);
-
-            //Debug.Log($"Generated filenames - UMS: {uniqueUmsName}, UPC: {uniqueUpcName}");
-
             string umsFileName = Path.GetFileName(umsBundlePath);
             string upcFileName = Path.GetFileName(upcBundlePath);
 
             World uploadedWorld = await WorldsPublisherApi.UploadWorldAsync(umsFileName, upcFileName, umsData, upcData);
-
+            
             // Handle successful upload
             await HandleUploadSuccess(uploadedWorld);
         }
