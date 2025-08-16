@@ -37,8 +37,6 @@ namespace VirtualVenues.WorldCreator
         }
     }
 
-
-
 #if UNITY_EDITOR
     [CustomEditor(typeof(Stage))]
     public class StageEditor : Editor
@@ -46,29 +44,13 @@ namespace VirtualVenues.WorldCreator
         [MenuItem("GameObject/VirtualVenues/New Stage", isValidateFunction: false, priority: 0)]
         private static void CreateStage(MenuCommand menuCommand)
         {
-            GameObject prefab = LoadFromResources("Stage");
-            if (prefab == null) { return; }
-            prefab.name = "New Stage";
-            var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, EditorSceneManager.GetActiveScene());
-            Undo.RegisterCreatedObjectUndo(instance, "Spawn Resources NewStage");
-            instance.transform.position = Vector3.zero;
-            Selection.activeObject = instance;
+            EditorHelpers.SpawnEditorObject("Stage", Vector3.zero);
         }
 
         [MenuItem("GameObject/VirtualVenues/New Stage", isValidateFunction: true)]
         private static bool ValidateCreateStage(MenuCommand menuCommand)
         {
             return true;
-        }
-
-        private static GameObject LoadFromResources(string prefabName)
-        {
-            var prefab = Resources.Load<GameObject>(prefabName);
-            if (prefab == null)
-            {
-                Debug.LogError($"Resources.Load failed for '{prefabName}'.");
-            }
-            return prefab;
         }
     }
 #endif

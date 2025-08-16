@@ -287,6 +287,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _stage: {fileID: 0}
   _type: 2
+  _mirrorPanRotation: 0
 --- !u!1 &2300555348032357015
 GameObject:
   m_ObjectHideFlags: 0
