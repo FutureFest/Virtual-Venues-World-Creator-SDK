@@ -1,10 +1,10 @@
+#if UNITY_EDITOR
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
 namespace VirtualVenues.WorldCreator
 {
-#if UNITY_EDITOR
     public static class EditorHelpers
     {
         public static void SpawnEditorObject(string objectName, Vector3 spawnPosition)

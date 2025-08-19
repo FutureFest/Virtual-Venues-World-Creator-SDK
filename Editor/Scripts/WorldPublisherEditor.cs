@@ -161,9 +161,11 @@ public class WorldPublisherEditor : EditorWindow
         {
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
-            DateTime publishTime = DateTime.Parse(_currentWorld.updatedAt, null, System.Globalization.DateTimeStyles.AdjustToUniversal);
+            if(DateTime.TryParse(_currentWorld.updatedAt, null, System.Globalization.DateTimeStyles.AdjustToUniversal, out DateTime publishTime))
+            {
+                GUILayout.Label($"Updated: {publishTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}");
+            }
 
-            GUILayout.Label($"Updated: {publishTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}");
             // UMS URL with copy button
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("UMS URL:", GUILayout.Width(60));
