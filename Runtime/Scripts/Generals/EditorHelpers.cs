@@ -29,5 +29,5 @@ namespace VirtualVenues.WorldCreator
             return prefab;
         }
     }
-#endif
 }
+#endif

@@ -1,7 +1,7 @@
 {
   "name": "com.virtualvenues.worldcreator.sdk",
   "displayName": "VirtualVenues World Creator SDK",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "unity": "2023.2",
   "description": "SDK to build a VirtualVenue world and/or stages",
   "keywords": [ "venues", "world", "creator", "sdk", "future", "fest", "stages" ],
