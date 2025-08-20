@@ -1,9 +1,9 @@
 {
   "name": "com.virtualvenues.worldcreator.sdk",
   "displayName": "VirtualVenues World Creator SDK",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "unity": "2023.2",
-  "description": "SDK to build a VirtualVenue world and/or stages",
+  "description": "SDK to build a VirtualVenue worlds and stages",
   "keywords": [ "venues", "world", "creator", "sdk", "future", "fest", "stages" ],
   "dependencies": {
 	"com.unity.nuget.newtonsoft-json": "3.2.1"

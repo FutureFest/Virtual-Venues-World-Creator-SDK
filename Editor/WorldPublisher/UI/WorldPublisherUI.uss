@@ -1,0 +1,218 @@
+.main-container {
+    padding: 10px;
+    flex-grow: 1;
+}
+
+.section {
+    margin-bottom: 20px;
+    padding: 10px;
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+}
+
+.subsection {
+    margin: 10px 0;
+    padding: 8px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 3px;
+}
+
+.section-title {
+    font-size: 16px;
+    -unity-font-style: bold;
+    margin-bottom: 10px;
+    color: #D4D4D4;
+}
+
+.subsection-title {
+    font-size: 14px;
+    -unity-font-style: bold;
+    margin-bottom: 8px;
+    color: #B8B8B8;
+}
+
+/* Authentication Styles */
+.user-greeting {
+    font-size: 14px;
+    -unity-font-style: bold;
+    margin-bottom: 8px;
+    color: #4CAF50;
+}
+
+.auth-button {
+    width: 100px;
+    height: 25px;
+    margin: 5px 0;
+}
+
+.device-flow-container {
+    margin: 10px 0;
+    padding: 10px;
+    background-color: rgba(0, 100, 200, 0.1);
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: rgba(0, 100, 200, 0.3);
+}
+
+.code-field {
+    flex-grow: 1;
+    margin: 0 5px;
+    -unity-font-style: bold;
+    background-color: rgba(0, 0, 0, 0.2);
+}
+
+.link-button {
+    color: #448AFF;
+    background-color: transparent;
+    border-width: 0;
+    -unity-text-align: middle-left;
+    cursor: link;
+}
+
+.link-button:hover {
+    color: #82B1FF;
+}
+
+.auth-result {
+    margin: 10px 0;
+    padding: 8px;
+    border-radius: 3px;
+}
+
+.auth-result-error {
+    color: #FF5252;
+    background-color: rgba(255, 0, 0, 0.1);
+}
+
+.auth-result-success {
+    color: #4CAF50;
+    background-color: rgba(76, 175, 80, 0.1);
+}
+
+/* World Info Styles */
+.world-info-container {
+    padding: 10px;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    margin: 5px 0;
+}
+
+.info-box {
+    padding: 10px;
+    background-color: rgba(255, 193, 7, 0.1);
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: rgba(255, 193, 7, 0.3);
+}
+
+.url-row {
+    flex-direction: row;
+    align-items: center;
+    margin: 5px 0;
+    min-height: 22px;
+}
+
+.url-label {
+    width: 70px;
+    -unity-text-align: middle-left;
+}
+
+.url-field {
+    flex-grow: 1;
+    margin: 0 5px;
+    background-color: rgba(0, 0, 0, 0.2);
+}
+
+.copy-button {
+    width: 50px;
+    height: 20px;
+}
+
+/* Scene Selection */
+ObjectField {
+    margin: 5px 0;
+    height: 22px;
+}
+
+/* Button Styles */
+.button-section {
+    margin: 15px 0;
+}
+
+.primary-button {
+    height: 30px;
+    margin: 5px 0;
+    background-color: #2196F3;
+    color: white;
+    -unity-font-style: bold;
+    border-radius: 3px;
+}
+
+.primary-button:hover {
+    background-color: #1976D2;
+}
+
+.primary-button:disabled {
+    background-color: #757575;
+    color: #B0B0B0;
+}
+
+.danger-button {
+    height: 30px;
+    margin: 5px 0;
+    background-color: #F44336;
+    color: white;
+    -unity-font-style: bold;
+    border-radius: 3px;
+}
+
+.danger-button:hover {
+    background-color: #D32F2F;
+}
+
+.danger-button:disabled {
+    background-color: #757575;
+    color: #B0B0B0;
+}
+
+/* Progress Styles */
+.progress-section {
+    margin: 10px 0;
+    padding: 10px;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+}
+
+.progress-bar {
+    height: 20px;
+    margin: 5px 0;
+}
+
+.progress-bar > .unity-progress-bar__background {
+    background-color: rgba(0, 0, 0, 0.3);
+    border-radius: 3px;
+}
+
+.progress-bar > .unity-progress-bar__progress {
+    background-color: #4CAF50;
+    border-radius: 3px;
+}
+
+/* General Helper Styles */
+.row {
+    flex-direction: row;
+    align-items: center;
+    margin: 5px 0;
+}
+
+Label {
+    margin: 2px 0;
+}
+
+TextField {
+    margin: 2px 0;
+}
+
+Button {
+    margin: 2px 0;
+}
