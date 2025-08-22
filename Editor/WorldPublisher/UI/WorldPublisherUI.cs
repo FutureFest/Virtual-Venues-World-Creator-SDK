@@ -71,12 +71,21 @@ public class WorldPublisherUI : EditorWindow
 
     public void CreateGUI()
     {
-        var visualTree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(
-            "Assets/WorldCreatorSDK/Editor/WorldPublisher/UI/WorldPublisherUI.uxml");
+        // Find the UXML file using GUID or dynamic path resolution
+        string[] guids = AssetDatabase.FindAssets("t:VisualTreeAsset WorldPublisherUI");
+
+        if (guids.Length == 0)
+        {
+            Debug.LogError("Could not find WorldPublisherUI.uxml in the project");
+            return;
+        }
+
+        string path = AssetDatabase.GUIDToAssetPath(guids[0]);
+        var visualTree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(path);
 
         if (visualTree == null)
         {
-            Debug.LogError("Could not load WorldPublisherUI.uxml");
+            Debug.LogError($"Could not load WorldPublisherUI.uxml from path: {path}");
             return;
         }
 
