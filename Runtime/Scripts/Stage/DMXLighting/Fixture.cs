@@ -2,6 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+#if UNITY_EDITOR
+using UnityEditor.SceneManagement;
+#endif
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -9,7 +12,7 @@ using UnityEditor;
 
 namespace VirtualVenues.WorldCreator
 {
-    public class Fixture : MonoBehaviour
+    public partial class Fixture : MonoBehaviour
     {
         public enum FixtureType { None, PAR, MovingHead, Strobe }
 
@@ -118,7 +121,6 @@ namespace VirtualVenues.WorldCreator
 
                 base.OnInspectorGUI();
 
-
                 if (GUILayout.Button(buttonLabel))
                 {
                     foreach (var t in targets)
@@ -131,7 +133,21 @@ namespace VirtualVenues.WorldCreator
                 }
             }
         }
+
+        [MenuItem("GameObject/VirtualVenues/Fixtures/Moving Head Fixture", isValidateFunction: false, priority: 0)]
+        private static void CreateMovingHeadFixture(MenuCommand menuCommand)
+        {
+            EditorHelpers.SpawnEditorObject("Moving Head Fixture", Vector3.zero);
+        }
+
+        // If you right-click in the Unity hierarchy or use the GameObject menu, this validation method ensures the "Moving Head Fixture" option is always available.
+        [MenuItem("GameObject/VirtualVenues/Fixtures/Moving Head Fixture", isValidateFunction: true)]
+        private static bool ValidateCreateMovingHeadFixture(MenuCommand menuCommand)
+        {
+            return true;
+        }
     }
+
 
     [InitializeOnLoad]
     public static class FixtureDuplicationHandler
@@ -139,6 +155,7 @@ namespace VirtualVenues.WorldCreator
         static FixtureDuplicationHandler()
         {
             EditorApplication.hierarchyChanged += OnHierarchyChanged;
+
         }
 
         static double _lastCheckTime = 0;
@@ -156,5 +173,4 @@ namespace VirtualVenues.WorldCreator
         }
     }
 #endif
-
 }
