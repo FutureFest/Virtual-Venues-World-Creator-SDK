@@ -41,7 +41,7 @@ namespace WorldPublisher
         public World[] worlds;
     }
 
-    public static class WorldsPublisherApi
+    public static class WorldPublisherApi
     {
         private const string BASE_URL = "https://jsxf2xqpn4.execute-api.us-east-1.amazonaws.com/dev";
 

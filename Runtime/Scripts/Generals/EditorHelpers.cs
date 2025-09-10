@@ -30,5 +30,4 @@ namespace VirtualVenues.WorldCreator
         }
     }
 }
-
 #endif
