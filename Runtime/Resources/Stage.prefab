@@ -810,7 +810,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _stage: {fileID: 3345691279939236169}
   _screenMesh: {fileID: 347598919310508273}
-  _defaultTexture: {fileID: 2800000, guid: 3d007d81cadd43844af6182f46feede6, type: 3}
+  _defaultTexture: {fileID: 2800000, guid: cd334ff6349015940bb12bc0c54e3f54, type: 3}
 --- !u!1 &7082445405762761593
 GameObject:
   m_ObjectHideFlags: 0
@@ -858,7 +858,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _stage: {fileID: 3345691279939236169}
   _artistMesh: {fileID: 6548288652886887040}
-  _defaultTexture: {fileID: 2800000, guid: 3d007d81cadd43844af6182f46feede6, type: 3}
+  _defaultTexture: {fileID: 2800000, guid: cd334ff6349015940bb12bc0c54e3f54, type: 3}
   _pivot: {fileID: 54716349368190419}
 --- !u!1 &8657706525306794658
 GameObject:
