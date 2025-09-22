@@ -424,7 +424,7 @@ public class WorldPublisherUI : EditorWindow
         AssetImporter importer = AssetImporter.GetAtPath(assetPath);
         if (importer != null)
         {
-            importer.assetBundleName = "ums_" + _versionedBundleName;
+            importer.assetBundleName = "world_ums_" + _versionedBundleName;
         }
 
         string linuxOutputFolder = Path.Combine(_outputFolder, "UMS");
@@ -436,7 +436,7 @@ public class WorldPublisherUI : EditorWindow
         BuildPipeline.BuildAssetBundles(linuxOutputFolder,
             BuildAssetBundleOptions.None, BuildTarget.StandaloneLinux64);
 
-        _umsFileName = $"ums_{_versionedBundleName}".ToLower();
+        _umsFileName = $"world_ums_{_versionedBundleName}".ToLower();
         _umsFilePath = Path.Combine(linuxOutputFolder, _umsFileName);
     }
 
@@ -448,7 +448,7 @@ public class WorldPublisherUI : EditorWindow
         AssetImporter importer = AssetImporter.GetAtPath(assetPath);
         if (importer != null)
         {
-            importer.assetBundleName = "upc_" + _versionedBundleName;
+            importer.assetBundleName = "world_upc_" + _versionedBundleName;
         }
 
         string webglOutputFolder = Path.Combine(_outputFolder, "UPC");
@@ -460,7 +460,7 @@ public class WorldPublisherUI : EditorWindow
         BuildPipeline.BuildAssetBundles(webglOutputFolder,
             BuildAssetBundleOptions.None, BuildTarget.WebGL);
 
-        _upcFileName = $"upc_{_versionedBundleName}".ToLower();
+        _upcFileName = $"world_upc_{_versionedBundleName}".ToLower();
         _upcFilePath = Path.Combine(webglOutputFolder, _upcFileName);
     }
 
@@ -556,14 +556,32 @@ public class WorldPublisherUI : EditorWindow
         string date = DateTime.Now.ToString("yyMMdd");
 
         string versionKeyWithScene = VERSION_KEY + sceneName;
-        int lastVersion = EditorPrefs.GetInt(versionKeyWithScene, 0);
-        int newVersion = lastVersion + 1;
-        if (newVersion > 99) newVersion = 1;
+        string dateKeyWithScene = versionKeyWithScene + "_date";
+
+        // Get last date and version
+        string lastDate = EditorPrefs.GetString(dateKeyWithScene, "");
+        int lastVersion = EditorPrefs.GetInt(versionKeyWithScene, -1);
+
+        int newVersion;
+        if (lastDate != date)
+        {
+            // New date, reset version to 0
+            newVersion = 0;
+        }
+        else
+        {
+            // Same date, increment version
+            newVersion = lastVersion + 1;
+            if (newVersion > 99) newVersion = 0; // Reset to 0 after 99
+        }
 
         string formattedVersion = newVersion.ToString("D2");
         string versionedName = $"{sceneName}_{date}_{formattedVersion}";
 
+        // Save new version and date
         EditorPrefs.SetInt(versionKeyWithScene, newVersion);
+        EditorPrefs.SetString(dateKeyWithScene, date);
+
         Debug.Log($"Generated versioned bundle name: {versionedName}");
 
         return versionedName;
