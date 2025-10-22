@@ -73,14 +73,14 @@ namespace VirtualVenues.WorldCreator
         {
             Vector3 buttonPosition = stage.transform.position + Vector3.up * 2f;
             float buttonSize = HandleUtility.GetHandleSize(buttonPosition) * 0.5f;
-            
+
             // Check if mouse is near button for highlighting
             float mouseDistance = HandleUtility.DistanceToCircle(buttonPosition, buttonSize);
             bool isHovering = mouseDistance <= 0;
-            
+
             // Set color based on hover state
             Handles.color = isHovering ? Color.cyan : Color.grey;
-            
+
             // Draw outer glow when hovering
             if (isHovering)
             {
@@ -93,26 +93,26 @@ namespace VirtualVenues.WorldCreator
             {
                 ShowFixtureMenu(stage);
             }
-            
+
             // Draw Stage title - larger and more prominent
             GUIStyle titleStyle = new GUIStyle();
             titleStyle.normal.textColor = Color.white;
             titleStyle.alignment = TextAnchor.MiddleCenter;
             titleStyle.fontStyle = FontStyle.Bold;
             titleStyle.fontSize = 20; // Larger font size
-            
+
             // Add shadow effect for better visibility
             GUIStyle shadowStyle = new GUIStyle(titleStyle);
             shadowStyle.normal.textColor = new Color(0f, 0f, 0f, 0.5f);
-            
+
             string stageTitle = $"STAGE {stage.StageIndex}";
             Vector3 labelPosition = buttonPosition + Vector3.up * buttonSize * 1.8f;
-            
+
             // Draw shadow
             Handles.Label(labelPosition + Vector3.right * 0.01f + Vector3.down * 0.01f, stageTitle, shadowStyle);
             // Draw main text
             Handles.Label(labelPosition, stageTitle, titleStyle);
-            
+
             // Draw "+ Add Fixture" text below button when hovering
             if (isHovering)
             {
@@ -127,15 +127,15 @@ namespace VirtualVenues.WorldCreator
         private void ShowFixtureMenu(Stage stage)
         {
             GenericMenu menu = new GenericMenu();
-            
+
             foreach (string fixtureName in fixtureOptions)
             {
                 menu.AddItem(new GUIContent(fixtureName), false, () => SpawnFixture(stage, fixtureName));
             }
-            
+
             menu.AddSeparator("");
             menu.AddItem(new GUIContent("Cancel"), false, null);
-            
+
             menu.ShowAsContext();
         }
 
@@ -147,25 +147,25 @@ namespace VirtualVenues.WorldCreator
                 Debug.LogError($"[StageEditor] Failed to load fixture prefab: {fixtureName}");
                 return;
             }
-            
+
             // Instantiate as prefab to maintain prefab connection
             GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, stage.transform);
             instance.name = fixtureName;
-            
+
             // Position fixture on stage surface
             Vector3 spawnPosition = stage.transform.position;
             spawnPosition.y += 0.5f; // Slight offset above stage
             instance.transform.position = spawnPosition;
-            
+
             // Register undo
             Undo.RegisterCreatedObjectUndo(instance, $"Spawn {fixtureName}");
-            
+
             // Mark scene dirty
             EditorSceneManager.MarkSceneDirty(stage.gameObject.scene);
-            
+
             // Select the new fixture
             Selection.activeObject = instance;
-            
+
             Debug.Log($"[StageEditor] Spawned {fixtureName} on stage '{stage.name}'.");
         }
     }

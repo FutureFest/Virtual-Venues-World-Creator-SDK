@@ -1,5 +1,5 @@
 <ui:UXML xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
-    <Style src="project://database/Assets/WorldCreatorSDK/Editor/WorldPublisher/UI/WorldPublisherUI.uss?fileID=7433441132597879392&amp;guid=a353897a3e8e4df4c8ea8373a300b00c&amp;type=3#WorldPublisherUI" />
+    <Style src="project://database/Assets/WorldCreatorSDK/Editor/WorldPublisher/UI/WorldPublisherUI.uss?fileID=7433441132597879392&amp;guid=8aeebe1b2c89fea408bd7d062514200d&amp;type=3#WorldPublisherUI" />
     <ui:ScrollView>
         <ui:VisualElement class="main-container">
             <ui:VisualElement name="auth-section" class="section">
