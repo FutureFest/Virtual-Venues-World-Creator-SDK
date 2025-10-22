@@ -393,26 +393,36 @@ public class WorldPublisherUI : EditorWindow
 
     private void ProcessPublishingStep()
     {
-        switch (_currentStep)
+        try
         {
-            case 0: // Build UMS
-                BuildUMSBundle();
-                _currentStep++;
-                break;
-            case 1: // Build UPC
-                BuildUPCBundle();
-                _currentStep++;
-                break;
-            case 2: // Refresh
-                UpdateProgress(0.5f, "Refreshing AssetDatabase...");
-                AssetDatabase.Refresh();
-                _currentStep++;
-                break;
-            case 3: // Upload
-                UpdateProgress(0.6f, "Starting upload to cloud...");
-                UploadBundles(_umsFilePath, _upcFilePath);
-                _currentStep++;
-                break;
+            switch (_currentStep)
+            {
+                case 0: // Build UMS
+                    BuildUMSBundle();
+                    _currentStep++;
+                    break;
+                case 1: // Build UPC
+                    BuildUPCBundle();
+                    _currentStep++;
+                    break;
+                case 2: // Refresh
+                    UpdateProgress(0.5f, "Refreshing AssetDatabase...");
+                    AssetDatabase.Refresh();
+                    _currentStep++;
+                    break;
+                case 3: // Upload
+                    UpdateProgress(0.6f, "Starting upload to cloud...");
+                    UploadBundles(_umsFilePath, _upcFilePath);
+                    _currentStep++;
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Build methods already handle their own errors via FinishWithError
+            // This catch prevents the update loop from continuing on exception
+            EditorApplication.update -= ProcessPublishingStep;
+            Debug.LogError($"Publishing process failed at step {_currentStep}: {ex.Message}");
         }
     }
 
@@ -420,48 +430,188 @@ public class WorldPublisherUI : EditorWindow
     {
         UpdateProgress(0.2f, "Building UMS asset bundle for Linux...");
 
-        string assetPath = AssetDatabase.GetAssetPath(_sceneSelector.value);
-        AssetImporter importer = AssetImporter.GetAtPath(assetPath);
-        if (importer != null)
+        try
         {
-            importer.assetBundleName = "world_ums_" + _versionedBundleName;
-        }
+            string assetPath = AssetDatabase.GetAssetPath(_sceneSelector.value);
 
-        string linuxOutputFolder = Path.Combine(_outputFolder, "UMS");
-        if (!Directory.Exists(linuxOutputFolder))
+            // Validate scene path
+            if (string.IsNullOrEmpty(assetPath))
+            {
+                throw new Exception("Scene asset path is null or empty. Cannot build bundle.");
+            }
+
+            Debug.Log($"Building UMS bundle for scene: {assetPath}");
+
+            // Get and validate AssetImporter
+            AssetImporter importer = AssetImporter.GetAtPath(assetPath);
+            if (importer == null)
+            {
+                throw new Exception($"Failed to get AssetImporter for scene: {assetPath}. The scene may not be properly imported.");
+            }
+
+            // Assign bundle name
+            string bundleName = "world_ums_" + _versionedBundleName;
+            importer.assetBundleName = bundleName;
+            Debug.Log($"Assigned asset bundle name: {bundleName}");
+
+            // Ensure output directory exists
+            string linuxOutputFolder = Path.Combine(_outputFolder, "UMS");
+            if (!Directory.Exists(linuxOutputFolder))
+            {
+                Directory.CreateDirectory(linuxOutputFolder);
+                Debug.Log($"Created output directory: {linuxOutputFolder}");
+            }
+
+            // Build the asset bundle
+            Debug.Log($"Building asset bundles for StandaloneLinux64 target...");
+            AssetBundleManifest manifest = BuildPipeline.BuildAssetBundles(
+                linuxOutputFolder,
+                BuildAssetBundleOptions.None,
+                BuildTarget.StandaloneLinux64);
+
+            // Validate build succeeded
+            if (manifest == null)
+            {
+                throw new Exception(
+                    "Asset bundle build failed. BuildPipeline returned null manifest.\n\n" +
+                    "Possible causes:\n" +
+                    "1. Linux Build Support is not installed in Unity Hub\n" +
+                    "2. Scene is empty or has no content to bundle\n" +
+                    "3. Asset bundle name assignment failed\n\n" +
+                    "To fix:\n" +
+                    "- Install Linux Build Support via Unity Hub → Installs → Add Modules\n" +
+                    "- Ensure the scene contains GameObjects/content\n" +
+                    "- Check Unity Console for additional errors"
+                );
+            }
+
+            // Verify the specific bundle was created
+            _umsFileName = $"world_ums_{_versionedBundleName}".ToLower();
+            _umsFilePath = Path.Combine(linuxOutputFolder, _umsFileName);
+
+            if (!File.Exists(_umsFilePath))
+            {
+                // List what WAS created for debugging
+                string[] createdBundles = Directory.GetFiles(linuxOutputFolder, "*", SearchOption.TopDirectoryOnly)
+                    .Where(f => !f.EndsWith(".manifest") && !f.EndsWith(".meta"))
+                    .Select(Path.GetFileName)
+                    .ToArray();
+
+                throw new FileNotFoundException(
+                    $"UMS bundle build completed but expected file was not created.\n\n" +
+                    $"Expected file: {_umsFilePath}\n" +
+                    $"Expected filename: {_umsFileName}\n\n" +
+                    $"Bundles found in directory:\n{string.Join("\n", createdBundles)}\n\n" +
+                    "This may indicate:\n" +
+                    "- Scene is empty (no content to bundle)\n" +
+                    "- File naming mismatch\n" +
+                    "- Build completed with warnings that prevented bundle creation"
+                );
+            }
+
+            FileInfo bundleInfo = new FileInfo(_umsFilePath);
+            Debug.Log($"✓ UMS bundle created successfully: {_umsFileName} ({bundleInfo.Length / 1024} KB)");
+        }
+        catch (Exception ex)
         {
-            Directory.CreateDirectory(linuxOutputFolder);
+            Debug.LogError($"UMS Bundle Build Failed: {ex.Message}");
+            FinishWithError($"UMS Bundle Build Failed:\n\n{ex.Message}");
+            throw; // Re-throw to stop the publishing process
         }
-
-        BuildPipeline.BuildAssetBundles(linuxOutputFolder,
-            BuildAssetBundleOptions.None, BuildTarget.StandaloneLinux64);
-
-        _umsFileName = $"world_ums_{_versionedBundleName}".ToLower();
-        _umsFilePath = Path.Combine(linuxOutputFolder, _umsFileName);
     }
 
     private void BuildUPCBundle()
     {
         UpdateProgress(0.4f, "Building UPC asset bundle for WebGL...");
 
-        string assetPath = AssetDatabase.GetAssetPath(_sceneSelector.value);
-        AssetImporter importer = AssetImporter.GetAtPath(assetPath);
-        if (importer != null)
+        try
         {
-            importer.assetBundleName = "world_upc_" + _versionedBundleName;
-        }
+            string assetPath = AssetDatabase.GetAssetPath(_sceneSelector.value);
 
-        string webglOutputFolder = Path.Combine(_outputFolder, "UPC");
-        if (!Directory.Exists(webglOutputFolder))
+            // Validate scene path
+            if (string.IsNullOrEmpty(assetPath))
+            {
+                throw new Exception("Scene asset path is null or empty. Cannot build bundle.");
+            }
+
+            Debug.Log($"Building UPC bundle for scene: {assetPath}");
+
+            // Get and validate AssetImporter
+            AssetImporter importer = AssetImporter.GetAtPath(assetPath);
+            if (importer == null)
+            {
+                throw new Exception($"Failed to get AssetImporter for scene: {assetPath}. The scene may not be properly imported.");
+            }
+
+            // Assign bundle name
+            string bundleName = "world_upc_" + _versionedBundleName;
+            importer.assetBundleName = bundleName;
+            Debug.Log($"Assigned asset bundle name: {bundleName}");
+
+            // Ensure output directory exists
+            string webglOutputFolder = Path.Combine(_outputFolder, "UPC");
+            if (!Directory.Exists(webglOutputFolder))
+            {
+                Directory.CreateDirectory(webglOutputFolder);
+                Debug.Log($"Created output directory: {webglOutputFolder}");
+            }
+
+            // Build the asset bundle
+            Debug.Log($"Building asset bundles for WebGL target...");
+            AssetBundleManifest manifest = BuildPipeline.BuildAssetBundles(
+                webglOutputFolder,
+                BuildAssetBundleOptions.None,
+                BuildTarget.WebGL);
+
+            // Validate build succeeded
+            if (manifest == null)
+            {
+                throw new Exception(
+                    "Asset bundle build failed. BuildPipeline returned null manifest.\n\n" +
+                    "Possible causes:\n" +
+                    "1. WebGL Build Support is not installed in Unity Hub\n" +
+                    "2. Scene is empty or has no content to bundle\n" +
+                    "3. Asset bundle name assignment failed\n\n" +
+                    "To fix:\n" +
+                    "- Install WebGL Build Support via Unity Hub → Installs → Add Modules\n" +
+                    "- Ensure the scene contains GameObjects/content\n" +
+                    "- Check Unity Console for additional errors"
+                );
+            }
+
+            // Verify the specific bundle was created
+            _upcFileName = $"world_upc_{_versionedBundleName}".ToLower();
+            _upcFilePath = Path.Combine(webglOutputFolder, _upcFileName);
+
+            if (!File.Exists(_upcFilePath))
+            {
+                // List what WAS created for debugging
+                string[] createdBundles = Directory.GetFiles(webglOutputFolder, "*", SearchOption.TopDirectoryOnly)
+                    .Where(f => !f.EndsWith(".manifest") && !f.EndsWith(".meta"))
+                    .Select(Path.GetFileName)
+                    .ToArray();
+
+                throw new FileNotFoundException(
+                    $"UPC bundle build completed but expected file was not created.\n\n" +
+                    $"Expected file: {_upcFilePath}\n" +
+                    $"Expected filename: {_upcFileName}\n\n" +
+                    $"Bundles found in directory:\n{string.Join("\n", createdBundles)}\n\n" +
+                    "This may indicate:\n" +
+                    "- Scene is empty (no content to bundle)\n" +
+                    "- File naming mismatch\n" +
+                    "- Build completed with warnings that prevented bundle creation"
+                );
+            }
+
+            FileInfo bundleInfo = new FileInfo(_upcFilePath);
+            Debug.Log($"✓ UPC bundle created successfully: {_upcFileName} ({bundleInfo.Length / 1024} KB)");
+        }
+        catch (Exception ex)
         {
-            Directory.CreateDirectory(webglOutputFolder);
+            Debug.LogError($"UPC Bundle Build Failed: {ex.Message}");
+            FinishWithError($"UPC Bundle Build Failed:\n\n{ex.Message}");
+            throw; // Re-throw to stop the publishing process
         }
-
-        BuildPipeline.BuildAssetBundles(webglOutputFolder,
-            BuildAssetBundleOptions.None, BuildTarget.WebGL);
-
-        _upcFileName = $"world_upc_{_versionedBundleName}".ToLower();
-        _upcFilePath = Path.Combine(webglOutputFolder, _upcFileName);
     }
 
     private async void UploadBundles(string umsBundlePath, string upcBundlePath)
