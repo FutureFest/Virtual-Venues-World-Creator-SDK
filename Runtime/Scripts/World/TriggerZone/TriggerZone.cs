@@ -19,11 +19,9 @@ namespace VirtualVenues.WorldCreator
         [Tooltip("Display name for this trigger zone")]
         [SerializeField] private string _zoneName = "Trigger Zone";
 
+        private static InstanceTracker<TriggerZone> _tracker = new InstanceTracker<TriggerZone>();
 
-        // Static management for runtime discovery
-        private static List<TriggerZone> _instances = new List<TriggerZone>();
-        public static List<TriggerZone> Instances => _instances;
-        public static Action<TriggerZone> onTriggerZoneAdded = null;
+        public static InstanceTracker<TriggerZone> Tracker => _tracker;
 
         // Reference to the collider component
         private Collider _collider;
@@ -37,12 +35,12 @@ namespace VirtualVenues.WorldCreator
             SetupCollider();
 
             // Register this zone
-            AddTriggerZone(this);
+            _tracker.AddInstance(this);
         }
 
         private void OnDestroy()
         {
-            RemoveTriggerZone(this);
+            _tracker.RemoveInstance(this);
         }
 
         public void SetupCollider()
@@ -53,21 +51,6 @@ namespace VirtualVenues.WorldCreator
             {
                 _collider.isTrigger = true;
             }
-        }
-
-        private static void AddTriggerZone(TriggerZone zone)
-        {
-            if (_instances.Contains(zone))
-            {
-                return;
-            }
-            _instances.Add(zone);
-            onTriggerZoneAdded?.Invoke(zone);
-        }
-
-        private static void RemoveTriggerZone(TriggerZone zone)
-        {
-            _instances.Remove(zone);
         }
 
 #if UNITY_EDITOR
