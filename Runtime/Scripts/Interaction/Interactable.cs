@@ -14,6 +14,8 @@ namespace VirtualVenues.WorldCreator
 
         [Header("Interaction Settings")]
         [SerializeField] private string _interactionDisplayText = "Press {0} to interact";
+        [SerializeField] private Transform _contextPopupParent = null;
+        [SerializeField] private Collider _interactionCollider = null;
 
         [Header("Highlight Renderers")]
         [Tooltip("Optional: Renderers that will be toggled on/off when highlighted")]
@@ -26,10 +28,16 @@ namespace VirtualVenues.WorldCreator
         [Tooltip("Invoked when player moves away and the interactable is unhighlighted")]
         [SerializeField] private UnityEvent _onUnhighlight = null;
 
+        [Header("Interaction")]
+        [SerializeField] private UnityEvent _onLocalInteract = null;
+
         public string InteractionDisplayText => _interactionDisplayText;
+        public Transform ContextPopupParent => _contextPopupParent;
+        public Collider InteractionCollider => _interactionCollider;
         public Renderer[] HighlightRenderers => _highlightRenderers;
         public UnityEvent OnHighlight => _onHighlight;
         public UnityEvent OnUnhighlight => _onUnhighlight;
+        public UnityEvent OnLocalInteractEvent => _onLocalInteract;
 
         private void Awake()
         {
@@ -40,6 +48,13 @@ namespace VirtualVenues.WorldCreator
         private void OnDestroy()
         {
             _tracker.RemoveInstance(this);
+        }
+
+        public void OnLocalInteract()
+        {
+            Debug.Log("OnLocalInteract called");
+
+            _onLocalInteract?.Invoke();
         }
     }
 }

@@ -8,6 +8,7 @@ namespace VirtualVenues.WorldCreator
         {
             None,
             Voice,
+            Area,
             Swim,
         }
 
