@@ -16,12 +16,14 @@ namespace VirtualVenues.WorldCreator
         [SerializeField] private Stage _stage = null;
         [Space]
         [SerializeField] private bool _useOffsetActivation = true;
+        [SerializeField] private bool _activateOnInitialize = true;
 
         public static List<StageTrigger> Instances => _instances;
         public static Action<StageTrigger> onStageTriggerAdded = null;
 
         public int StageIndex => _stage != null ? _stage.StageIndex : 0;
         public bool UseOffsetActivation => _useOffsetActivation;
+        public bool ActivateOnInitialize => _activateOnInitialize;
         public Collider TriggerCollider { get; private set; }
 
         private void Reset()
