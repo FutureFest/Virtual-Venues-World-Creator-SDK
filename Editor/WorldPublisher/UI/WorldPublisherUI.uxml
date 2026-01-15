@@ -21,24 +21,10 @@
             </ui:VisualElement>
             <ui:VisualElement name="publisher-section" class="section">
                 <ui:Label text="World Map Publisher" class="section-title" />
-                <ui:VisualElement name="current-world-section" class="subsection">
-                    <ui:Label text="Current Published World:" class="subsection-title" />
-                    <ui:VisualElement name="world-info-container" class="world-info-container">
-                        <ui:Label name="world-updated-at" />
-                        <ui:VisualElement class="url-row">
-                            <ui:Label text="UMS URL:" class="url-label" />
-                            <ui:TextField name="ums-url" readonly="true" class="url-field" style="flex-shrink: 1; flex-grow: 1;" />
-                            <ui:Button name="copy-ums-button" text="Copy" class="copy-button" />
-                        </ui:VisualElement>
-                        <ui:VisualElement class="url-row">
-                            <ui:Label text="UPC URL:" class="url-label" />
-                            <ui:TextField name="upc-url" readonly="true" class="url-field" style="flex-shrink: 1;" />
-                            <ui:Button name="copy-upc-button" text="Copy" class="copy-button" />
-                        </ui:VisualElement>
-                    </ui:VisualElement>
-                    <ui:VisualElement name="no-world-info" class="info-box">
-                        <ui:Label text="No world currently published." />
-                    </ui:VisualElement>
+                <ui:VisualElement class="subsection">
+                    <ui:Label text="World Name:" />
+                    <ui:TextField name="world-name-field" max-length="100" class="world-name-input" />
+                    <ui:Label name="world-name-error" class="error-label" />
                 </ui:VisualElement>
                 <ui:VisualElement class="subsection">
                     <ui:Label text="Select Scene to Publish:" />
@@ -46,13 +32,20 @@
                 </ui:VisualElement>
                 <ui:VisualElement class="button-section">
                     <ui:Button name="publish-button" text="Publish World Map" class="primary-button" />
-                    <ui:Button name="delete-button" text="Delete Current World" class="danger-button" />
                 </ui:VisualElement>
                 <ui:VisualElement name="progress-section" class="progress-section">
                     <ui:Label name="progress-message" />
                     <ui:ProgressBar name="progress-bar" class="progress-bar" />
                 </ui:VisualElement>
+                <ui:VisualElement name="worlds-section" class="subsection" style="flex-grow: 1;">
+                    <ui:Label text="Your Published Worlds:" class="subsection-title" />
+                    <ui:ScrollView name="world-list-scroll" class="world-list-scroll">
+                        <ui:VisualElement name="world-list-container" class="world-list-container" />
+                    </ui:ScrollView>
+                    <ui:Label name="world-list-empty" text="No worlds published yet." class="info-box" />
+                </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
     </ui:ScrollView>
+    <ui:Label name="version-label" class="version-label" />
 </ui:UXML>

@@ -1,4 +1,4 @@
-﻿using UnityEditor;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
 using UnityEditor.UIElements;
@@ -27,21 +27,18 @@ public class WorldPublisherUI : EditorWindow
     private Button _copyCodeButton;
     private Label _authResult;
 
-    private VisualElement _worldInfoContainer;
-    private VisualElement _noWorldInfo;
-    private Label _worldUpdatedAt;
-    private TextField _umsUrlField;
-    private TextField _upcUrlField;
-    private Button _copyUmsButton;
-    private Button _copyUpcButton;
+    private TextField _worldNameField;
+    private Label _worldNameError;
+    private VisualElement _worldListContainer;
+    private Label _worldListEmptyLabel;
 
     private ObjectField _sceneSelector;
     private Button _publishButton;
-    private Button _deleteButton;
 
     private VisualElement _progressSection;
     private Label _progressMessage;
     private ProgressBar _progressBar;
+    private Label _versionLabel;
 
     // State
     private bool _isPublishing = false;
@@ -57,9 +54,16 @@ public class WorldPublisherUI : EditorWindow
     // Auth state
     private Credentials _credentials = null;
     private UserInfo _userInfo = null;
-    private World _currentWorld = null;
+
+    // World list state
+    private World[] _worlds = Array.Empty<World>();
+    private string _editingWorldId = null;
+    private string _editingWorldName = null;
+    private string _publishWorldName = string.Empty;
+    private string _lastPublishedWorldId = null;
 
     private const string VERSION_KEY = "WorldMapVersion_";
+    private const string WORLD_NAME_KEY = "WorldPublisher_WorldName";
 
     [MenuItem("VirtualVenues/World Publisher")]
     public static void ShowWindow()
@@ -94,6 +98,7 @@ public class WorldPublisherUI : EditorWindow
         BindUIElements();
         SetupEventHandlers();
         InitializeUI();
+        SetVersionLabel();
     }
 
     private void BindUIElements()
@@ -112,22 +117,23 @@ public class WorldPublisherUI : EditorWindow
 
         // Publisher section
         _publisherSection = root.Q<VisualElement>("publisher-section");
-        _worldInfoContainer = root.Q<VisualElement>("world-info-container");
-        _noWorldInfo = root.Q<VisualElement>("no-world-info");
-        _worldUpdatedAt = root.Q<Label>("world-updated-at");
-        _umsUrlField = root.Q<TextField>("ums-url");
-        _upcUrlField = root.Q<TextField>("upc-url");
-        _copyUmsButton = root.Q<Button>("copy-ums-button");
-        _copyUpcButton = root.Q<Button>("copy-upc-button");
+
+        // World name input
+        _worldNameField = root.Q<TextField>("world-name-field");
+        _worldNameError = root.Q<Label>("world-name-error");
+
+        // World list
+        _worldListContainer = root.Q<VisualElement>("world-list-container");
+        _worldListEmptyLabel = root.Q<Label>("world-list-empty");
 
         _sceneSelector = root.Q<ObjectField>("scene-selector");
         _sceneSelector.objectType = typeof(SceneAsset);
         _publishButton = root.Q<Button>("publish-button");
-        _deleteButton = root.Q<Button>("delete-button");
 
         _progressSection = root.Q<VisualElement>("progress-section");
         _progressMessage = root.Q<Label>("progress-message");
         _progressBar = root.Q<ProgressBar>("progress-bar");
+        _versionLabel = root.Q<Label>("version-label");
     }
 
     private void SetupEventHandlers()
@@ -135,10 +141,7 @@ public class WorldPublisherUI : EditorWindow
         _authButton.clicked += OnAuthButtonClicked;
         _verificationUrlButton.clicked += () => Application.OpenURL(_verificationUrlButton.text);
         _copyCodeButton.clicked += () => EditorGUIUtility.systemCopyBuffer = _userCodeField.value;
-        _copyUmsButton.clicked += () => EditorGUIUtility.systemCopyBuffer = _umsUrlField.value;
-        _copyUpcButton.clicked += () => EditorGUIUtility.systemCopyBuffer = _upcUrlField.value;
         _publishButton.clicked += OnPublishButtonClicked;
-        _deleteButton.clicked += OnDeleteButtonClicked;
     }
 
     private void InitializeUI()
@@ -146,10 +149,72 @@ public class WorldPublisherUI : EditorWindow
         _deviceFlowContainer.style.display = DisplayStyle.None;
         _authResult.style.display = DisplayStyle.None;
         _progressSection.style.display = DisplayStyle.None;
+        if (_worldNameError != null) { _worldNameError.style.display = DisplayStyle.None; }
+
+        // Load saved world name
+        if (_worldNameField != null)
+        {
+            _worldNameField.value = EditorPrefs.GetString(WORLD_NAME_KEY, "");
+        }
 
         CheckAuth();
         PrePopulateSceneSelection();
-        RefreshCurrentWorld();
+        RefreshWorldList();
+    }
+
+    private void SetVersionLabel()
+    {
+        string version = GetPackageVersion();
+        if (!string.IsNullOrEmpty(version))
+        {
+            _versionLabel.text = $"v{version}";
+        }
+    }
+
+    private string GetPackageVersion()
+    {
+        // Try to get version from PackageInfo (works when installed as a package in Packages/)
+        var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(WorldPublisherUI).Assembly);
+        if (packageInfo != null) { return packageInfo.version; }
+
+        // Fallback: Find package.json by locating this script first, then navigating to package root
+        var scriptGuids = AssetDatabase.FindAssets("t:MonoScript WorldPublisherUI");
+        foreach (string scriptGuid in scriptGuids)
+        {
+            string scriptPath = AssetDatabase.GUIDToAssetPath(scriptGuid);
+            if (!scriptPath.EndsWith("WorldPublisherUI.cs")) { continue; }
+
+            // Navigate up from script location to find package.json
+            // Script is at: .../WorldCreatorSDK/Editor/WorldPublisher/UI/WorldPublisherUI.cs
+            // Package.json is at: .../WorldCreatorSDK/package.json
+            string directory = Path.GetDirectoryName(scriptPath);
+            for (int i = 0; i < 4 && !string.IsNullOrEmpty(directory); i++)
+            {
+                string packageJsonPath = Path.Combine(directory, "package.json").Replace("\\", "/");
+                if (File.Exists(packageJsonPath))
+                {
+                    try
+                    {
+                        string json = File.ReadAllText(packageJsonPath);
+                        var packageData = JsonUtility.FromJson<PackageJson>(json);
+                        if (!string.IsNullOrEmpty(packageData?.version)) { return packageData.version; }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"Failed to parse package.json: {ex.Message}");
+                    }
+                }
+                directory = Path.GetDirectoryName(directory);
+            }
+        }
+
+        return null;
+    }
+
+    [Serializable]
+    private class PackageJson
+    {
+        public string version;
     }
 
     private async void CheckAuth()
@@ -167,7 +232,7 @@ public class WorldPublisherUI : EditorWindow
             }
 
             UpdateAuthUI(true);
-            RefreshCurrentWorld();
+            RefreshWorldList();
         }
         else
         {
@@ -200,7 +265,7 @@ public class WorldPublisherUI : EditorWindow
             // Sign out
             AuthManager.Instance.Credentials.ClearCredentials();
             WorldPublisherApi.ClearToken();
-            _currentWorld = null;
+            _worlds = Array.Empty<World>();
             CheckAuth();
             ShowAuthResult("");
         }
@@ -241,13 +306,13 @@ public class WorldPublisherUI : EditorWindow
             AuthManager.Instance.Credentials.SaveCredentials(tokenResp, scope);
 
             CheckAuth();
-            RefreshCurrentWorld();
+            RefreshWorldList();
             ShowAuthResult("");
         }
         catch (Exception ex)
         {
             Debug.LogError(ex);
-            ShowAuthResult($"⚠ Authentication error: {ex.Message}", true);
+            ShowAuthResult($"Authentication error: {ex.Message}", true);
         }
     }
 
@@ -275,43 +340,191 @@ public class WorldPublisherUI : EditorWindow
         }
     }
 
-    private async void RefreshCurrentWorld()
+    private async void RefreshWorldList()
     {
-        if (_loggedIn && WorldPublisherApi.IsTokenValid)
+        if (!_loggedIn || !WorldPublisherApi.IsTokenValid) { return; }
+
+        try
         {
-            try
-            {
-                _currentWorld = await WorldPublisherApi.GetCurrentWorldAsync();
-                UpdateWorldInfoUI();
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"Failed to get current world: {ex.Message}");
-            }
+            _worlds = await WorldPublisherApi.GetAllWorldsAsync() ?? Array.Empty<World>();
+            UpdateWorldListUI();
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to get worlds: {ex.Message}");
+            _worlds = Array.Empty<World>();
+            UpdateWorldListUI();
         }
     }
 
-    private void UpdateWorldInfoUI()
+    private void UpdateWorldListUI()
     {
-        if (_currentWorld != null)
+        if (_worldListContainer == null) { return; }
+
+        _worldListContainer.Clear();
+
+        if (_worlds.Length == 0)
         {
-            _worldInfoContainer.style.display = DisplayStyle.Flex;
-            _noWorldInfo.style.display = DisplayStyle.None;
+            if (_worldListEmptyLabel != null) { _worldListEmptyLabel.style.display = DisplayStyle.Flex; }
+            return;
+        }
 
-            DateTime publishTime = DateTime.Parse(_currentWorld.updatedAt, null,
-                DateTimeStyles.AdjustToUniversal);
-            _worldUpdatedAt.text = $"Updated: {publishTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}";
+        if (_worldListEmptyLabel != null) { _worldListEmptyLabel.style.display = DisplayStyle.None; }
 
-            _umsUrlField.value = _currentWorld.umsUrl;
-            _upcUrlField.value = _currentWorld.upcUrl;
+        // Sort by updatedAt descending (most recent first)
+        var sortedWorlds = _worlds.OrderByDescending(w => DateTime.Parse(w.updatedAt)).ToArray();
 
-            _deleteButton.SetEnabled(true);
+        foreach (var world in sortedWorlds)
+        {
+            var card = CreateWorldCard(world);
+            _worldListContainer.Add(card);
+        }
+    }
+
+    private VisualElement CreateWorldCard(World world)
+    {
+        var card = new VisualElement();
+        card.AddToClassList("world-card");
+
+        // Highlight if just published
+        if (world.worldId == _lastPublishedWorldId)
+        {
+            card.AddToClassList("world-card-highlight");
+        }
+
+        // Header row with name and buttons
+        var headerRow = new VisualElement();
+        headerRow.AddToClassList("world-card-header");
+
+        if (_editingWorldId == world.worldId)
+        {
+            // Inline edit mode
+            var nameField = new TextField();
+            nameField.value = _editingWorldName;
+            nameField.AddToClassList("world-name-edit");
+            nameField.maxLength = 100;
+            nameField.RegisterValueChangedCallback(evt => _editingWorldName = evt.newValue);
+            headerRow.Add(nameField);
+
+            var saveBtn = new Button(() => SaveWorldRename(world.worldId)) { text = "Save" };
+            saveBtn.AddToClassList("inline-button");
+            headerRow.Add(saveBtn);
+
+            var cancelBtn = new Button(CancelRename) { text = "Cancel" };
+            cancelBtn.AddToClassList("inline-button");
+            headerRow.Add(cancelBtn);
         }
         else
         {
-            _worldInfoContainer.style.display = DisplayStyle.None;
-            _noWorldInfo.style.display = DisplayStyle.Flex;
-            _deleteButton.SetEnabled(false);
+            // Info container (name + id)
+            var infoContainer = new VisualElement();
+            infoContainer.AddToClassList("world-card-info");
+
+            var nameLabel = new Label(world.worldName ?? "Unnamed World");
+            nameLabel.AddToClassList("world-name");
+            infoContainer.Add(nameLabel);
+
+            var idLabel = new Label(world.worldId);
+            idLabel.AddToClassList("world-id");
+            infoContainer.Add(idLabel);
+
+            headerRow.Add(infoContainer);
+
+            // Buttons container
+            var buttonsContainer = new VisualElement();
+            buttonsContainer.AddToClassList("world-card-buttons");
+
+            var renameBtn = new Button(() => StartRename(world)) { text = "Rename" };
+            renameBtn.AddToClassList("action-button");
+            buttonsContainer.Add(renameBtn);
+
+            var deleteBtn = new Button(() => OnDeleteWorldClicked(world)) { text = "Delete" };
+            deleteBtn.AddToClassList("action-button");
+            deleteBtn.AddToClassList("danger-button");
+            buttonsContainer.Add(deleteBtn);
+
+            headerRow.Add(buttonsContainer);
+        }
+
+        card.Add(headerRow);
+
+        // Date row - convert to local time
+        try
+        {
+            DateTime publishTime = DateTime.Parse(world.updatedAt, null, DateTimeStyles.AdjustToUniversal).ToLocalTime();
+            var dateLabel = new Label($"Updated: {publishTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}");
+            dateLabel.AddToClassList("world-date");
+            card.Add(dateLabel);
+        }
+        catch
+        {
+            var dateLabel = new Label($"Updated: {world.updatedAt}");
+            dateLabel.AddToClassList("world-date");
+            card.Add(dateLabel);
+        }
+
+        return card;
+    }
+
+    private void StartRename(World world)
+    {
+        _editingWorldId = world.worldId;
+        _editingWorldName = world.worldName ?? "";
+        UpdateWorldListUI();
+    }
+
+    private void CancelRename()
+    {
+        _editingWorldId = null;
+        _editingWorldName = null;
+        UpdateWorldListUI();
+    }
+
+    private async void SaveWorldRename(string worldId)
+    {
+        if (string.IsNullOrWhiteSpace(_editingWorldName)) { return; }
+
+        try
+        {
+            await WorldPublisherApi.RenameWorldAsync(worldId, _editingWorldName.Trim());
+            _editingWorldId = null;
+            _editingWorldName = null;
+            RefreshWorldList();
+            EditorUtility.DisplayDialog("Success", "World renamed successfully!", "OK");
+        }
+        catch (Exception ex)
+        {
+            EditorUtility.DisplayDialog("Error", $"Failed to rename world: {ex.Message}", "OK");
+        }
+    }
+
+    private void OnDeleteWorldClicked(World world)
+    {
+        if (EditorUtility.DisplayDialog("Confirm Delete",
+            $"Are you sure you want to delete \"{world.worldName ?? "this world"}\"?\n\nThis action cannot be undone.",
+            "Delete", "Cancel"))
+        {
+            DeleteWorld(world.worldId);
+        }
+    }
+
+    private async void DeleteWorld(string worldId)
+    {
+        try
+        {
+            await WorldPublisherApi.DeleteWorldAsync(worldId);
+            RefreshWorldList();
+            EditorUtility.DisplayDialog("Success", "World deleted successfully!", "OK");
+        }
+        catch (WorldInUseException)
+        {
+            EditorUtility.DisplayDialog("Cannot Delete",
+                "This world is currently in use by an event and cannot be deleted.\n\nPlease remove the world from all events first.",
+                "OK");
+        }
+        catch (Exception ex)
+        {
+            EditorUtility.DisplayDialog("Error", $"Failed to delete world: {ex.Message}", "OK");
         }
     }
 
@@ -341,31 +554,40 @@ public class WorldPublisherUI : EditorWindow
             return;
         }
 
+        // Validate world name
+        string worldName = _worldNameField?.value?.Trim();
+        if (string.IsNullOrEmpty(worldName))
+        {
+            ShowWorldNameError("Please enter a world name.");
+            return;
+        }
+
+        if (worldName.Length > 100)
+        {
+            ShowWorldNameError("World name must be 100 characters or less.");
+            return;
+        }
+
+        _publishWorldName = worldName;
+        EditorPrefs.SetString(WORLD_NAME_KEY, worldName);
+        ClearWorldNameError();
         StartPublishing();
     }
 
-    private void OnDeleteButtonClicked()
+    private void ShowWorldNameError(string message)
     {
-        if (EditorUtility.DisplayDialog("Confirm Delete",
-            "Are you sure you want to delete your current published world? This action cannot be undone.",
-            "Delete", "Cancel"))
+        if (_worldNameError != null)
         {
-            DeleteCurrentWorld();
+            _worldNameError.text = message;
+            _worldNameError.style.display = DisplayStyle.Flex;
         }
     }
 
-    private async void DeleteCurrentWorld()
+    private void ClearWorldNameError()
     {
-        try
+        if (_worldNameError != null)
         {
-            await WorldPublisherApi.DeleteCurrentWorldAsync();
-            _currentWorld = null;
-            UpdateWorldInfoUI();
-            EditorUtility.DisplayDialog("Success", "World deleted successfully!", "OK");
-        }
-        catch (Exception ex)
-        {
-            EditorUtility.DisplayDialog("Error", $"Failed to delete world: {ex.Message}", "OK");
+            _worldNameError.style.display = DisplayStyle.None;
         }
     }
 
@@ -385,7 +607,6 @@ public class WorldPublisherUI : EditorWindow
         UpdateProgress(0f, "Initializing publishing...");
         _progressSection.style.display = DisplayStyle.Flex;
         _publishButton.SetEnabled(false);
-        _deleteButton.SetEnabled(false);
 
         Debug.Log("Starting world map publishing process.");
         EditorApplication.update += ProcessPublishingStep;
@@ -479,7 +700,7 @@ public class WorldPublisherUI : EditorWindow
                     "2. Scene is empty or has no content to bundle\n" +
                     "3. Asset bundle name assignment failed\n\n" +
                     "To fix:\n" +
-                    "- Install Linux Build Support via Unity Hub → Installs → Add Modules\n" +
+                    "- Install Linux Build Support via Unity Hub -> Installs -> Add Modules\n" +
                     "- Ensure the scene contains GameObjects/content\n" +
                     "- Check Unity Console for additional errors"
                 );
@@ -510,7 +731,7 @@ public class WorldPublisherUI : EditorWindow
             }
 
             FileInfo bundleInfo = new FileInfo(_umsFilePath);
-            Debug.Log($"✓ UMS bundle created successfully: {_umsFileName} ({bundleInfo.Length / 1024} KB)");
+            Debug.Log($"UMS bundle created successfully: {_umsFileName} ({bundleInfo.Length / 1024} KB)");
         }
         catch (Exception ex)
         {
@@ -573,7 +794,7 @@ public class WorldPublisherUI : EditorWindow
                     "2. Scene is empty or has no content to bundle\n" +
                     "3. Asset bundle name assignment failed\n\n" +
                     "To fix:\n" +
-                    "- Install WebGL Build Support via Unity Hub → Installs → Add Modules\n" +
+                    "- Install WebGL Build Support via Unity Hub -> Installs -> Add Modules\n" +
                     "- Ensure the scene contains GameObjects/content\n" +
                     "- Check Unity Console for additional errors"
                 );
@@ -604,7 +825,7 @@ public class WorldPublisherUI : EditorWindow
             }
 
             FileInfo bundleInfo = new FileInfo(_upcFilePath);
-            Debug.Log($"✓ UPC bundle created successfully: {_upcFileName} ({bundleInfo.Length / 1024} KB)");
+            Debug.Log($"UPC bundle created successfully: {_upcFileName} ({bundleInfo.Length / 1024} KB)");
         }
         catch (Exception ex)
         {
@@ -636,9 +857,11 @@ public class WorldPublisherUI : EditorWindow
                 UpdateProgress(0.6f + (prog * 0.4f), message);
             });
 
+            // Pass world name to upload
             World uploadedWorld = await WorldPublisherApi.UploadWorldAsync(
-                umsFileName, upcFileName, umsData, upcData, progress);
+                umsFileName, upcFileName, umsData, upcData, _publishWorldName, progress);
 
+            _lastPublishedWorldId = uploadedWorld?.worldId;
             await HandleUploadSuccess(uploadedWorld);
         }
         catch (Exception ex)
@@ -653,26 +876,25 @@ public class WorldPublisherUI : EditorWindow
 
     private float GetUploadProgress(string message)
     {
-        if (message.Contains("Requesting upload URLs")) return 0.1f;
-        if (message.Contains("Uploading UMS")) return 0.3f;
-        if (message.Contains("Uploading UPC")) return 0.6f;
-        if (message.Contains("Confirming upload")) return 0.8f;
-        if (message.Contains("Fetching world info")) return 0.9f;
+        if (message.Contains("Requesting upload URLs")) { return 0.1f; }
+        if (message.Contains("Uploading UMS")) { return 0.3f; }
+        if (message.Contains("Uploading UPC")) { return 0.6f; }
+        if (message.Contains("Confirming upload")) { return 0.8f; }
+        if (message.Contains("Fetching world info")) { return 0.9f; }
         return 1.0f;
     }
 
     private async Task HandleUploadSuccess(World uploadedWorld)
     {
-        _currentWorld = uploadedWorld;
         UpdateProgress(1f, "Publishing Complete!");
 
         await Task.Run(() =>
         {
             EditorApplication.delayCall += () =>
             {
-                UpdateWorldInfoUI();
+                RefreshWorldList();
                 EditorUtility.DisplayDialog("Success",
-                    $"World Map published successfully!\n\nUMS URL: {uploadedWorld.umsUrl}\nUPC URL: {uploadedWorld.upcUrl}",
+                    $"World \"{uploadedWorld?.worldName ?? _publishWorldName}\" published successfully!",
                     "OK");
             };
         });
@@ -684,7 +906,6 @@ public class WorldPublisherUI : EditorWindow
         EditorApplication.update -= ProcessPublishingStep;
         _progressSection.style.display = DisplayStyle.None;
         _publishButton.SetEnabled(true);
-        _deleteButton.SetEnabled(_currentWorld != null);
     }
 
     private void FinishWithError(string errorMessage)
@@ -722,7 +943,7 @@ public class WorldPublisherUI : EditorWindow
         {
             // Same date, increment version
             newVersion = lastVersion + 1;
-            if (newVersion > 99) newVersion = 0; // Reset to 0 after 99
+            if (newVersion > 99) { newVersion = 0; } // Reset to 0 after 99
         }
 
         string formattedVersion = newVersion.ToString("D2");
