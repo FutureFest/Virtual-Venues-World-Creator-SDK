@@ -1,13 +1,10 @@
 {
-    "name": "com.virtualvenues.worldcreator.sdk.editor",
-    "rootNamespace": "",
+    "name": "com.virtualvenues.sdk.runtime",
+    "rootNamespace": "VirtualVenues",
     "references": [
-        "GUID:75469ad4d38634e559750d17036d5f7c",
-        "GUID:f5f56d52f72af1646b5918baf1e30f7a"
+        "GUID:75469ad4d38634e559750d17036d5f7c"
     ],
-    "includePlatforms": [
-        "Editor"
-    ],
+    "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,

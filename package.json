@@ -1,9 +1,9 @@
 {
   "name": "com.virtualvenues.sdk",
   "displayName": "VirtualVenues SDK",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "unity": "6000.1",
-  "description": "SDK to build a VirtualVenue worlds and stages",
+  "description": "SDK to build a VirtualVenues world with stages; Publish your own avatars and cosmetics.",
   "keywords": [ "venues", "world", "creator", "sdk", "future", "fest", "stages" ],
   "dependencies": {
     "com.unity.nuget.newtonsoft-json": "3.2.1"
