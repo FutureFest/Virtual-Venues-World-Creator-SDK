@@ -23,6 +23,12 @@ namespace VirtualVenues.WorldCreator
 
         public static InstanceTracker<TriggerZone> Tracker => _tracker;
 
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStaticFields()
+        {
+            _tracker = new InstanceTracker<TriggerZone>();
+        }
+
         // Reference to the collider component
         private Collider _collider;
         public Collider Collider => _collider;

@@ -41,6 +41,15 @@ namespace VirtualVenues.WorldCreator
             onSpawnPointAdded?.Invoke(spawnPoint);
         }
 
+        private void OnDestroy()
+        {
+            RemoveSpawnPoint(this);
+        }
+
+        private static void RemoveSpawnPoint(SpawnPoint spawnPoint)
+        {
+            _instances.Remove(spawnPoint);
+        }
 
 #if UNITY_EDITOR
         [MenuItem("GameObject/VirtualVenues/Spawn Point", isValidateFunction: false, priority: 0)]

@@ -24,6 +24,13 @@ namespace VirtualVenues.WorldCreator
         public static List<RotatingObject> Instances => _instances;
         public static Action<RotatingObject> onRotatingObjectAdded = null;
 
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStaticState()
+        {
+            _instances.Clear();
+            onRotatingObjectAdded = null;
+        }
+
         private void Awake()
         {
             AddRotatingObject(this);
