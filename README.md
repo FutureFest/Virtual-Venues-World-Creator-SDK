@@ -14,13 +14,13 @@ A Unity package for creating custom virtual worlds and stages for the VirtualVen
 Add the package via git URL in Unity Package Manager:
 
 ```
-https://github.com/VirtualVenues/WorldCreatorSDK.git
+https://github.com/VirtualVenues/VirtualVenuesSDK.git
 ```
 
 ### Manual Installation
 
 1. Download or clone the repository
-2. Copy the `WorldCreatorSDK` folder into your project's `Assets/` or `Packages/` directory
+2. Copy the `VirtualVenuesSDK` folder into your project's `Assets/` or `Packages/` directory
 
 ## Features
 
@@ -33,6 +33,30 @@ Publish your custom worlds directly to VirtualVenues from the Unity Editor.
 - **Authentication**: Secure login via Auth0 device flow
 - **Upload Worlds**: Publish scenes as UMS/UPC world map bundles
 - **Manage Worlds**: View, rename, and delete your published worlds
+
+### Avatar Publisher
+
+Publish avatar and cosmetic asset bundles to the VirtualVenues platform.
+
+**Access:** `VirtualVenues > Avatar Publisher`
+
+- **Authentication**: Secure login via Auth0 device flow (shared with World Publisher)
+- **Catalog Management**: Create new catalogs or add versions to existing ones
+- **Bundle Upload**: Select your Addressables build folder and auto-detect `.bundle`, `.bin`, `.hash` files
+- **Metadata Entry**: Define avatar and cosmetic metadata (id, name, gameId, guid)
+- **Version Tagging**: Tag each catalog version for easy identification
+- **Manage Catalogs**: View, rename, and delete your published catalogs
+
+#### Avatar Publisher Quick Start
+
+1. Build your avatars/cosmetics using Unity Addressables
+2. Open `VirtualVenues > Avatar Publisher`
+3. Login with your VirtualVenues account
+4. Select "Create New Catalog" or "Add Version to Existing"
+5. Enter a catalog name and version tag
+6. Browse to your Addressables build output folder
+7. Add avatar/cosmetic metadata entries as needed
+8. Click "Publish Catalog"
 
 ### Stage Components
 

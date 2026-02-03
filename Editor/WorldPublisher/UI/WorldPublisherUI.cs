@@ -50,6 +50,8 @@ public class WorldPublisherUI : EditorWindow
     private string _upcFilePath;
     private string _umsFileName;
     private string _upcFileName;
+    private BuildTarget _originalBuildTarget;
+    private BuildTargetGroup _originalBuildTargetGroup;
 
     // Auth state
     private Credentials _credentials = null;
@@ -604,6 +606,11 @@ public class WorldPublisherUI : EditorWindow
         _currentStep = 0;
         _versionedBundleName = GenerateVersionedBundleName(assetPath);
 
+        // Save original build target to restore after publishing
+        _originalBuildTarget = EditorUserBuildSettings.activeBuildTarget;
+        _originalBuildTargetGroup = EditorUserBuildSettings.selectedBuildTargetGroup;
+        Debug.Log($"Saved original build target: {_originalBuildTargetGroup}/{_originalBuildTarget}");
+
         UpdateProgress(0f, "Initializing publishing...");
         _progressSection.style.display = DisplayStyle.Flex;
         _publishButton.SetEnabled(false);
@@ -649,7 +656,27 @@ public class WorldPublisherUI : EditorWindow
 
     private void BuildUMSBundle()
     {
-        UpdateProgress(0.2f, "Building UMS asset bundle for Linux...");
+        UpdateProgress(0.2f, "Switching to Linux platform...");
+
+        // Switch to Linux platform for UMS build
+        if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.StandaloneLinux64)
+        {
+            Debug.Log("Switching build target to StandaloneLinux64 for UMS bundle...");
+            bool switchResult = EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Standalone, BuildTarget.StandaloneLinux64);
+            if (!switchResult)
+            {
+                throw new Exception(
+                    "Failed to switch build target to Linux.\n\n" +
+                    "Possible causes:\n" +
+                    "1. Linux Build Support is not installed in Unity Hub\n\n" +
+                    "To fix:\n" +
+                    "- Install Linux Build Support (Mono) via Unity Hub -> Installs -> Add Modules"
+                );
+            }
+            Debug.Log("Successfully switched to StandaloneLinux64");
+        }
+
+        UpdateProgress(0.25f, "Building UMS asset bundle for Linux...");
 
         try
         {
@@ -743,7 +770,27 @@ public class WorldPublisherUI : EditorWindow
 
     private void BuildUPCBundle()
     {
-        UpdateProgress(0.4f, "Building UPC asset bundle for WebGL...");
+        UpdateProgress(0.4f, "Switching to WebGL platform...");
+
+        // Switch to WebGL platform for UPC build
+        if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.WebGL)
+        {
+            Debug.Log("Switching build target to WebGL for UPC bundle...");
+            bool switchResult = EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.WebGL, BuildTarget.WebGL);
+            if (!switchResult)
+            {
+                throw new Exception(
+                    "Failed to switch build target to WebGL.\n\n" +
+                    "Possible causes:\n" +
+                    "1. WebGL Build Support is not installed in Unity Hub\n\n" +
+                    "To fix:\n" +
+                    "- Install WebGL Build Support via Unity Hub -> Installs -> Add Modules"
+                );
+            }
+            Debug.Log("Successfully switched to WebGL");
+        }
+
+        UpdateProgress(0.45f, "Building UPC asset bundle for WebGL...");
 
         try
         {
@@ -906,6 +953,13 @@ public class WorldPublisherUI : EditorWindow
         EditorApplication.update -= ProcessPublishingStep;
         _progressSection.style.display = DisplayStyle.None;
         _publishButton.SetEnabled(true);
+
+        // Restore original build target
+        if (EditorUserBuildSettings.activeBuildTarget != _originalBuildTarget)
+        {
+            Debug.Log($"Restoring original build target: {_originalBuildTargetGroup}/{_originalBuildTarget}");
+            EditorUserBuildSettings.SwitchActiveBuildTarget(_originalBuildTargetGroup, _originalBuildTarget);
+        }
     }
 
     private void FinishWithError(string errorMessage)

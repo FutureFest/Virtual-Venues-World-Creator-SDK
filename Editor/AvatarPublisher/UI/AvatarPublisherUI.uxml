@@ -1,0 +1,140 @@
+<ui:UXML xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="True">
+    <ui:ScrollView>
+        <ui:VisualElement class="main-container">
+            <!-- Authentication Section -->
+            <ui:VisualElement name="auth-section" class="section">
+                <ui:Label name="user-greeting" class="user-greeting" />
+                <ui:Button name="auth-button" text="Login" class="auth-button" />
+                <ui:VisualElement name="device-flow-container" class="device-flow-container">
+                    <ui:Label text="1. On to browser on your computer or mobile device, go to url:" />
+                    <ui:VisualElement class="row">
+                        <ui:Button name="verification-url" class="link-button" />
+                    </ui:VisualElement>
+                    <ui:Label text="2. Copy and paste device code:" />
+                    <ui:VisualElement class="row">
+                        <ui:Label text="Device Confirmation Code: " />
+                        <ui:TextField name="user-code" readonly="true" class="code-field" />
+                        <ui:Button name="copy-code-button" text="Copy" class="copy-button" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+                <ui:Label name="auth-result" class="auth-result" />
+            </ui:VisualElement>
+
+            <!-- Publisher Section -->
+            <ui:VisualElement name="publisher-section" class="section">
+                <ui:Label text="Avatar &amp; Cosmetics Publisher" class="section-title" />
+
+                <!-- Catalog Mode Selection -->
+                <ui:VisualElement class="subsection">
+                    <ui:Label text="Catalog Mode:" class="subsection-title" />
+                    <ui:RadioButtonGroup name="catalog-mode" value="0" class="catalog-mode-group">
+                        <ui:RadioButton name="mode-new" text="Create New Catalog" value="true" />
+                        <ui:RadioButton name="mode-existing" text="Add Version to Existing" />
+                    </ui:RadioButtonGroup>
+                </ui:VisualElement>
+
+                <!-- New Catalog Container -->
+                <ui:VisualElement name="new-catalog-container" class="subsection">
+                    <ui:Label text="Catalog Name:" />
+                    <ui:TextField name="catalog-name-field" max-length="100" class="catalog-name-input" />
+                    <ui:Label name="catalog-name-error" class="error-label" />
+                </ui:VisualElement>
+
+                <!-- Existing Catalog Container -->
+                <ui:VisualElement name="existing-catalog-container" class="subsection">
+                    <ui:Label text="Select Catalog:" />
+                    <ui:DropdownField name="catalog-dropdown" class="catalog-dropdown" />
+                    <ui:Label name="catalog-dropdown-error" class="error-label" />
+                </ui:VisualElement>
+
+                <!-- Version Tag -->
+                <ui:VisualElement class="subsection">
+                    <ui:Label text="Version Tag:" />
+                    <ui:TextField name="version-tag-field" max-length="50" class="version-tag-input" />
+                    <ui:Label name="version-tag-error" class="error-label" />
+                </ui:VisualElement>
+
+                <!-- Build Mode Selection -->
+                <ui:VisualElement class="subsection">
+                    <ui:Label text="Build Mode:" class="subsection-title" />
+                    <ui:RadioButtonGroup name="build-mode" value="0" class="build-mode-group">
+                        <ui:RadioButton name="build-mode-auto" text="Auto Build" value="true" />
+                        <ui:RadioButton name="build-mode-manual" text="Manual (Browse)" />
+                    </ui:RadioButtonGroup>
+                </ui:VisualElement>
+
+                <!-- Auto Build Section -->
+                <ui:VisualElement name="auto-build-section" class="subsection">
+                    <ui:Label text="Remote Path Configuration:" class="subsection-title" />
+                    <ui:VisualElement class="row">
+                        <ui:Label text="Path Suffix:" class="path-suffix-label" />
+                        <ui:TextField name="path-suffix-field" class="path-suffix-input" />
+                    </ui:VisualElement>
+                    <ui:Label name="path-suffix-preview" class="path-preview" />
+                    <ui:Label name="path-suffix-error" class="error-label" />
+
+                    <!-- Avatar Prefabs -->
+                    <ui:Foldout name="avatar-prefabs-foldout" text="Avatar Prefabs (0)" class="prefab-foldout">
+                        <ui:VisualElement name="avatar-prefabs-container" class="prefab-container" />
+                        <ui:Button name="add-avatar-prefab-button" text="+ Add Avatar Prefab" class="add-prefab-button" />
+                    </ui:Foldout>
+
+                    <!-- Cosmetic Prefabs -->
+                    <ui:Foldout name="cosmetic-prefabs-foldout" text="Cosmetic Prefabs (0)" class="prefab-foldout">
+                        <ui:VisualElement name="cosmetic-prefabs-container" class="prefab-container" />
+                        <ui:Button name="add-cosmetic-prefab-button" text="+ Add Cosmetic Prefab" class="add-prefab-button" />
+                    </ui:Foldout>
+                    <ui:Label name="prefabs-error" class="error-label" />
+                </ui:VisualElement>
+
+                <!-- Manual Bundle Section -->
+                <ui:VisualElement name="manual-bundle-section" class="subsection">
+                    <ui:Label text="Addressables Build Folder:" class="subsection-title" />
+                    <ui:VisualElement class="row">
+                        <ui:TextField name="bundle-folder-field" readonly="true" class="bundle-folder-input" />
+                        <ui:Button name="browse-button" text="Browse..." class="browse-button" />
+                    </ui:VisualElement>
+                    <ui:Label name="bundle-folder-error" class="error-label" />
+                    <ui:VisualElement name="bundle-files-section" class="bundle-files-section">
+                        <ui:Label name="file-counter" class="file-counter" />
+                        <ui:ScrollView name="bundle-list-scroll" class="bundle-list-scroll">
+                            <ui:VisualElement name="bundle-list-container" class="bundle-list-container" />
+                        </ui:ScrollView>
+                    </ui:VisualElement>
+
+                    <!-- Avatars Metadata -->
+                    <ui:Foldout name="avatars-foldout" text="Avatars (0)" class="metadata-foldout">
+                        <ui:VisualElement name="avatars-container" class="metadata-container" />
+                        <ui:Button name="add-avatar-button" text="+ Add Avatar" class="add-metadata-button" />
+                    </ui:Foldout>
+
+                    <!-- Cosmetics Metadata -->
+                    <ui:Foldout name="cosmetics-foldout" text="Cosmetics (0)" class="metadata-foldout">
+                        <ui:VisualElement name="cosmetics-container" class="metadata-container" />
+                        <ui:Button name="add-cosmetic-button" text="+ Add Cosmetic" class="add-metadata-button" />
+                    </ui:Foldout>
+                </ui:VisualElement>
+
+                <!-- Publish Button and Progress -->
+                <ui:VisualElement class="button-section">
+                    <ui:Button name="publish-button" text="Publish Catalog" class="primary-button" />
+                </ui:VisualElement>
+
+                <ui:VisualElement name="progress-section" class="progress-section">
+                    <ui:Label name="progress-message" />
+                    <ui:ProgressBar name="progress-bar" class="progress-bar" />
+                </ui:VisualElement>
+
+                <!-- Published Catalogs List -->
+                <ui:VisualElement name="catalogs-section" class="subsection" style="flex-grow: 1;">
+                    <ui:Label text="Your Published Catalogs:" class="subsection-title" />
+                    <ui:ScrollView name="catalog-list-scroll" class="catalog-list-scroll">
+                        <ui:VisualElement name="catalog-list-container" class="catalog-list-container" />
+                    </ui:ScrollView>
+                    <ui:Label name="catalog-list-empty" text="No catalogs published yet." class="info-box" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:ScrollView>
+    <ui:Label name="version-label" class="version-label" />
+</ui:UXML>
