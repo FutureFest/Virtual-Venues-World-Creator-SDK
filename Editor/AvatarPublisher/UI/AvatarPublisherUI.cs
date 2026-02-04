@@ -12,7 +12,9 @@ using Auth0;
 using Auth0.AuthenticationApi.Models;
 using Auth0.Api.Credentials;
 using AvatarPublisher;
+#if VVSDK_ADDRESSABLES
 using VirtualVenues.Editor.AvatarPublisher;
+#endif
 
 public class AvatarPublisherUI : EditorWindow
 {
