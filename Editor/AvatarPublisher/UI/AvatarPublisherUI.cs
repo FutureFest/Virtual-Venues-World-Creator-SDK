@@ -586,8 +586,12 @@ public class AvatarPublisherUI : EditorWindow
 
     private void UpdatePathPreview(string suffix)
     {
+#if VVSDK_ADDRESSABLES
         string fullPath = AddressablesBuildManager.GetFullRemoteLoadPath(suffix);
         _pathSuffixPreview.text = $"Full URL: {fullPath}";
+#else
+        _pathSuffixPreview.text = "Addressables package not installed - Auto Build unavailable";
+#endif
     }
 
     #endregion
@@ -1411,6 +1415,12 @@ public class AvatarPublisherUI : EditorWindow
 
     private async void StartAutoBuildAndPublish()
     {
+#if !VVSDK_ADDRESSABLES
+        EditorUtility.DisplayDialog("Addressables Required",
+            "Auto Build requires the Addressables package.\n\nPlease install com.unity.addressables via Package Manager, or use Manual mode instead.",
+            "OK");
+        return;
+#else
         _isPublishing = true;
         _publishButton.SetEnabled(false);
         _progressSection.style.display = DisplayStyle.Flex;
@@ -1567,6 +1577,7 @@ public class AvatarPublisherUI : EditorWindow
             _publishButton.SetEnabled(true);
             _progressSection.style.display = DisplayStyle.None;
         }
+#endif
     }
 
     private async void StartManualPublishing()

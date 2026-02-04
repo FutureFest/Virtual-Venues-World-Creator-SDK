@@ -1,3 +1,4 @@
+#if VVSDK_ADDRESSABLES
 using System;
 using System.IO;
 using System.Collections.Generic;
@@ -319,3 +320,4 @@ namespace VirtualVenues.Editor.AvatarPublisher
         }
     }
 }
+#endif
