@@ -1365,9 +1365,11 @@ public class AvatarPublisherUI : EditorWindow
             catalogId = reserveResponse.catalogId;
             versionId = reserveResponse.versionId;
 
-            string userId = _userInfo.UserId;
-            string contentBaseUrl = AddressablesBuildManager.BuildContentBaseUrl(
-                AddressablesBuildManager.BUCKET_URL, userId, catalogId, versionId);
+            // Derive contentBaseUrl from the presigned upload URL — the API is the
+            // source of truth for which S3 bucket/region to use.
+            var binUri = new Uri(reserveResponse.uploadUrlBin);
+            string contentBaseUrl = $"{binUri.Scheme}://{binUri.Host}" +
+                binUri.AbsolutePath.Substring(0, binUri.AbsolutePath.LastIndexOf('/'));
 
             UpdateProgress(0.05f, "Configuring Addressables...");
 
