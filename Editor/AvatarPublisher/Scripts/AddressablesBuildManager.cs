@@ -96,7 +96,8 @@ namespace VirtualVenues.Editor.AvatarPublisher
         /// </summary>
         public static string BuildContentBaseUrl(string bucketUrl, string userId, string catalogId, string versionId)
         {
-            return $"{bucketUrl}/users/{userId}/catalogs/{catalogId}/versions/{versionId}";
+            string safeUserId = Uri.EscapeDataString(userId);
+            return $"{bucketUrl}/users/{safeUserId}/catalogs/{catalogId}/versions/{versionId}";
         }
 
         /// <summary>
