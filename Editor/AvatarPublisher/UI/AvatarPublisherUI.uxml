@@ -65,14 +65,6 @@
 
                 <!-- Auto Build Section -->
                 <ui:VisualElement name="auto-build-section" class="subsection">
-                    <ui:Label text="Remote Path Configuration:" class="subsection-title" />
-                    <ui:VisualElement class="row">
-                        <ui:Label text="Path Suffix:" class="path-suffix-label" />
-                        <ui:TextField name="path-suffix-field" class="path-suffix-input" />
-                    </ui:VisualElement>
-                    <ui:Label name="path-suffix-preview" class="path-preview" />
-                    <ui:Label name="path-suffix-error" class="error-label" />
-
                     <!-- Avatar Prefabs -->
                     <ui:Foldout name="avatar-prefabs-foldout" text="Avatar Prefabs (0)" class="prefab-foldout">
                         <ui:VisualElement name="avatar-prefabs-container" class="prefab-container" />

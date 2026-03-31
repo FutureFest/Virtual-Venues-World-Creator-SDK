@@ -1,4 +1,3 @@
-#if VVSDK_ADDRESSABLES
 using System;
 using System.IO;
 using System.Collections.Generic;
@@ -25,7 +24,7 @@ namespace VirtualVenues.Editor.AvatarPublisher
         private const string PROFILE_NAME = "VVSDKProfile";
 
         private const string REMOTE_BUILD_PATH = "ContentData";
-        private const string REMOTE_LOAD_PATH_BASE = "https://ff-desktop-clients.s3.amazonaws.com/Cosmetics";
+        internal const string BUCKET_URL = "https://ff-desktop-clients.s3.amazonaws.com";
 
         private static AddressableAssetSettings _settings;
 
@@ -77,33 +76,35 @@ namespace VirtualVenues.Editor.AvatarPublisher
 
             // Set profile variables
             settings.profileSettings.SetValue(profileId, AddressableAssetSettings.kRemoteBuildPath, REMOTE_BUILD_PATH);
-            settings.profileSettings.SetValue(profileId, AddressableAssetSettings.kRemoteLoadPath, REMOTE_LOAD_PATH_BASE);
+            settings.profileSettings.SetValue(profileId, AddressableAssetSettings.kRemoteLoadPath, BUCKET_URL);
 
             settings.activeProfileId = profileId;
         }
 
         /// <summary>
-        /// Updates the remote load path with the user-specified suffix.
+        /// Sets the remote load path to the given content base URL.
         /// </summary>
-        public static void SetRemoteLoadPath(string pathSuffix)
+        public static void SetRemoteLoadPath(string contentBaseUrl)
         {
             var settings = GetOrCreateSettings();
-            string fullPath = string.IsNullOrEmpty(pathSuffix)
-                ? REMOTE_LOAD_PATH_BASE
-                : $"{REMOTE_LOAD_PATH_BASE}/{pathSuffix}";
-
-            settings.profileSettings.SetValue(settings.activeProfileId, AddressableAssetSettings.kRemoteLoadPath, fullPath);
+            settings.profileSettings.SetValue(settings.activeProfileId, AddressableAssetSettings.kRemoteLoadPath, contentBaseUrl);
             EditorUtility.SetDirty(settings);
         }
 
         /// <summary>
-        /// Gets the full remote load path with the specified suffix.
+        /// Builds the content base URL from user-scoped catalog path components.
         /// </summary>
-        public static string GetFullRemoteLoadPath(string pathSuffix)
+        public static string BuildContentBaseUrl(string bucketUrl, string userId, string catalogId, string versionId)
         {
-            return string.IsNullOrEmpty(pathSuffix)
-                ? REMOTE_LOAD_PATH_BASE
-                : $"{REMOTE_LOAD_PATH_BASE}/{pathSuffix}";
+            return $"{bucketUrl}/users/{userId}/catalogs/{catalogId}/versions/{versionId}";
+        }
+
+        /// <summary>
+        /// Generates a unique version ID (UUID v4) for a new catalog version.
+        /// </summary>
+        public static string GenerateVersionId()
+        {
+            return Guid.NewGuid().ToString();
         }
 
         /// <summary>
@@ -320,4 +321,3 @@ namespace VirtualVenues.Editor.AvatarPublisher
         }
     }
 }
-#endif

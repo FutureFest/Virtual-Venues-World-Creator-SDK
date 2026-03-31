@@ -6,15 +6,12 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using System.Linq;
-using System.Globalization;
 using System.Collections.Generic;
 using Auth0;
 using Auth0.AuthenticationApi.Models;
 using Auth0.Api.Credentials;
 using AvatarPublisher;
-#if VVSDK_ADDRESSABLES
 using VirtualVenues.Editor.AvatarPublisher;
-#endif
 
 public class AvatarPublisherUI : EditorWindow
 {
@@ -47,9 +44,6 @@ public class AvatarPublisherUI : EditorWindow
     private VisualElement _manualBundleSection;
 
     // UI Elements - Auto Build
-    private TextField _pathSuffixField;
-    private Label _pathSuffixPreview;
-    private Label _pathSuffixError;
     private Foldout _avatarPrefabsFoldout;
     private VisualElement _avatarPrefabsContainer;
     private Button _addAvatarPrefabButton;
@@ -95,7 +89,7 @@ public class AvatarPublisherUI : EditorWindow
     private UserInfo _userInfo = null;
 
     // Catalog state
-    private Catalog[] _catalogs = Array.Empty<Catalog>();
+    private CatalogSummary[] _catalogs = Array.Empty<CatalogSummary>();
     private string _editingCatalogId = null;
     private string _editingCatalogName = null;
     private string _lastPublishedCatalogId = null;
@@ -115,7 +109,6 @@ public class AvatarPublisherUI : EditorWindow
     private const string CATALOG_NAME_KEY = "AvatarPublisher_CatalogName";
     private const string VERSION_TAG_KEY = "AvatarPublisher_VersionTag";
     private const string BUNDLE_FOLDER_KEY = "AvatarPublisher_BundleFolder";
-    private const string PATH_SUFFIX_KEY = "AvatarPublisher_PathSuffix";
     private const string BUILD_MODE_KEY = "AvatarPublisher_BuildMode";
     private const string CATALOG_MODE_KEY = "AvatarPublisher_CatalogMode";
 
@@ -225,9 +218,6 @@ public class AvatarPublisherUI : EditorWindow
         _manualBundleSection = root.Q<VisualElement>("manual-bundle-section");
 
         // Auto build
-        _pathSuffixField = root.Q<TextField>("path-suffix-field");
-        _pathSuffixPreview = root.Q<Label>("path-suffix-preview");
-        _pathSuffixError = root.Q<Label>("path-suffix-error");
         _avatarPrefabsFoldout = root.Q<Foldout>("avatar-prefabs-foldout");
         _avatarPrefabsContainer = root.Q<VisualElement>("avatar-prefabs-container");
         _addAvatarPrefabButton = root.Q<Button>("add-avatar-prefab-button");
@@ -278,9 +268,6 @@ public class AvatarPublisherUI : EditorWindow
         // Build mode
         _buildModeGroup.RegisterValueChangedCallback(OnBuildModeChanged);
 
-        // Path suffix
-        _pathSuffixField.RegisterValueChangedCallback(OnPathSuffixChanged);
-
         // Auto build prefabs
         _addAvatarPrefabButton.clicked += OnAddAvatarPrefabClicked;
         _addCosmeticPrefabButton.clicked += OnAddCosmeticPrefabClicked;
@@ -301,7 +288,6 @@ public class AvatarPublisherUI : EditorWindow
         if (_catalogNameError != null) { _catalogNameError.style.display = DisplayStyle.None; }
         if (_versionTagError != null) { _versionTagError.style.display = DisplayStyle.None; }
         if (_bundleFolderError != null) { _bundleFolderError.style.display = DisplayStyle.None; }
-        if (_pathSuffixError != null) { _pathSuffixError.style.display = DisplayStyle.None; }
         if (_prefabsError != null) { _prefabsError.style.display = DisplayStyle.None; }
         if (_catalogDropdownError != null) { _catalogDropdownError.style.display = DisplayStyle.None; }
 
@@ -313,11 +299,6 @@ public class AvatarPublisherUI : EditorWindow
         if (_versionTagField != null)
         {
             _versionTagField.value = EditorPrefs.GetString(VERSION_TAG_KEY, "1.0.0");
-        }
-        if (_pathSuffixField != null)
-        {
-            _pathSuffixField.value = EditorPrefs.GetString(PATH_SUFFIX_KEY, "");
-            UpdatePathPreview(_pathSuffixField.value);
         }
 
         // Load saved bundle folder
@@ -444,7 +425,7 @@ public class AvatarPublisherUI : EditorWindow
         {
             AuthManager.Instance.Credentials.ClearCredentials();
             AvatarPublisherApi.ClearToken();
-            _catalogs = Array.Empty<Catalog>();
+            _catalogs = Array.Empty<CatalogSummary>();
             CheckAuth();
             ShowAuthResult("");
         }
@@ -578,22 +559,6 @@ public class AvatarPublisherUI : EditorWindow
             _autoBuildSection.style.display = DisplayStyle.None;
             _manualBundleSection.style.display = DisplayStyle.Flex;
         }
-    }
-
-    private void OnPathSuffixChanged(ChangeEvent<string> evt)
-    {
-        UpdatePathPreview(evt.newValue);
-        EditorPrefs.SetString(PATH_SUFFIX_KEY, evt.newValue);
-    }
-
-    private void UpdatePathPreview(string suffix)
-    {
-#if VVSDK_ADDRESSABLES
-        string fullPath = AddressablesBuildManager.GetFullRemoteLoadPath(suffix);
-        _pathSuffixPreview.text = $"Full URL: {fullPath}";
-#else
-        _pathSuffixPreview.text = "Addressables package not installed - Auto Build unavailable";
-#endif
     }
 
     #endregion
@@ -848,25 +813,6 @@ public class AvatarPublisherUI : EditorWindow
         return $"{bytes / (1024.0 * 1024.0):F1} MB";
     }
 
-    private DateTime TryParseDateTime(string dateString)
-    {
-        if (string.IsNullOrEmpty(dateString)) { return DateTime.MinValue; }
-
-        if (DateTime.TryParse(dateString, null, DateTimeStyles.AdjustToUniversal, out DateTime result))
-        {
-            return result;
-        }
-
-        // Try ISO 8601 format
-        if (DateTime.TryParseExact(dateString, "yyyy-MM-ddTHH:mm:ss.fffZ",
-            CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out result))
-        {
-            return result;
-        }
-
-        return DateTime.MinValue;
-    }
-
     private void ShowBundleFolderError(string message)
     {
         if (_bundleFolderError != null)
@@ -1039,14 +985,14 @@ public class AvatarPublisherUI : EditorWindow
 
         try
         {
-            _catalogs = await AvatarPublisherApi.GetAllCatalogsAsync() ?? Array.Empty<Catalog>();
+            _catalogs = await AvatarPublisherApi.GetAllCatalogsAsync() ?? Array.Empty<CatalogSummary>();
             UpdateCatalogListUI();
             UpdateCatalogDropdown();
         }
         catch (Exception ex)
         {
             Debug.LogError($"Failed to get catalogs: {ex.Message}");
-            _catalogs = Array.Empty<Catalog>();
+            _catalogs = Array.Empty<CatalogSummary>();
             UpdateCatalogListUI();
         }
     }
@@ -1065,7 +1011,7 @@ public class AvatarPublisherUI : EditorWindow
 
         if (_catalogListEmptyLabel != null) { _catalogListEmptyLabel.style.display = DisplayStyle.None; }
 
-        var sortedCatalogs = _catalogs.OrderByDescending(c => TryParseDateTime(c.updatedAt)).ToArray();
+        var sortedCatalogs = _catalogs.OrderBy(c => c.name).ToArray();
 
         foreach (var catalog in sortedCatalogs)
         {
@@ -1074,7 +1020,7 @@ public class AvatarPublisherUI : EditorWindow
         }
     }
 
-    private VisualElement CreateCatalogCard(Catalog catalog)
+    private VisualElement CreateCatalogCard(CatalogSummary catalog)
     {
         var card = new VisualElement();
         card.AddToClassList("catalog-card");
@@ -1122,11 +1068,10 @@ public class AvatarPublisherUI : EditorWindow
             var buttonsContainer = new VisualElement();
             buttonsContainer.AddToClassList("catalog-card-buttons");
 
-            // Version count
-            int versionCount = catalog.versions?.Length ?? 0;
-            var versionCountLabel = new Label($"{versionCount} version(s)");
-            versionCountLabel.AddToClassList("catalog-version-count");
-            buttonsContainer.Add(versionCountLabel);
+            // Latest version
+            var latestLabel = new Label($"Latest: {catalog.latestVersionTag ?? "none"}");
+            latestLabel.AddToClassList("catalog-version-count");
+            buttonsContainer.Add(latestLabel);
 
             var renameBtn = new Button(() => StartRename(catalog)) { text = "Rename" };
             renameBtn.AddToClassList("action-button");
@@ -1142,37 +1087,24 @@ public class AvatarPublisherUI : EditorWindow
 
         card.Add(headerRow);
 
-        // Version tags row
-        if (catalog.versions != null && catalog.versions.Length > 0)
+        // Latest version tag row
+        if (!string.IsNullOrEmpty(catalog.latestVersionTag))
         {
             var versionsRow = new VisualElement();
             versionsRow.style.flexDirection = FlexDirection.Row;
-            versionsRow.style.flexWrap = Wrap.Wrap;
             versionsRow.style.marginTop = 4;
 
-            foreach (var version in catalog.versions.OrderByDescending(v => v.createdAt).Take(5))
-            {
-                var versionTag = new Label(version.versionTag ?? "untagged");
-                versionTag.AddToClassList("catalog-version-tag");
-                versionsRow.Add(versionTag);
-            }
+            var versionTag = new Label(catalog.latestVersionTag);
+            versionTag.AddToClassList("catalog-version-tag");
+            versionsRow.Add(versionTag);
 
             card.Add(versionsRow);
         }
 
-        // Date row
-        var parsedDate = TryParseDateTime(catalog.updatedAt);
-        string dateText = parsedDate != DateTime.MinValue
-            ? $"Updated: {parsedDate.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}"
-            : $"Updated: {catalog.updatedAt ?? "Unknown"}";
-        var dateLabel = new Label(dateText);
-        dateLabel.AddToClassList("catalog-date");
-        card.Add(dateLabel);
-
         return card;
     }
 
-    private void StartRename(Catalog catalog)
+    private void StartRename(CatalogSummary catalog)
     {
         _editingCatalogId = catalog.catalogId;
         _editingCatalogName = catalog.name ?? "";
@@ -1204,7 +1136,7 @@ public class AvatarPublisherUI : EditorWindow
         }
     }
 
-    private void OnDeleteCatalogClicked(Catalog catalog)
+    private void OnDeleteCatalogClicked(CatalogSummary catalog)
     {
         if (EditorUtility.DisplayDialog("Confirm Delete",
             $"Are you sure you want to delete \"{catalog.name ?? "this catalog"}\"?\n\nThis action cannot be undone.",
@@ -1311,14 +1243,6 @@ public class AvatarPublisherUI : EditorWindow
         if (isAutoBuild)
         {
             // Validate auto build inputs
-            string pathSuffix = _pathSuffixField?.value?.Trim();
-            if (string.IsNullOrEmpty(pathSuffix))
-            {
-                Debug.LogWarning("[AvatarPublisher] Validation failed: Path suffix is required.");
-                ShowPathSuffixError("Please enter a path suffix.");
-                isValid = false;
-            }
-
             int avatarCount = _avatarPrefabs.Count(p => p != null);
             int cosmeticCount = _cosmeticPrefabs.Count(p => p != null);
 
@@ -1364,7 +1288,6 @@ public class AvatarPublisherUI : EditorWindow
     {
         if (_catalogNameError != null) { _catalogNameError.style.display = DisplayStyle.None; }
         if (_versionTagError != null) { _versionTagError.style.display = DisplayStyle.None; }
-        if (_pathSuffixError != null) { _pathSuffixError.style.display = DisplayStyle.None; }
         if (_prefabsError != null) { _prefabsError.style.display = DisplayStyle.None; }
         if (_catalogDropdownError != null) { _catalogDropdownError.style.display = DisplayStyle.None; }
         ClearBundleFolderError();
@@ -1388,15 +1311,6 @@ public class AvatarPublisherUI : EditorWindow
         }
     }
 
-    private void ShowPathSuffixError(string message)
-    {
-        if (_pathSuffixError != null)
-        {
-            _pathSuffixError.text = message;
-            _pathSuffixError.style.display = DisplayStyle.Flex;
-        }
-    }
-
     private void ShowPrefabsError(string message)
     {
         if (_prefabsError != null)
@@ -1417,12 +1331,6 @@ public class AvatarPublisherUI : EditorWindow
 
     private async void StartAutoBuildAndPublish()
     {
-#if !VVSDK_ADDRESSABLES
-        EditorUtility.DisplayDialog("Addressables Required",
-            "Auto Build requires the Addressables package.\n\nPlease install com.unity.addressables via Package Manager, or use Manual mode instead.",
-            "OK");
-        return;
-#else
         _isPublishing = true;
         _publishButton.SetEnabled(false);
         _progressSection.style.display = DisplayStyle.Flex;
@@ -1432,23 +1340,39 @@ public class AvatarPublisherUI : EditorWindow
         {
             bool isNewCatalog = _catalogModeGroup.value == 0;
             string catalogName = isNewCatalog ? _catalogNameField.value.Trim() : _catalogs[_catalogDropdown.index].name;
-            string existingCatalogId = isNewCatalog ? null : _catalogs[_catalogDropdown.index].catalogId;
             string versionTag = _versionTagField.value.Trim();
-            string pathSuffix = _pathSuffixField.value.Trim();
 
             // Save preferences
             EditorPrefs.SetString(CATALOG_NAME_KEY, _catalogNameField.value);
             EditorPrefs.SetString(VERSION_TAG_KEY, _versionTagField.value);
-            EditorPrefs.SetString(PATH_SUFFIX_KEY, pathSuffix);
+
+            // Determine catalogId
+            string catalogId = isNewCatalog ? null : _catalogs[_catalogDropdown.index].catalogId;
+
+            // Generate versionId
+            string versionId = AddressablesBuildManager.GenerateVersionId();
 
             // Collect prefabs
             var avatarPrefabs = _avatarPrefabs.Where(p => p != null).ToList();
             var cosmeticPrefabs = _cosmeticPrefabs.Where(p => p != null).ToList();
 
+            // For auto build, we need the contentBaseUrl before building so Addressables
+            // bakes the correct remote load path. Call upload-urls first with a placeholder
+            // bundle list to reserve catalogId/versionId and derive the URL.
+            UpdateProgress(0.02f, "Reserving catalog version...");
+            var reserveResponse = await AvatarPublisherApi.GetUploadUrlsAsync(
+                catalogId, versionId, new[] { "_reserve_.bundle" });
+            catalogId = reserveResponse.catalogId;
+            versionId = reserveResponse.versionId;
+
+            string userId = _userInfo.UserId;
+            string contentBaseUrl = AddressablesBuildManager.BuildContentBaseUrl(
+                AddressablesBuildManager.BUCKET_URL, userId, catalogId, versionId);
+
             UpdateProgress(0.05f, "Configuring Addressables...");
 
-            // Set remote load path
-            AddressablesBuildManager.SetRemoteLoadPath(pathSuffix);
+            // Set remote load path to API-derived content URL
+            AddressablesBuildManager.SetRemoteLoadPath(contentBaseUrl);
 
             // Setup asset group
             AddressablesBuildManager.SetupAssetGroup(avatarPrefabs, cosmeticPrefabs);
@@ -1535,7 +1459,7 @@ public class AvatarPublisherUI : EditorWindow
                 }).ToArray()
             };
 
-            // Upload
+            // Upload (calls upload-urls again with real bundle names)
             var uploadProgress = new Progress<(float progress, string message)>(p =>
             {
                 float scaled = 0.6f + (p.progress * 0.35f);
@@ -1543,13 +1467,14 @@ public class AvatarPublisherUI : EditorWindow
             });
 
             var uploadedCatalog = await AvatarPublisherApi.UploadCatalogAsync(
+                catalogId,
+                versionId,
                 catalogName,
                 versionTag,
                 binData,
                 hashData,
                 bundleFiles,
                 metadata,
-                existingCatalogId,
                 uploadProgress);
 
             _lastPublishedCatalogId = uploadedCatalog?.catalogId;
@@ -1579,7 +1504,6 @@ public class AvatarPublisherUI : EditorWindow
             _publishButton.SetEnabled(true);
             _progressSection.style.display = DisplayStyle.None;
         }
-#endif
     }
 
     private async void StartManualPublishing()
@@ -1593,12 +1517,15 @@ public class AvatarPublisherUI : EditorWindow
         {
             bool isNewCatalog = _catalogModeGroup.value == 0;
             string catalogName = isNewCatalog ? _catalogNameField.value.Trim() : _catalogs[_catalogDropdown.index].name;
-            string existingCatalogId = isNewCatalog ? null : _catalogs[_catalogDropdown.index].catalogId;
             string versionTag = _versionTagField.value.Trim();
 
             // Save preferences
             EditorPrefs.SetString(CATALOG_NAME_KEY, _catalogNameField.value);
             EditorPrefs.SetString(VERSION_TAG_KEY, _versionTagField.value);
+
+            // For manual mode, catalogId is null for new catalogs (API generates it via upload-urls)
+            string catalogId = isNewCatalog ? null : _catalogs[_catalogDropdown.index].catalogId;
+            string versionId = AddressablesBuildManager.GenerateVersionId();
 
             // Load files
             UpdateProgress(0.02f, "Loading files...");
@@ -1658,13 +1585,14 @@ public class AvatarPublisherUI : EditorWindow
             });
 
             var uploadedCatalog = await AvatarPublisherApi.UploadCatalogAsync(
+                catalogId,
+                versionId,
                 catalogName,
                 versionTag,
                 binData,
                 hashData,
                 bundleFiles,
                 metadata,
-                existingCatalogId,
                 progress);
 
             _lastPublishedCatalogId = uploadedCatalog?.catalogId;

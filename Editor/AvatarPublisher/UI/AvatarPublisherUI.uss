@@ -124,26 +124,6 @@
     margin-right: 15px;
 }
 
-/* Path Suffix Styles */
-.path-suffix-label {
-    width: 80px;
-    -unity-text-align: middle-left;
-}
-
-.path-suffix-input {
-    flex-grow: 1;
-    height: 24px;
-}
-
-.path-preview {
-    font-size: 11px;
-    -unity-font-style: italic;
-    color: #888888;
-    margin-top: 4px;
-    white-space: normal;
-    overflow: hidden;
-}
-
 /* Prefab Selection Styles */
 .prefab-foldout {
     margin: 10px 0;
