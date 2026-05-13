@@ -24,7 +24,19 @@ namespace Auth0.Api.Credentials
         /// </summary>
         /// <returns><see cref="Task"/> representing the async operation containing a valid <see cref="Credentials" />.</returns>
         public abstract Task<Credentials> GetCredentials();
-        
+
+        /// <summary>
+        /// Synchronously reads cached credentials from local storage without attempting any refresh
+        /// or network I/O. Returns false if no usable cached credentials are available.
+        /// </summary>
+        /// <param name="credentials">The cached credentials when this method returns true; otherwise null.</param>
+        /// <returns>True if a non-expired access token is available locally; false otherwise.</returns>
+        public virtual bool TryGetCachedCredentials(out Credentials credentials)
+        {
+            credentials = null;
+            return false;
+        }
+
         /// <summary>
         /// Stores the given credentials in the storage.
         /// </summary>

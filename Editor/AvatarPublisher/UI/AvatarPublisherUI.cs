@@ -380,18 +380,28 @@ public class AvatarPublisherUI : EditorWindow
 
     private async void CheckAuth()
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Debug.Log("[Auth][AvatarPublisher] CheckAuth start");
+
         _loggedIn = AuthManager.Instance.Credentials.HasValidCredentials();
+        Debug.Log($"[Auth][AvatarPublisher] hasValid={_loggedIn} — {sw.ElapsedMilliseconds}ms");
 
         if (_loggedIn)
         {
+            var stepSw = System.Diagnostics.Stopwatch.StartNew();
             _credentials = await AuthManager.Instance.Credentials.GetCredentials();
+            Debug.Log($"[Auth][AvatarPublisher] GetCredentials done — {stepSw.ElapsedMilliseconds}ms, expiresAt={_credentials?.ExpiresAt:O}");
+
+            stepSw.Restart();
             _userInfo = await AuthManager.Instance.Auth0.GetUserInfoAsync(_credentials.AccessToken);
+            Debug.Log($"[Auth][AvatarPublisher] GetUserInfo done — {stepSw.ElapsedMilliseconds}ms");
 
             if (_credentials != null && !string.IsNullOrEmpty(_credentials.AccessToken))
             {
                 AvatarPublisherApi.SetAccessToken(_credentials.AccessToken, _credentials.ExpiresAt);
             }
 
+            Debug.Log($"[Auth][AvatarPublisher] CheckAuth ready — totalMs={sw.ElapsedMilliseconds}");
             UpdateAuthUI(true);
             RefreshCatalogList();
         }
@@ -399,6 +409,7 @@ public class AvatarPublisherUI : EditorWindow
         {
             AvatarPublisherApi.ClearToken();
             UpdateAuthUI(false);
+            Debug.Log($"[Auth][AvatarPublisher] CheckAuth done — not logged in, {sw.ElapsedMilliseconds}ms");
         }
     }
 
@@ -437,6 +448,8 @@ public class AvatarPublisherUI : EditorWindow
 
     private async void StartAuthFlow()
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Debug.Log("[Auth][AvatarPublisher] StartAuthFlow start");
         try
         {
             ResetInstructions();
@@ -446,12 +459,14 @@ public class AvatarPublisherUI : EditorWindow
             var scope = AuthManager.Instance.Settings.Scope;
             var audience = AuthManager.Instance.Settings.Audience;
 
+            var stepSw = System.Diagnostics.Stopwatch.StartNew();
             var deviceCodeResp = await auth0.StartDeviceFlowAsync(new DeviceCodeRequest
             {
                 ClientId = clientId,
                 Scope = scope,
                 Audience = audience
             });
+            Debug.Log($"[Auth][AvatarPublisher] device code received — {stepSw.ElapsedMilliseconds}ms, verificationUri={deviceCodeResp.VerificationUri}, expiresIn={deviceCodeResp.ExpiresIn}s, interval={deviceCodeResp.Interval}s");
 
             _verificationUrlButton.text = deviceCodeResp.VerificationUri;
             _userCodeField.value = deviceCodeResp.UserCode;
@@ -459,10 +474,13 @@ public class AvatarPublisherUI : EditorWindow
             string fullUrl = $"{deviceCodeResp.VerificationUri}?user_code={deviceCodeResp.UserCode}";
             Application.OpenURL(fullUrl);
 
+            stepSw.Restart();
             AccessTokenResponse tokenResp = await auth0.ExchangeDeviceCodeAsync(
                 clientId, deviceCodeResp.DeviceCode, deviceCodeResp.Interval);
+            Debug.Log($"[Auth][AvatarPublisher] token exchange done — {stepSw.ElapsedMilliseconds}ms");
 
             AuthManager.Instance.Credentials.SaveCredentials(tokenResp, scope);
+            Debug.Log($"[Auth][AvatarPublisher] credentials saved — totalMs={sw.ElapsedMilliseconds}");
 
             CheckAuth();
             RefreshCatalogList();
@@ -470,7 +488,7 @@ public class AvatarPublisherUI : EditorWindow
         }
         catch (Exception ex)
         {
-            Debug.LogError(ex);
+            Debug.LogError($"[Auth][AvatarPublisher] StartAuthFlow failed — {sw.ElapsedMilliseconds}ms: {ex}");
             ShowAuthResult($"Authentication error: {ex.Message}", true);
         }
     }
@@ -983,15 +1001,18 @@ public class AvatarPublisherUI : EditorWindow
     {
         if (!_loggedIn || !AvatarPublisherApi.IsTokenValid) { return; }
 
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Debug.Log("[Auth][AvatarPublisher] RefreshCatalogList start");
         try
         {
             _catalogs = await AvatarPublisherApi.GetAllCatalogsAsync() ?? Array.Empty<CatalogSummary>();
+            Debug.Log($"[Auth][AvatarPublisher] RefreshCatalogList complete — {sw.ElapsedMilliseconds}ms, count={_catalogs.Length}");
             UpdateCatalogListUI();
             UpdateCatalogDropdown();
         }
         catch (Exception ex)
         {
-            Debug.LogError($"Failed to get catalogs: {ex.Message}");
+            Debug.LogError($"[Auth][AvatarPublisher] RefreshCatalogList failed — {sw.ElapsedMilliseconds}ms: {ex.Message}");
             _catalogs = Array.Empty<CatalogSummary>();
             UpdateCatalogListUI();
         }

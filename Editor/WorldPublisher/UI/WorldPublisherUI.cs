@@ -221,18 +221,28 @@ public class WorldPublisherUI : EditorWindow
 
     private async void CheckAuth()
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Debug.Log("[Auth][WorldPublisher] CheckAuth start");
+
         _loggedIn = AuthManager.Instance.Credentials.HasValidCredentials();
+        Debug.Log($"[Auth][WorldPublisher] hasValid={_loggedIn} — {sw.ElapsedMilliseconds}ms");
 
         if (_loggedIn)
         {
+            var stepSw = System.Diagnostics.Stopwatch.StartNew();
             _credentials = await AuthManager.Instance.Credentials.GetCredentials();
+            Debug.Log($"[Auth][WorldPublisher] GetCredentials done — {stepSw.ElapsedMilliseconds}ms, expiresAt={_credentials?.ExpiresAt:O}");
+
+            stepSw.Restart();
             _userInfo = await AuthManager.Instance.Auth0.GetUserInfoAsync(_credentials.AccessToken);
+            Debug.Log($"[Auth][WorldPublisher] GetUserInfo done — {stepSw.ElapsedMilliseconds}ms");
 
             if (_credentials != null && !string.IsNullOrEmpty(_credentials.AccessToken))
             {
                 WorldPublisherApi.SetAccessToken(_credentials.AccessToken, _credentials.ExpiresAt);
             }
 
+            Debug.Log($"[Auth][WorldPublisher] CheckAuth ready — totalMs={sw.ElapsedMilliseconds}");
             UpdateAuthUI(true);
             RefreshWorldList();
         }
@@ -240,6 +250,7 @@ public class WorldPublisherUI : EditorWindow
         {
             WorldPublisherApi.ClearToken();
             UpdateAuthUI(false);
+            Debug.Log($"[Auth][WorldPublisher] CheckAuth done — not logged in, {sw.ElapsedMilliseconds}ms");
         }
     }
 
@@ -280,6 +291,8 @@ public class WorldPublisherUI : EditorWindow
 
     private async void StartAuthFlow()
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Debug.Log("[Auth][WorldPublisher] StartAuthFlow start");
         try
         {
             ResetInstructions();
@@ -289,12 +302,14 @@ public class WorldPublisherUI : EditorWindow
             var scope = AuthManager.Instance.Settings.Scope;
             var audience = AuthManager.Instance.Settings.Audience;
 
+            var stepSw = System.Diagnostics.Stopwatch.StartNew();
             var deviceCodeResp = await auth0.StartDeviceFlowAsync(new DeviceCodeRequest
             {
                 ClientId = clientId,
                 Scope = scope,
                 Audience = audience
             });
+            Debug.Log($"[Auth][WorldPublisher] device code received — {stepSw.ElapsedMilliseconds}ms, verificationUri={deviceCodeResp.VerificationUri}, expiresIn={deviceCodeResp.ExpiresIn}s, interval={deviceCodeResp.Interval}s");
 
             _verificationUrlButton.text = deviceCodeResp.VerificationUri;
             _userCodeField.value = deviceCodeResp.UserCode;
@@ -302,10 +317,13 @@ public class WorldPublisherUI : EditorWindow
             string fullUrl = $"{deviceCodeResp.VerificationUri}?user_code={deviceCodeResp.UserCode}";
             Application.OpenURL(fullUrl);
 
+            stepSw.Restart();
             AccessTokenResponse tokenResp = await auth0.ExchangeDeviceCodeAsync(
                 clientId, deviceCodeResp.DeviceCode, deviceCodeResp.Interval);
+            Debug.Log($"[Auth][WorldPublisher] token exchange done — {stepSw.ElapsedMilliseconds}ms");
 
             AuthManager.Instance.Credentials.SaveCredentials(tokenResp, scope);
+            Debug.Log($"[Auth][WorldPublisher] credentials saved — totalMs={sw.ElapsedMilliseconds}");
 
             CheckAuth();
             RefreshWorldList();
@@ -313,7 +331,7 @@ public class WorldPublisherUI : EditorWindow
         }
         catch (Exception ex)
         {
-            Debug.LogError(ex);
+            Debug.LogError($"[Auth][WorldPublisher] StartAuthFlow failed — {sw.ElapsedMilliseconds}ms: {ex}");
             ShowAuthResult($"Authentication error: {ex.Message}", true);
         }
     }
@@ -346,14 +364,17 @@ public class WorldPublisherUI : EditorWindow
     {
         if (!_loggedIn || !WorldPublisherApi.IsTokenValid) { return; }
 
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Debug.Log("[Auth][WorldPublisher] RefreshWorldList start");
         try
         {
             _worlds = await WorldPublisherApi.GetAllWorldsAsync() ?? Array.Empty<World>();
+            Debug.Log($"[Auth][WorldPublisher] RefreshWorldList complete — {sw.ElapsedMilliseconds}ms, count={_worlds.Length}");
             UpdateWorldListUI();
         }
         catch (Exception ex)
         {
-            Debug.LogError($"Failed to get worlds: {ex.Message}");
+            Debug.LogError($"[Auth][WorldPublisher] RefreshWorldList failed — {sw.ElapsedMilliseconds}ms: {ex.Message}");
             _worlds = Array.Empty<World>();
             UpdateWorldListUI();
         }

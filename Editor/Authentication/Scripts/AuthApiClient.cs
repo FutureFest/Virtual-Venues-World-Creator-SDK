@@ -2,8 +2,10 @@ using Auth0.AuthenticationApi;
 using Auth0.AuthenticationApi.Models;
 using Auth0.Core.Exceptions;
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Debug = UnityEngine.Debug;
 
 namespace Auth0.Api
 {
@@ -43,26 +45,35 @@ namespace Auth0.Api
                 DeviceCode = deviceCode
             };
 
+            var sw = Stopwatch.StartNew();
+            int pollCount = 0;
+            Debug.Log($"[Auth] ExchangeDeviceCode polling start, interval={retryInterval}s");
+
             do
             {
                 await Task.Delay(TimeSpan.FromSeconds(retryInterval));
                 apiError = null;
+                pollCount++;
 
                 try
                 {
                     response = await this.GetTokenAsync(request, cancellationToken);
+                    Debug.Log($"[Auth] ExchangeDeviceCode poll #{pollCount} — token received, totalMs={sw.ElapsedMilliseconds}");
                 }
-                catch (ErrorApiException ex) 
+                catch (ErrorApiException ex)
                 {
                     apiError = ex;
+                    Debug.Log($"[Auth] ExchangeDeviceCode poll #{pollCount} — {ex.ApiError?.ErrorCode ?? "unknown"}, totalMs={sw.ElapsedMilliseconds}");
                 }
             } while((apiError != null && apiError.ApiError.ErrorCode != "authorization_pending") || response == null);
-            
+
             if (apiError != null)
             {
-                throw apiError;    
+                Debug.Log($"[Auth] ExchangeDeviceCode failed after {pollCount} polls — totalMs={sw.ElapsedMilliseconds}, error={apiError.ApiError?.ErrorCode}");
+                throw apiError;
             }
 
+            Debug.Log($"[Auth] ExchangeDeviceCode success — totalMs={sw.ElapsedMilliseconds}, polls={pollCount}");
             return response;
         }
     }
