@@ -1,0 +1,185 @@
+/* NMKR brand palette */
+/* nmkr-green:   #00E673  primary accent (matches NMKR logo background) */
+/* nmkr-black:   #000000  secondary, logo glyph color */
+/* nmkr-green-hover: #1AEF85 */
+
+.root {
+    padding-top: 14px;
+    padding-right: 16px;
+    padding-bottom: 14px;
+    padding-left: 16px;
+    flex-grow: 1;
+}
+
+.header {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-top: 8px;
+    padding-right: 12px;
+    padding-bottom: 8px;
+    padding-left: 10px;
+    background-color: rgb(40, 40, 40);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+}
+
+.logo-badge {
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+    margin-right: 14px;
+    background-color: rgb(0, 230, 115);
+    border-top-left-radius: 22px;
+    border-top-right-radius: 22px;
+    border-bottom-right-radius: 22px;
+    border-bottom-left-radius: 22px;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    flex-grow: 0;
+    overflow: hidden;
+}
+
+.logo {
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+    -unity-background-scale-mode: scale-to-fit;
+    background-color: rgba(0, 0, 0, 0);
+    flex-shrink: 0;
+    flex-grow: 0;
+}
+
+.header-text {
+    flex-direction: column;
+    flex-grow: 1;
+}
+
+.title {
+    font-size: 15px;
+    -unity-font-style: bold;
+    color: rgb(255, 255, 255);
+    margin-bottom: 0;
+}
+
+.subtitle {
+    font-size: 11px;
+    color: rgb(170, 170, 170);
+    margin-top: 0;
+}
+
+.help-text {
+    white-space: normal;
+    font-size: 11px;
+    color: rgb(170, 170, 170);
+    margin-bottom: 14px;
+    -unity-text-align: middle-left;
+}
+
+.missing-container {
+    align-items: center;
+    justify-content: center;
+    padding-top: 24px;
+    padding-right: 24px;
+    padding-bottom: 24px;
+    padding-left: 24px;
+    display: none;
+}
+
+.missing-message {
+    font-size: 13px;
+    -unity-font-style: bold;
+    margin-bottom: 6px;
+}
+
+.missing-detail {
+    white-space: normal;
+    font-size: 11px;
+    color: rgb(170, 170, 170);
+    margin-bottom: 14px;
+    -unity-text-align: middle-center;
+}
+
+.form-container {
+    flex-direction: column;
+    display: none;
+}
+
+.path-label {
+    font-size: 10px;
+    color: rgb(140, 140, 140);
+    margin-bottom: 8px;
+    -unity-font-style: italic;
+}
+
+.button-row {
+    flex-direction: row;
+    justify-content: flex-end;
+    margin-top: 14px;
+    margin-bottom: 6px;
+}
+
+.primary-button {
+    background-color: rgb(0, 230, 115);
+    color: rgb(0, 0, 0);
+    -unity-font-style: bold;
+    padding-top: 7px;
+    padding-right: 14px;
+    padding-bottom: 7px;
+    padding-left: 14px;
+    margin-left: 8px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+    border-bottom-left-radius: 4px;
+    border-left-width: 0;
+    border-right-width: 0;
+    border-top-width: 0;
+    border-bottom-width: 0;
+}
+
+.primary-button:hover {
+    background-color: rgb(26, 239, 133);
+}
+
+.secondary-button {
+    background-color: rgba(0, 0, 0, 0);
+    color: rgb(220, 220, 220);
+    padding-top: 7px;
+    padding-right: 14px;
+    padding-bottom: 7px;
+    padding-left: 14px;
+    margin-left: 8px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+    border-bottom-left-radius: 4px;
+    border-left-color: rgb(0, 230, 115);
+    border-right-color: rgb(0, 230, 115);
+    border-top-color: rgb(0, 230, 115);
+    border-bottom-color: rgb(0, 230, 115);
+    border-left-width: 1px;
+    border-right-width: 1px;
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+}
+
+.secondary-button:hover {
+    background-color: rgba(0, 230, 115, 0.15);
+    color: rgb(0, 230, 115);
+}
+
+.status-label {
+    margin-top: 6px;
+    white-space: normal;
+    font-size: 11px;
+}

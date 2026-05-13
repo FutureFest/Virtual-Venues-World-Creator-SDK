@@ -1,0 +1,37 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="True">
+    <ui:VisualElement name="Root" class="root">
+        <ui:VisualElement name="Header" class="header">
+            <ui:VisualElement name="LogoBadge" class="logo-badge">
+                <ui:VisualElement name="LogoImage" class="logo" />
+            </ui:VisualElement>
+            <ui:VisualElement class="header-text">
+                <ui:Label text="NMKR Plugin Settings" class="title" />
+                <ui:Label text="Cardano NFT minting for your world" class="subtitle" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:Label text="Account credentials for this Host's NMKR Studio account. Stored as a project-local ScriptableObject under Assets/VirtualVenuesPluginConfigs/Resources/ (gitignored)." class="help-text" />
+
+        <ui:VisualElement name="MissingContainer" class="missing-container">
+            <ui:Label text="No NmkrPluginConfig found in this project." class="missing-message" />
+            <ui:Label text="Click below to create one at Assets/VirtualVenuesPluginConfigs/Resources/NmkrPluginConfig.asset." class="missing-detail" />
+            <ui:Button name="CreateButton" text="Create config" class="primary-button" />
+        </ui:VisualElement>
+
+        <ui:VisualElement name="FormContainer" class="form-container">
+            <ui:Label name="ConfigPathLabel" text="" class="path-label" />
+
+            <uie:IntegerField name="CustomerIdField" label="Customer Id" />
+            <ui:TextField name="ApiKeyField" label="API Key" password="true" />
+            <uie:EnumField name="EnvironmentField" label="Environment" />
+            <ui:TextField name="PayoutWalletAddressField" label="Payout Wallet Address" />
+            <ui:TextField name="DisplayNameField" label="Display Name" />
+
+            <ui:VisualElement class="button-row">
+                <ui:Button name="TestButton" text="Test Connection" class="secondary-button" />
+                <ui:Button name="SaveButton" text="Save" class="primary-button" />
+            </ui:VisualElement>
+
+            <ui:Label name="StatusLabel" text="" class="status-label" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>
