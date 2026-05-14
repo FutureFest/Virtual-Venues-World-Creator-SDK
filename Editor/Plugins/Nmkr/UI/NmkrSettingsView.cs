@@ -115,14 +115,33 @@ namespace VirtualVenues.Plugins.Nmkr.Editor
 
         private void BindFormToSerialized()
         {
-            _customerIdField.BindProperty(_serialized.FindProperty("_customerId"));
-            _apiKeyField.BindProperty(_serialized.FindProperty("_apiKey"));
             _environmentField.BindProperty(_serialized.FindProperty("_environment"));
-            _payoutWalletAddressField.BindProperty(_serialized.FindProperty("_payoutWalletAddress"));
-            _displayNameField.BindProperty(_serialized.FindProperty("_displayName"));
+            _environmentField.RegisterValueChangedCallback(OnEnvironmentChanged);
+            BindAccountFields(_config.Environment);
 
             string path = AssetDatabase.GetAssetPath(_config);
             if (_configPathLabel != null) { _configPathLabel.text = $"Editing: {path}"; }
+        }
+
+        private void OnEnvironmentChanged(ChangeEvent<System.Enum> evt)
+        {
+            // Re-point the account fields at the newly selected network's account.
+            BindAccountFields((NmkrEnvironment)evt.newValue);
+        }
+
+        private void BindAccountFields(NmkrEnvironment environment)
+        {
+            string prefix = environment == NmkrEnvironment.Mainnet ? "_mainnet" : "_preprod";
+
+            _customerIdField.Unbind();
+            _apiKeyField.Unbind();
+            _payoutWalletAddressField.Unbind();
+            _displayNameField.Unbind();
+
+            _customerIdField.BindProperty(_serialized.FindProperty($"{prefix}._customerId"));
+            _apiKeyField.BindProperty(_serialized.FindProperty($"{prefix}._apiKey"));
+            _payoutWalletAddressField.BindProperty(_serialized.FindProperty($"{prefix}._payoutWalletAddress"));
+            _displayNameField.BindProperty(_serialized.FindProperty($"{prefix}._displayName"));
         }
 
         private void ShowForm()

@@ -9,7 +9,7 @@
                 <ui:Label text="Cardano NFT minting for your world" class="subtitle" />
             </ui:VisualElement>
         </ui:VisualElement>
-        <ui:Label text="Account credentials for this Host's NMKR Studio account. Stored as a project-local ScriptableObject under Assets/VirtualVenuesPluginConfigs/Resources/ (gitignored)." class="help-text" />
+        <ui:Label text="Preprod and Mainnet are separate NMKR Studio accounts with separate API keys. Pick the Environment to edit that network's credentials. Stored as a project-local, gitignored ScriptableObject under Assets/VirtualVenuesPluginConfigs/." class="help-text" />
 
         <ui:VisualElement name="MissingContainer" class="missing-container">
             <ui:Label text="No NmkrPluginConfig found in this project." class="missing-message" />
@@ -20,9 +20,9 @@
         <ui:VisualElement name="FormContainer" class="form-container">
             <ui:Label name="ConfigPathLabel" text="" class="path-label" />
 
+            <uie:EnumField name="EnvironmentField" label="Environment" />
             <uie:IntegerField name="CustomerIdField" label="Customer Id" />
             <ui:TextField name="ApiKeyField" label="API Key" password="true" />
-            <uie:EnumField name="EnvironmentField" label="Environment" />
             <ui:TextField name="PayoutWalletAddressField" label="Payout Wallet Address" />
             <ui:TextField name="DisplayNameField" label="Display Name" />
 
