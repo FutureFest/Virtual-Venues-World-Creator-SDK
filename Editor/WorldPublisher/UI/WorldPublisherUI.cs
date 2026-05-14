@@ -13,6 +13,7 @@ using Auth0;
 using Auth0.AuthenticationApi.Models;
 using Auth0.Api.Credentials;
 using WorldPublisher;
+using VirtualVenues.Plugins.Nmkr.Editor;
 
 public class WorldPublisherUI : EditorWindow
 {
@@ -594,6 +595,20 @@ public class WorldPublisherUI : EditorWindow
         _publishWorldName = worldName;
         EditorPrefs.SetString(WORLD_NAME_KEY, worldName);
         ClearWorldNameError();
+
+        // NMKR pre-publish validation. No-op for scenes without NMKR content;
+        // blocks publishing when an NMKR Mint Interactable is misconfigured.
+        WorldNmkrValidator.Result nmkrResult = WorldNmkrValidator.Validate(_sceneSelector.value as SceneAsset);
+        if (!nmkrResult.Ok)
+        {
+            EditorUtility.DisplayDialog(
+                "NMKR Configuration Errors",
+                "This world cannot be published until the following NMKR issues are fixed:\n\n- "
+                    + string.Join("\n- ", nmkrResult.Errors),
+                "OK");
+            return;
+        }
+
         StartPublishing();
     }
 
