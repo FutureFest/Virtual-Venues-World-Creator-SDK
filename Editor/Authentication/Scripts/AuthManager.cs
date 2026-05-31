@@ -19,6 +19,22 @@ namespace Auth0
         public static AuthManager Instance => instance.Value;
 
         /// <summary>
+        /// Raised when an editor tool performs an explicit auth state change (login success or sign-out),
+        /// so other open tool windows can re-sync their UI and token. NOT raised on silent token refreshes:
+        /// <see cref="BaseCredentialsManager.GetCredentials"/> calls SaveCredentials on every refresh, so
+        /// raising there would cause event storms / re-entrant CheckAuth -> GetCredentials -> SaveCredentials.
+        /// </summary>
+        public static event Action AuthStateChanged;
+
+        /// <summary>
+        /// Raises <see cref="AuthStateChanged"/>. Call after an explicit login or sign-out.
+        /// </summary>
+        public static void NotifyAuthStateChanged()
+        {
+            AuthStateChanged?.Invoke();
+        }
+
+        /// <summary>
         /// Your Auth0 configuration.
         /// </summary>
         public Settings Settings { get; private set; }

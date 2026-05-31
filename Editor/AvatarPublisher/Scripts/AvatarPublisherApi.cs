@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Auth0;
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -84,6 +85,7 @@ namespace AvatarPublisher
         public string latestVersionId;
         public string latestVersionTag;
         public string defaultAvatarId;
+        public string updatedAt; // RFC3339 UTC; backend sets it on every version upload
     }
 
     [Serializable]
@@ -157,10 +159,11 @@ namespace AvatarPublisher
     {
         private const string BASE_URL = "https://jsxf2xqpn4.execute-api.us-east-1.amazonaws.com/dev";
 
-        public static string AccessToken { get; set; }
-        public static DateTime AccessTokenExpiry { get; set; }
+        // Token surface delegates to the shared EditorAuthToken so all tools read one token (no drift).
+        public static string AccessToken => EditorAuthToken.AccessToken;
+        public static DateTime AccessTokenExpiry => EditorAuthToken.AccessTokenExpiry;
 
-        public static bool IsTokenValid => !string.IsNullOrEmpty(AccessToken) && DateTime.UtcNow < AccessTokenExpiry;
+        public static bool IsTokenValid => EditorAuthToken.IsValid;
 
         /// <summary>
         /// Request presigned S3 URLs for uploading catalog files and bundles
@@ -422,9 +425,10 @@ namespace AvatarPublisher
                 progress?.Report((0.05f, "Requesting upload URLs..."));
                 var uploadUrls = await GetUploadUrlsAsync(catalogId, versionId, bundleNames);
 
-                // Use API-assigned IDs (handles new catalogs where catalogId was null)
-                string resolvedCatalogId = uploadUrls.catalogId;
-                string resolvedVersionId = uploadUrls.versionId;
+                // Prefer the caller-supplied ids (always correct for existing catalogs); fall back to the
+                // server-assigned ids for brand-new catalogs where the caller passed null/empty.
+                string resolvedCatalogId = !string.IsNullOrEmpty(catalogId) ? catalogId : uploadUrls.catalogId;
+                string resolvedVersionId = !string.IsNullOrEmpty(versionId) ? versionId : uploadUrls.versionId;
 
                 int totalFiles = 2 + bundleFiles.Count; // bin + hash + bundles
                 int filesUploaded = 0;
@@ -460,7 +464,20 @@ namespace AvatarPublisher
 
                 progress?.Report((0.95f, "Fetching catalog info..."));
                 var catalogs = await GetAllCatalogsAsync();
-                return catalogs?.FirstOrDefault(c => c.catalogId == resolvedCatalogId);
+                var summary = catalogs?.FirstOrDefault(c => c.catalogId == resolvedCatalogId);
+
+                // The catalog list is read from an eventually-consistent DynamoDB GSI, so a brand-new
+                // catalog can be missing from this immediate read. Fall back to a summary built from the
+                // authoritative resolved id (returned directly by the upload-urls call) so the publish
+                // never reports null — callers rely on this id to select/highlight the just-published catalog.
+                return summary ?? new CatalogSummary
+                {
+                    catalogId = resolvedCatalogId,
+                    name = catalogName,
+                    latestVersionId = resolvedVersionId,
+                    latestVersionTag = versionTag,
+                    updatedAt = DateTime.UtcNow.ToString("o"), // just published → sorts to the top if merged client-side
+                };
             }
             catch (Exception ex)
             {
@@ -681,20 +698,12 @@ namespace AvatarPublisher
         /// <summary>
         /// Set access token with expiry time
         /// </summary>
-        public static void SetAccessToken(string token, DateTime expiryTime)
-        {
-            AccessToken = token;
-            AccessTokenExpiry = expiryTime;
-        }
+        public static void SetAccessToken(string token, DateTime expiryTime) => EditorAuthToken.Set(token, expiryTime);
 
         /// <summary>
         /// Clear stored access token
         /// </summary>
-        public static void ClearToken()
-        {
-            AccessToken = null;
-            AccessTokenExpiry = DateTime.MinValue;
-        }
+        public static void ClearToken() => EditorAuthToken.Clear();
 
         /// <summary>
         /// Helper method to convert UnityWebRequest to Task

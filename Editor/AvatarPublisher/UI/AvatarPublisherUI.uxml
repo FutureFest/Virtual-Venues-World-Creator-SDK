@@ -26,41 +26,51 @@
 
                 <!-- Catalog Mode Selection -->
                 <ui:VisualElement class="subsection">
-                    <ui:Label text="Catalog Mode:" class="subsection-title" />
-                    <ui:RadioButtonGroup name="catalog-mode" value="0" class="catalog-mode-group">
-                        <ui:RadioButton name="mode-new" text="Create New Catalog" value="true" />
-                        <ui:RadioButton name="mode-existing" text="Add Version to Existing" />
-                    </ui:RadioButtonGroup>
+                    <ui:VisualElement class="field-row">
+                        <ui:Label text="Catalog Mode:" class="field-row-label" />
+                        <ui:RadioButtonGroup name="catalog-mode" value="0" class="catalog-mode-group">
+                            <ui:RadioButton name="mode-new" text="New" value="true" />
+                            <ui:RadioButton name="mode-existing" text="Existing" />
+                        </ui:RadioButtonGroup>
+                    </ui:VisualElement>
                 </ui:VisualElement>
 
                 <!-- New Catalog Container -->
                 <ui:VisualElement name="new-catalog-container" class="subsection">
-                    <ui:Label text="Catalog Name:" />
-                    <ui:TextField name="catalog-name-field" max-length="100" class="catalog-name-input" />
+                    <ui:VisualElement class="field-row">
+                        <ui:Label text="Catalog Name:" class="field-row-label" />
+                        <ui:TextField name="catalog-name-field" max-length="100" class="catalog-name-input" />
+                    </ui:VisualElement>
                     <ui:Label name="catalog-name-error" class="error-label" />
                 </ui:VisualElement>
 
                 <!-- Existing Catalog Container -->
                 <ui:VisualElement name="existing-catalog-container" class="subsection">
-                    <ui:Label text="Select Catalog:" />
-                    <ui:DropdownField name="catalog-dropdown" class="catalog-dropdown" />
+                    <ui:VisualElement class="field-row">
+                        <ui:Label text="Select Catalog:" class="field-row-label" />
+                        <ui:DropdownField name="catalog-dropdown" class="catalog-dropdown" />
+                    </ui:VisualElement>
                     <ui:Label name="catalog-dropdown-error" class="error-label" />
                 </ui:VisualElement>
 
                 <!-- Version Tag -->
                 <ui:VisualElement class="subsection">
-                    <ui:Label text="Version Tag:" />
-                    <ui:TextField name="version-tag-field" max-length="50" class="version-tag-input" />
+                    <ui:VisualElement class="field-row">
+                        <ui:Label text="Version Tag:" class="field-row-label" />
+                        <ui:TextField name="version-tag-field" max-length="50" class="version-tag-input" />
+                    </ui:VisualElement>
                     <ui:Label name="version-tag-error" class="error-label" />
                 </ui:VisualElement>
 
                 <!-- Build Mode Selection -->
                 <ui:VisualElement class="subsection">
-                    <ui:Label text="Build Mode:" class="subsection-title" />
-                    <ui:RadioButtonGroup name="build-mode" value="0" class="build-mode-group">
-                        <ui:RadioButton name="build-mode-auto" text="Auto Build" value="true" />
-                        <ui:RadioButton name="build-mode-manual" text="Manual (Browse)" />
-                    </ui:RadioButtonGroup>
+                    <ui:VisualElement class="field-row">
+                        <ui:Label text="Build Mode:" class="field-row-label" />
+                        <ui:RadioButtonGroup name="build-mode" value="0" class="build-mode-group">
+                            <ui:RadioButton name="build-mode-auto" text="Auto Build" value="true" />
+                            <ui:RadioButton name="build-mode-manual" text="Manual" />
+                        </ui:RadioButtonGroup>
+                    </ui:VisualElement>
                 </ui:VisualElement>
 
                 <!-- Auto Build Section -->
@@ -69,12 +79,15 @@
                     <ui:Foldout name="avatar-prefabs-foldout" text="Avatar Prefabs (0)" class="prefab-foldout">
                         <ui:VisualElement name="avatar-prefabs-container" class="prefab-container" />
                         <ui:Button name="add-avatar-prefab-button" text="+ Add Avatar Prefab" class="add-prefab-button" />
+                        <ui:Label text="Drag prefabs here (multi-select supported)" class="drag-hint" />
+                        <ui:Label text="The VirtualVenues Avatar component must be on the prefab root, with an Animator assigned." class="drag-hint" />
                     </ui:Foldout>
 
                     <!-- Cosmetic Prefabs -->
                     <ui:Foldout name="cosmetic-prefabs-foldout" text="Cosmetic Prefabs (0)" class="prefab-foldout">
                         <ui:VisualElement name="cosmetic-prefabs-container" class="prefab-container" />
                         <ui:Button name="add-cosmetic-prefab-button" text="+ Add Cosmetic Prefab" class="add-prefab-button" />
+                        <ui:Label text="Drag prefabs here (multi-select supported)" class="drag-hint" />
                     </ui:Foldout>
                     <ui:Label name="prefabs-error" class="error-label" />
                 </ui:VisualElement>

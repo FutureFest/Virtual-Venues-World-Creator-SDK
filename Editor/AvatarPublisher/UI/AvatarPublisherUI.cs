@@ -6,6 +6,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using System.Linq;
+using System.Globalization;
 using System.Collections.Generic;
 using Auth0;
 using Auth0.AuthenticationApi.Models;
@@ -84,6 +85,10 @@ public class AvatarPublisherUI : EditorWindow
     private bool _isPublishing = false;
     private bool _loggedIn = false;
 
+    // Bumped on sign-out and at the top of CheckAuth so a background refresh continuation can detect a
+    // stale auth context and bail before mutating UI. Mirrors BuildUploaderUI.
+    private int _authGen = 0;
+
     // Auth state
     private Credentials _credentials = null;
     private UserInfo _userInfo = null;
@@ -93,6 +98,9 @@ public class AvatarPublisherUI : EditorWindow
     private string _editingCatalogId = null;
     private string _editingCatalogName = null;
     private string _lastPublishedCatalogId = null;
+
+    // Guards the version-tag auto-fill while we programmatically change catalog mode / selection.
+    private bool _suppressVersionAutoFill = false;
 
     // Manual bundle files state
     private string _selectedBundleFolder = "";
@@ -111,6 +119,15 @@ public class AvatarPublisherUI : EditorWindow
     private const string BUNDLE_FOLDER_KEY = "AvatarPublisher_BundleFolder";
     private const string BUILD_MODE_KEY = "AvatarPublisher_BuildMode";
     private const string CATALOG_MODE_KEY = "AvatarPublisher_CatalogMode";
+    private const string SELECTED_CATALOG_KEY = "AvatarPublisher_SelectedCatalogId";
+
+    // Persisted UI state so it survives publishes / domain reloads (window reconstruction).
+    private const string FOLDOUT_AVATAR_PREFABS_KEY = "AvatarPublisher_FoldoutAvatarPrefabs";
+    private const string FOLDOUT_COSMETIC_PREFABS_KEY = "AvatarPublisher_FoldoutCosmeticPrefabs";
+    private const string FOLDOUT_AVATARS_META_KEY = "AvatarPublisher_FoldoutAvatarsMeta";
+    private const string FOLDOUT_COSMETICS_META_KEY = "AvatarPublisher_FoldoutCosmeticsMeta";
+    private const string AVATAR_PREFAB_GUIDS_KEY = "AvatarPublisher_AvatarPrefabGuids";
+    private const string COSMETIC_PREFAB_GUIDS_KEY = "AvatarPublisher_CosmeticPrefabGuids";
 
     private class BundleFileInfo
     {
@@ -141,7 +158,25 @@ public class AvatarPublisherUI : EditorWindow
     {
         AvatarPublisherUI window = GetWindow<AvatarPublisherUI>();
         window.titleContent = new GUIContent("Avatar Publisher");
-        window.minSize = new Vector2(450, 700);
+        window.minSize = new Vector2(460, 600);
+    }
+
+    private void OnEnable()
+    {
+        AuthManager.AuthStateChanged += OnAuthStateChanged;
+    }
+
+    private void OnDisable()
+    {
+        AuthManager.AuthStateChanged -= OnAuthStateChanged;
+    }
+
+    private void OnAuthStateChanged()
+    {
+        // OnEnable can fire before CreateGUI builds the UI; bail until our elements exist. The initial
+        // sync still happens via CreateGUI -> InitializeUI -> CheckAuth().
+        if (_authButton == null) { return; }
+        CheckAuth();
     }
 
     public void CreateGUI()
@@ -276,6 +311,28 @@ public class AvatarPublisherUI : EditorWindow
         _browseButton.clicked += OnBrowseButtonClicked;
         _addAvatarButton.clicked += OnAddAvatarClicked;
         _addCosmeticButton.clicked += OnAddCosmeticClicked;
+
+        // Persist foldout expanded state so it survives publishes / domain reloads.
+        RegisterFoldoutPersistence(_avatarPrefabsFoldout, FOLDOUT_AVATAR_PREFABS_KEY);
+        RegisterFoldoutPersistence(_cosmeticPrefabsFoldout, FOLDOUT_COSMETIC_PREFABS_KEY);
+        RegisterFoldoutPersistence(_avatarsFoldout, FOLDOUT_AVATARS_META_KEY);
+        RegisterFoldoutPersistence(_cosmeticsFoldout, FOLDOUT_COSMETICS_META_KEY);
+
+        // Multi-asset drag & drop onto the auto-build prefab lists (registered on the persistent
+        // foldouts, not the containers, which get rebuilt on every refresh).
+        RegisterPrefabDragAndDrop(_avatarPrefabsFoldout, true);
+        RegisterPrefabDragAndDrop(_cosmeticPrefabsFoldout, false);
+
+        // Auto-fill the next version when an existing catalog is selected.
+        _catalogDropdown.RegisterValueChangedCallback(OnCatalogDropdownChanged);
+    }
+
+    private void RegisterFoldoutPersistence(Foldout foldout, string prefsKey)
+    {
+        if (foldout == null) { return; }
+        // Read foldout.value (authoritative current state) rather than evt.newValue so a bubbled
+        // child event can never persist the wrong value.
+        foldout.RegisterValueChangedCallback(_ => EditorPrefs.SetBool(prefsKey, foldout.value));
     }
 
     private void InitializeUI()
@@ -312,18 +369,49 @@ public class AvatarPublisherUI : EditorWindow
 
         // Initialize catalog mode
         int savedCatalogMode = EditorPrefs.GetInt(CATALOG_MODE_KEY, 0);
-        _catalogModeGroup.value = savedCatalogMode;
+        SelectRadioButton(_catalogModeGroup, savedCatalogMode);
         UpdateCatalogModeUI(savedCatalogMode);
 
         // Initialize build mode
         int savedBuildMode = EditorPrefs.GetInt(BUILD_MODE_KEY, 0);
-        _buildModeGroup.value = savedBuildMode;
+        SelectRadioButton(_buildModeGroup, savedBuildMode);
         UpdateBuildModeUI(savedBuildMode);
 
+        // Restore foldout expanded state (default: open).
+        RestoreFoldoutState(_avatarPrefabsFoldout, FOLDOUT_AVATAR_PREFABS_KEY);
+        RestoreFoldoutState(_cosmeticPrefabsFoldout, FOLDOUT_COSMETIC_PREFABS_KEY);
+        RestoreFoldoutState(_avatarsFoldout, FOLDOUT_AVATARS_META_KEY);
+        RestoreFoldoutState(_cosmeticsFoldout, FOLDOUT_COSMETICS_META_KEY);
+
+        // Restore auto-build prefab selections (survive window reconstruction).
+        RestorePrefabsFromGuids();
+
+        // CheckAuth drives the catalog refresh (sync fast path + background), so no separate refresh here.
         CheckAuth();
-        RefreshCatalogList();
         UpdateMetadataFoldoutLabels();
         UpdatePrefabFoldoutLabels();
+    }
+
+    private void RestoreFoldoutState(Foldout foldout, string prefsKey)
+    {
+        if (foldout == null) { return; }
+        foldout.value = EditorPrefs.GetBool(prefsKey, true);
+    }
+
+    // Forces a RadioButtonGroup to visually reflect its selection. RadioButtonGroup.value is a
+    // no-op when set to the value it already holds (default 0), leaving every button unchecked on
+    // first render — so write the child RadioButtons directly (matches Unity's own RadioButtonGroup
+    // init pattern) and sync the group's int value for publish-time reads. SetValueWithoutNotify
+    // avoids re-firing OnCatalogModeChanged / OnBuildModeChanged during initialization.
+    private static void SelectRadioButton(RadioButtonGroup group, int index)
+    {
+        if (group == null) { return; }
+        var buttons = group.Query<RadioButton>().ToList();
+        for (int i = 0; i < buttons.Count; i++)
+        {
+            buttons[i].SetValueWithoutNotify(i == index);
+        }
+        group.SetValueWithoutNotify(index);
     }
 
     private void SetVersionLabel()
@@ -378,39 +466,86 @@ public class AvatarPublisherUI : EditorWindow
 
     #region Authentication
 
-    private async void CheckAuth()
+    private void CheckAuth()
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
+        int authGen = ++_authGen;
         Debug.Log("[Auth][AvatarPublisher] CheckAuth start");
 
-        _loggedIn = AuthManager.Instance.Credentials.HasValidCredentials();
-        Debug.Log($"[Auth][AvatarPublisher] hasValid={_loggedIn} — {sw.ElapsedMilliseconds}ms");
+        // Sync fast path: cached, non-expired access token in PlayerPrefs. Restores the logged-in UI
+        // before any await so the window never shows the Login button next to the publisher section.
+        if (AuthManager.Instance.Credentials.TryGetCachedCredentials(out var cached))
+        {
+            _credentials = cached;
+            _userInfo = cached.User;
+            _loggedIn = true;
+            AvatarPublisherApi.SetAccessToken(cached.AccessToken, cached.ExpiresAt);
+            UpdateAuthUI(true);
+            Debug.Log($"[Auth][AvatarPublisher] CheckAuth sync restore done — {sw.ElapsedMilliseconds}ms, expiresAt={cached.ExpiresAt:O}");
+            _ = RefreshAuthInBackgroundAsync(authGen);
+            return;
+        }
 
-        if (_loggedIn)
+        // Cached access token expired or missing. If a refresh token exists, the background pass can recover.
+        if (AuthManager.Instance.Credentials.HasValidCredentials())
+        {
+            Debug.Log($"[Auth][AvatarPublisher] no cached creds but refresh-token recovery available — {sw.ElapsedMilliseconds}ms");
+            _ = RefreshAuthInBackgroundAsync(authGen);
+            return;
+        }
+
+        _loggedIn = false;
+        _credentials = null;
+        _userInfo = null;
+        _catalogs = Array.Empty<CatalogSummary>();
+        AvatarPublisherApi.ClearToken();
+        UpdateAuthUI(false);
+        Debug.Log($"[Auth][AvatarPublisher] CheckAuth done — not logged in, {sw.ElapsedMilliseconds}ms");
+    }
+
+    private async Task RefreshAuthInBackgroundAsync(int authGen)
+    {
+        try
         {
             var stepSw = System.Diagnostics.Stopwatch.StartNew();
-            _credentials = await AuthManager.Instance.Credentials.GetCredentials();
-            Debug.Log($"[Auth][AvatarPublisher] GetCredentials done — {stepSw.ElapsedMilliseconds}ms, expiresAt={_credentials?.ExpiresAt:O}");
-
-            stepSw.Restart();
-            _userInfo = await AuthManager.Instance.Auth0.GetUserInfoAsync(_credentials.AccessToken);
-            Debug.Log($"[Auth][AvatarPublisher] GetUserInfo done — {stepSw.ElapsedMilliseconds}ms");
-
-            if (_credentials != null && !string.IsNullOrEmpty(_credentials.AccessToken))
+            var refreshed = await AuthManager.Instance.Credentials.GetCredentials();
+            if (authGen != _authGen)
             {
-                AvatarPublisherApi.SetAccessToken(_credentials.AccessToken, _credentials.ExpiresAt);
+                Debug.Log("[Auth][AvatarPublisher] refresh continuation aborted — auth generation changed");
+                return;
             }
+            Debug.Log($"[Auth][AvatarPublisher] background GetCredentials done — {stepSw.ElapsedMilliseconds}ms, expiresAt={refreshed?.ExpiresAt:O}");
 
-            Debug.Log($"[Auth][AvatarPublisher] CheckAuth ready — totalMs={sw.ElapsedMilliseconds}");
-            UpdateAuthUI(true);
-            RefreshCatalogList();
+            if (refreshed != null && !string.IsNullOrEmpty(refreshed.AccessToken))
+            {
+                _credentials = refreshed;
+                _userInfo = refreshed.User ?? _userInfo;
+                _loggedIn = true;
+                AvatarPublisherApi.SetAccessToken(refreshed.AccessToken, refreshed.ExpiresAt);
+                UpdateAuthUI(true);
+            }
         }
-        else
+        catch (Exception ex)
         {
-            AvatarPublisherApi.ClearToken();
-            UpdateAuthUI(false);
-            Debug.Log($"[Auth][AvatarPublisher] CheckAuth done — not logged in, {sw.ElapsedMilliseconds}ms");
+            if (authGen != _authGen) { return; }
+            Debug.LogWarning($"[Auth][AvatarPublisher] background credential refresh failed: {ex.Message}");
+
+            // Only flip to logged-out if PlayerPrefs itself reports no valid record. Transient network
+            // errors must not sign the user out from a still-cached valid session.
+            if (!AuthManager.Instance.Credentials.HasValidCredentials())
+            {
+                _loggedIn = false;
+                _credentials = null;
+                _userInfo = null;
+                _catalogs = Array.Empty<CatalogSummary>();
+                AvatarPublisherApi.ClearToken();
+                UpdateAuthUI(false);
+            }
+            return;
         }
+
+        if (authGen != _authGen) { return; }
+        _ = RefreshCatalogList();
     }
 
     private void UpdateAuthUI(bool isLoggedIn)
@@ -434,11 +569,12 @@ public class AvatarPublisherUI : EditorWindow
     {
         if (_loggedIn)
         {
+            _authGen++; // invalidate any in-flight background refresh
             AuthManager.Instance.Credentials.ClearCredentials();
             AvatarPublisherApi.ClearToken();
             _catalogs = Array.Empty<CatalogSummary>();
-            CheckAuth();
             ShowAuthResult("");
+            AuthManager.NotifyAuthStateChanged(); // event drives CheckAuth in every window (incl. this one)
         }
         else
         {
@@ -482,9 +618,8 @@ public class AvatarPublisherUI : EditorWindow
             AuthManager.Instance.Credentials.SaveCredentials(tokenResp, scope);
             Debug.Log($"[Auth][AvatarPublisher] credentials saved — totalMs={sw.ElapsedMilliseconds}");
 
-            CheckAuth();
-            RefreshCatalogList();
             ShowAuthResult("");
+            AuthManager.NotifyAuthStateChanged(); // event drives CheckAuth (+ catalog refresh) in every window
         }
         catch (Exception ex)
         {
@@ -525,6 +660,8 @@ public class AvatarPublisherUI : EditorWindow
     {
         UpdateCatalogModeUI(evt.newValue);
         EditorPrefs.SetInt(CATALOG_MODE_KEY, evt.newValue);
+        // Entering "Add Version to Existing" → pre-fill the next version for the selected catalog.
+        if (evt.newValue == 1) { AutoFillVersionForSelectedCatalog(); }
     }
 
     private void UpdateCatalogModeUI(int mode)
@@ -549,10 +686,56 @@ public class AvatarPublisherUI : EditorWindow
         var choices = _catalogs.Select(c => c.name ?? c.catalogId).ToList();
         _catalogDropdown.choices = choices;
 
-        if (choices.Count > 0 && _catalogDropdown.index < 0)
+        if (choices.Count == 0) { return; }
+
+        // Restore the previously-selected catalog (persisted in EditorPrefs) so a choices rebuild —
+        // e.g. on domain reload / window reconstruction — doesn't snap the selection back to the first
+        // entry. SetValueWithoutNotify avoids re-triggering version auto-fill during the restore.
+        string savedId = EditorPrefs.GetString(SELECTED_CATALOG_KEY, "");
+        int restore = !string.IsNullOrEmpty(savedId)
+            ? Array.FindIndex(_catalogs, c => c.catalogId == savedId)
+            : -1;
+
+        if (restore >= 0)
+        {
+            _catalogDropdown.SetValueWithoutNotify(choices[restore]);
+        }
+        else if (_catalogDropdown.index < 0)
         {
             _catalogDropdown.index = 0;
         }
+    }
+
+    private void OnCatalogDropdownChanged(ChangeEvent<string> evt)
+    {
+        PersistSelectedCatalog();
+        AutoFillVersionForSelectedCatalog();
+    }
+
+    // Remembers the selected catalog by id so it survives domain reloads / window reconstruction.
+    private void PersistSelectedCatalog()
+    {
+        if (_catalogDropdown == null) { return; }
+        int idx = _catalogDropdown.index;
+        if (idx >= 0 && idx < _catalogs.Length)
+        {
+            EditorPrefs.SetString(SELECTED_CATALOG_KEY, _catalogs[idx].catalogId);
+        }
+    }
+
+    // Pre-fills the version tag with the next patch of the selected catalog's latest version.
+    private void AutoFillVersionForSelectedCatalog()
+    {
+        if (_suppressVersionAutoFill) { return; }
+        if (_catalogModeGroup == null || _catalogModeGroup.value != 1) { return; } // only "Add to Existing"
+        if (_catalogDropdown == null || _versionTagField == null) { return; }
+
+        int index = _catalogDropdown.index;
+        if (index < 0 || index >= _catalogs.Length) { return; }
+
+        string next = BumpPatch(_catalogs[index].latestVersionTag);
+        _versionTagField.value = next;
+        EditorPrefs.SetString(VERSION_TAG_KEY, next);
     }
 
     #endregion
@@ -602,7 +785,7 @@ public class AvatarPublisherUI : EditorWindow
         for (int i = 0; i < _avatarPrefabs.Count; i++)
         {
             int index = i;
-            var row = CreatePrefabRow(_avatarPrefabs[i], newValue =>
+            var row = CreatePrefabRow(_avatarPrefabs[i], true, newValue =>
             {
                 _avatarPrefabs[index] = newValue;
             }, () =>
@@ -614,6 +797,7 @@ public class AvatarPublisherUI : EditorWindow
         }
 
         UpdatePrefabFoldoutLabels();
+        SavePrefabGuids();
     }
 
     private void UpdateCosmeticPrefabsUI()
@@ -623,7 +807,7 @@ public class AvatarPublisherUI : EditorWindow
         for (int i = 0; i < _cosmeticPrefabs.Count; i++)
         {
             int index = i;
-            var row = CreatePrefabRow(_cosmeticPrefabs[i], newValue =>
+            var row = CreatePrefabRow(_cosmeticPrefabs[i], false, newValue =>
             {
                 _cosmeticPrefabs[index] = newValue;
             }, () =>
@@ -635,21 +819,38 @@ public class AvatarPublisherUI : EditorWindow
         }
 
         UpdatePrefabFoldoutLabels();
+        SavePrefabGuids();
     }
 
-    private VisualElement CreatePrefabRow(GameObject currentValue, Action<GameObject> onValueChanged, Action onRemove)
+    private VisualElement CreatePrefabRow(GameObject currentValue, bool isAvatar, Action<GameObject> onValueChanged, Action onRemove)
     {
         var row = new VisualElement();
         row.AddToClassList("prefab-row");
 
         var objectField = new ObjectField();
         objectField.objectType = typeof(GameObject);
+        // Only project prefabs are valid catalog content — never scene objects.
+        objectField.allowSceneObjects = false;
+        // Set the initial value BEFORE registering the callback so rebuilds don't re-fire it.
         objectField.value = currentValue;
         objectField.AddToClassList("prefab-object-field");
         objectField.RegisterValueChangedCallback(evt =>
         {
-            onValueChanged(evt.newValue as GameObject);
+            var go = evt.newValue as GameObject;
+            if (go != null && !ValidatePrefab(go, isAvatar, out string reason))
+            {
+                ShowPrefabsError(reason);
+                // Revert without re-triggering this callback.
+                objectField.SetValueWithoutNotify(null);
+                onValueChanged(null);
+            }
+            else
+            {
+                ClearPrefabsError();
+                onValueChanged(go);
+            }
             UpdatePrefabFoldoutLabels();
+            SavePrefabGuids();
         });
         row.Add(objectField);
 
@@ -673,6 +874,176 @@ public class AvatarPublisherUI : EditorWindow
         {
             _cosmeticPrefabsFoldout.text = $"Cosmetic Prefabs ({cosmeticCount})";
         }
+    }
+
+    private void ClearPrefabsError()
+    {
+        if (_prefabsError != null) { _prefabsError.style.display = DisplayStyle.None; }
+    }
+
+    // --- Prefab validation (only project prefabs; avatars need the VirtualVenues.Avatar component) ---
+
+    private bool ValidatePrefab(GameObject go, bool isAvatar, out string reason)
+    {
+        return isAvatar ? IsValidAvatarPrefab(go, out reason) : IsValidCosmeticPrefab(go, out reason);
+    }
+
+    private static bool IsProjectPrefab(GameObject go)
+    {
+        // IsPartOfPrefabAsset is true only for the prefab asset itself (what an ObjectField with
+        // allowSceneObjects=false or a Project-window drag yields) — not scene instances or other assets.
+        return go != null && PrefabUtility.IsPartOfPrefabAsset(go);
+    }
+
+    private static bool IsValidAvatarPrefab(GameObject go, out string reason)
+    {
+        if (!IsProjectPrefab(go))
+        {
+            reason = "Only project prefabs can be added (not scene objects).";
+            return false;
+        }
+        // Fully qualified to avoid the clash with UnityEngine.Avatar. The Avatar component must be on
+        // the prefab ROOT — the runtime swap, the AvatarCustomization gates, and avatar teardown all
+        // assume root placement.
+        var avatar = go.GetComponent<VirtualVenues.Avatar>();
+        if (avatar == null)
+        {
+            reason = $"\"{go.name}\" must have a VirtualVenues Avatar component on its root object to be published as an avatar (place it on the prefab root, not a child).";
+            return false;
+        }
+        if (avatar.Animator == null)
+        {
+            reason = $"\"{go.name}\" Avatar has no Animator assigned. Assign the Animator before publishing.";
+            return false;
+        }
+        reason = null;
+        return true;
+    }
+
+    private static bool IsValidCosmeticPrefab(GameObject go, out string reason)
+    {
+        if (!IsProjectPrefab(go))
+        {
+            reason = "Only project prefabs can be added (not scene objects).";
+            return false;
+        }
+        reason = null;
+        return true;
+    }
+
+    private string FirstInvalidPrefabReason()
+    {
+        foreach (var p in _avatarPrefabs)
+        {
+            if (p == null) { continue; }
+            if (!IsValidAvatarPrefab(p, out string reason)) { return reason; }
+        }
+        foreach (var p in _cosmeticPrefabs)
+        {
+            if (p == null) { continue; }
+            if (!IsValidCosmeticPrefab(p, out string reason)) { return reason; }
+        }
+        return null;
+    }
+
+    // --- Auto-build prefab-selection persistence (survives window reconstruction) ---
+
+    private void SavePrefabGuids()
+    {
+        EditorPrefs.SetString(AVATAR_PREFAB_GUIDS_KEY, SerializePrefabGuids(_avatarPrefabs));
+        EditorPrefs.SetString(COSMETIC_PREFAB_GUIDS_KEY, SerializePrefabGuids(_cosmeticPrefabs));
+    }
+
+    private static string SerializePrefabGuids(List<GameObject> prefabs)
+    {
+        var guids = new List<string>();
+        foreach (var prefab in prefabs)
+        {
+            if (prefab == null) { continue; }
+            string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(prefab));
+            if (!string.IsNullOrEmpty(guid)) { guids.Add(guid); }
+        }
+        return string.Join(",", guids);
+    }
+
+    private void RestorePrefabsFromGuids()
+    {
+        RestorePrefabList(_avatarPrefabs, EditorPrefs.GetString(AVATAR_PREFAB_GUIDS_KEY, ""));
+        RestorePrefabList(_cosmeticPrefabs, EditorPrefs.GetString(COSMETIC_PREFAB_GUIDS_KEY, ""));
+        UpdateAvatarPrefabsUI();
+        UpdateCosmeticPrefabsUI();
+    }
+
+    private static void RestorePrefabList(List<GameObject> target, string serialized)
+    {
+        target.Clear();
+        if (string.IsNullOrEmpty(serialized)) { return; }
+
+        foreach (var guid in serialized.Split(','))
+        {
+            if (string.IsNullOrEmpty(guid)) { continue; }
+            string path = AssetDatabase.GUIDToAssetPath(guid);
+            if (string.IsNullOrEmpty(path)) { continue; }
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (prefab != null) { target.Add(prefab); }
+        }
+    }
+
+    // --- Multi-asset drag & drop onto the prefab lists (registered on the persistent foldout) ---
+
+    private void RegisterPrefabDragAndDrop(Foldout foldout, bool isAvatar)
+    {
+        if (foldout == null) { return; }
+
+        foldout.RegisterCallback<DragUpdatedEvent>(evt =>
+        {
+            bool anyValid = DragAndDrop.objectReferences.Any(obj =>
+                obj is GameObject go && ValidatePrefab(go, isAvatar, out _));
+            DragAndDrop.visualMode = anyValid ? DragAndDropVisualMode.Copy : DragAndDropVisualMode.Rejected;
+            evt.StopPropagation();
+        });
+
+        foldout.RegisterCallback<DragPerformEvent>(evt =>
+        {
+            DragAndDrop.AcceptDrag();
+
+            var targetList = isAvatar ? _avatarPrefabs : _cosmeticPrefabs;
+            // Dedupe by GUID against existing entries AND within the dropped batch.
+            var seenGuids = new HashSet<string>(
+                targetList.Where(p => p != null)
+                          .Select(p => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(p))));
+
+            int added = 0;
+            int rejected = 0;
+            foreach (var obj in DragAndDrop.objectReferences)
+            {
+                if (!(obj is GameObject go)) { continue; }
+                if (!ValidatePrefab(go, isAvatar, out _)) { rejected++; continue; }
+
+                string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(go));
+                if (string.IsNullOrEmpty(guid) || seenGuids.Contains(guid)) { continue; }
+
+                seenGuids.Add(guid);
+                targetList.Add(go);
+                added++;
+            }
+
+            if (added > 0)
+            {
+                ClearPrefabsError();
+                if (isAvatar) { UpdateAvatarPrefabsUI(); }
+                else { UpdateCosmeticPrefabsUI(); }
+                // Keep the foldout open so the user sees what they just dropped.
+                foldout.value = true;
+            }
+            else if (rejected > 0)
+            {
+                ShowPrefabsError(isAvatar
+                    ? "Dropped items must be project prefabs with a VirtualVenues Avatar component."
+                    : "Dropped items must be project prefabs.");
+            }
+            evt.StopPropagation();
+        });
     }
 
     private List<AvatarMetadataEntry> BuildAvatarMetadataFromPrefabs()
@@ -948,17 +1319,19 @@ public class AvatarPublisherUI : EditorWindow
 
         entry.Add(header);
 
-        // ID field
-        entry.Add(CreateMetadataFieldRow("ID:", id, newValue => onValueChanged(newValue, name, gameId, guid)));
+        // ID + Name side by side
+        var topPair = new VisualElement();
+        topPair.AddToClassList("metadata-field-pair");
+        topPair.Add(CreateMetadataFieldRow("ID:", id, newValue => onValueChanged(newValue, name, gameId, guid)));
+        topPair.Add(CreateMetadataFieldRow("Name:", name, newValue => onValueChanged(id, newValue, gameId, guid)));
+        entry.Add(topPair);
 
-        // Name field
-        entry.Add(CreateMetadataFieldRow("Name:", name, newValue => onValueChanged(id, newValue, gameId, guid)));
-
-        // GameId field
-        entry.Add(CreateMetadataFieldRow("GameId:", gameId, newValue => onValueChanged(id, name, newValue, guid)));
-
-        // GUID field
-        entry.Add(CreateMetadataFieldRow("GUID:", guid, newValue => onValueChanged(id, name, gameId, newValue)));
+        // GameId + GUID side by side
+        var bottomPair = new VisualElement();
+        bottomPair.AddToClassList("metadata-field-pair");
+        bottomPair.Add(CreateMetadataFieldRow("GameId:", gameId, newValue => onValueChanged(id, name, newValue, guid)));
+        bottomPair.Add(CreateMetadataFieldRow("GUID:", guid, newValue => onValueChanged(id, name, gameId, newValue)));
+        entry.Add(bottomPair);
 
         return entry;
     }
@@ -997,7 +1370,7 @@ public class AvatarPublisherUI : EditorWindow
 
     #region Catalog List
 
-    private async void RefreshCatalogList()
+    private async Task RefreshCatalogList()
     {
         if (!_loggedIn || !AvatarPublisherApi.IsTokenValid) { return; }
 
@@ -1018,6 +1391,27 @@ public class AvatarPublisherUI : EditorWindow
         }
     }
 
+    // The catalog list comes from a DynamoDB GSI (eventually consistent), so a just-created catalog can
+    // be missing from the first read after publishing. Refresh a few times until it appears. Returns
+    // immediately for updates (already present) and when no id is available.
+    private async Task RefreshCatalogListUntilPresent(string catalogId)
+    {
+        const int maxAttempts = 5;
+        for (int attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            // Window closed mid-publish, or the session lapsed → stop. RefreshCatalogList no-ops when
+            // logged out, so without this guard the loop would just burn its delays for nothing.
+            if (this == null || !_loggedIn || !AvatarPublisherApi.IsTokenValid) { return; }
+
+            await RefreshCatalogList();
+
+            if (string.IsNullOrEmpty(catalogId)) { return; }
+            if (_catalogs.Any(c => c.catalogId == catalogId)) { return; }
+
+            if (attempt < maxAttempts - 1) { await Task.Delay(400); }
+        }
+    }
+
     private void UpdateCatalogListUI()
     {
         if (_catalogListContainer == null) { return; }
@@ -1032,7 +1426,11 @@ public class AvatarPublisherUI : EditorWindow
 
         if (_catalogListEmptyLabel != null) { _catalogListEmptyLabel.style.display = DisplayStyle.None; }
 
-        var sortedCatalogs = _catalogs.OrderBy(c => c.name).ToArray();
+        // Most-recently-updated first (updatedAt is set on every version publish), name as tiebreaker.
+        var sortedCatalogs = _catalogs
+            .OrderByDescending(c => TryParseTimestamp(c.updatedAt, out var dt) ? dt : DateTime.MinValue)
+            .ThenBy(c => c.name)
+            .ToArray();
 
         foreach (var catalog in sortedCatalogs)
         {
@@ -1040,6 +1438,10 @@ public class AvatarPublisherUI : EditorWindow
             _catalogListContainer.Add(card);
         }
     }
+
+    // Parses the RFC3339 updatedAt the catalog API returns. Returns false for empty/legacy values.
+    private static bool TryParseTimestamp(string value, out DateTime dt) =>
+        DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out dt);
 
     private VisualElement CreateCatalogCard(CatalogSummary catalog)
     {
@@ -1083,6 +1485,13 @@ public class AvatarPublisherUI : EditorWindow
             var idLabel = new Label(catalog.catalogId);
             idLabel.AddToClassList("catalog-id");
             infoContainer.Add(idLabel);
+
+            if (TryParseTimestamp(catalog.updatedAt, out var updated))
+            {
+                var dateLabel = new Label($"Updated {updated.ToLocalTime():MMM d, yyyy}");
+                dateLabel.AddToClassList("catalog-date");
+                infoContainer.Add(dateLabel);
+            }
 
             headerRow.Add(infoContainer);
 
@@ -1148,7 +1557,7 @@ public class AvatarPublisherUI : EditorWindow
             await AvatarPublisherApi.RenameCatalogAsync(catalogId, _editingCatalogName.Trim());
             _editingCatalogId = null;
             _editingCatalogName = null;
-            RefreshCatalogList();
+            _ = RefreshCatalogList();
             EditorUtility.DisplayDialog("Success", "Catalog renamed successfully!", "OK");
         }
         catch (Exception ex)
@@ -1172,7 +1581,7 @@ public class AvatarPublisherUI : EditorWindow
         try
         {
             await AvatarPublisherApi.DeleteCatalogAsync(catalogId);
-            RefreshCatalogList();
+            _ = RefreshCatalogList();
             EditorUtility.DisplayDialog("Success", "Catalog deleted successfully!", "OK");
         }
         catch (CatalogInUseException)
@@ -1273,6 +1682,17 @@ public class AvatarPublisherUI : EditorWindow
                 ShowPrefabsError("Please add at least one avatar or cosmetic prefab.");
                 isValid = false;
             }
+            else
+            {
+                // Backstop: every selected prefab must still pass validation.
+                string invalidReason = FirstInvalidPrefabReason();
+                if (!string.IsNullOrEmpty(invalidReason))
+                {
+                    Debug.LogWarning($"[AvatarPublisher] Validation failed: invalid prefab — {invalidReason}");
+                    ShowPrefabsError(invalidReason);
+                    isValid = false;
+                }
+            }
         }
         else
         {
@@ -1353,9 +1773,14 @@ public class AvatarPublisherUI : EditorWindow
     private async void StartAutoBuildAndPublish()
     {
         _isPublishing = true;
+        // Lock domain reloads for the whole publish: BuildForWebGPU switches the active build target
+        // (and restores it), which would otherwise trigger a reload that tears down this async flow
+        // before upload/confirm complete. Mirrors VirtualVenuesBuildUploader.BuildUploaderUI.
+        AcquireAssemblyLock();
         _publishButton.SetEnabled(false);
         _progressSection.style.display = DisplayStyle.Flex;
         UpdateProgress(0f, "Starting auto build...");
+        Debug.Log("[AvatarPublish] Auto build & publish started.");
 
         try
         {
@@ -1416,6 +1841,7 @@ public class AvatarPublisherUI : EditorWindow
                 throw new Exception($"Addressables build failed: {buildResult.Error}");
             }
 
+            Debug.Log($"[AvatarPublish] Addressables build complete — {buildResult.BundleCount} bundle(s); proceeding to upload...");
             UpdateProgress(0.5f, "Scanning build output...");
 
             // Get build output files
@@ -1505,7 +1931,7 @@ public class AvatarPublisherUI : EditorWindow
 
             await Task.Delay(500);
 
-            RefreshCatalogList();
+            await PostPublishAdvanceAsync(uploadedCatalog, versionTag);
             EditorUtility.DisplayDialog("Success",
                 $"Catalog \"{uploadedCatalog?.name ?? catalogName}\" published successfully!\n\nVersion: {versionTag}",
                 "OK");
@@ -1523,6 +1949,7 @@ public class AvatarPublisherUI : EditorWindow
         }
         finally
         {
+            ReleaseAssemblyLock();
             _isPublishing = false;
             _publishButton.SetEnabled(true);
             _progressSection.style.display = DisplayStyle.None;
@@ -1532,9 +1959,13 @@ public class AvatarPublisherUI : EditorWindow
     private async void StartManualPublishing()
     {
         _isPublishing = true;
+        // Consistency with the auto-build path; manual publishing doesn't switch platforms, but the
+        // lock is cheap and the guard makes a redundant acquire a no-op.
+        AcquireAssemblyLock();
         _publishButton.SetEnabled(false);
         _progressSection.style.display = DisplayStyle.Flex;
         UpdateProgress(0f, "Starting upload...");
+        Debug.Log("[AvatarPublish] Manual publish started.");
 
         try
         {
@@ -1623,7 +2054,7 @@ public class AvatarPublisherUI : EditorWindow
 
             await Task.Delay(500);
 
-            RefreshCatalogList();
+            await PostPublishAdvanceAsync(uploadedCatalog, versionTag);
             EditorUtility.DisplayDialog("Success",
                 $"Catalog \"{uploadedCatalog?.name ?? catalogName}\" published successfully!\n\nVersion: {versionTag}",
                 "OK");
@@ -1641,6 +2072,7 @@ public class AvatarPublisherUI : EditorWindow
         }
         finally
         {
+            ReleaseAssemblyLock();
             _isPublishing = false;
             _publishButton.SetEnabled(true);
             _progressSection.style.display = DisplayStyle.None;
@@ -1651,6 +2083,115 @@ public class AvatarPublisherUI : EditorWindow
     {
         _progressBar.value = value * 100;
         _progressMessage.text = message;
+    }
+
+    // Tracks pairing of LockReloadAssemblies/UnlockReloadAssemblies during a publish so a build-target
+    // switch (in BuildForWebGPU) can't trigger a domain reload that aborts the in-flight async publish.
+    // Mirrors VirtualVenuesBuildUploader.BuildUploaderUI.
+    private bool _holdsAssemblyLock = false;
+
+    private void AcquireAssemblyLock()
+    {
+        if (_holdsAssemblyLock) { return; }
+        EditorApplication.LockReloadAssemblies();
+        _holdsAssemblyLock = true;
+    }
+
+    private void ReleaseAssemblyLock()
+    {
+        if (!_holdsAssemblyLock) { return; }
+        EditorApplication.UnlockReloadAssemblies();
+        _holdsAssemblyLock = false;
+    }
+
+    // After a successful publish, prep the form for the next publish: switch to "Add Version to
+    // Existing", select the just-published catalog, and pre-fill the next patch version.
+    private async Task PostPublishAdvanceAsync(CatalogSummary publishedCatalog, string publishedVersionTag)
+    {
+        string publishedCatalogId = publishedCatalog?.catalogId;
+
+        // The catalog list is read from an eventually-consistent DynamoDB GSI, so a brand-new catalog
+        // can be absent from the first read after publishing. Refresh until it appears (bounded).
+        await RefreshCatalogListUntilPresent(publishedCatalogId);
+
+        // The window may have been closed (or the session lapsed) during the awaits above — bail before
+        // touching UI Toolkit state, which would NRE on a torn-down window and surface a misleading
+        // "Publish failed" dialog even though the publish succeeded.
+        if (this == null) { return; }
+
+        // If the GSI still hasn't surfaced the just-published catalog (propagation can outlast the bounded
+        // retry, especially for a brand-new catalog), merge in the authoritative summary we already hold so
+        // the list and dropdown can select it now. The next natural refresh reconciles with the server copy.
+        if (!string.IsNullOrEmpty(publishedCatalogId)
+            && Array.FindIndex(_catalogs, c => c.catalogId == publishedCatalogId) < 0)
+        {
+            _catalogs = new List<CatalogSummary>(_catalogs) { publishedCatalog }.ToArray();
+            UpdateCatalogListUI();
+        }
+
+        int index = Array.FindIndex(_catalogs, c => c.catalogId == publishedCatalogId);
+        if (index < 0)
+        {
+            // Only reachable if the publish returned no id at all — leave the form as the user left it.
+            Debug.LogWarning($"[AvatarPublisher] Just-published catalog '{publishedCatalogId}' could not be resolved; leaving the form unchanged.");
+            return;
+        }
+
+        _suppressVersionAutoFill = true;
+        try
+        {
+            // Persist the selection first so UpdateCatalogModeUI's dropdown rebuild restores it, and so
+            // it survives a later reload.
+            EditorPrefs.SetString(SELECTED_CATALOG_KEY, publishedCatalogId);
+            SelectRadioButton(_catalogModeGroup, 1); // Add Version to Existing
+            EditorPrefs.SetInt(CATALOG_MODE_KEY, 1);
+            UpdateCatalogModeUI(1);
+
+            _catalogDropdown.index = index;
+
+            // Pre-fill the next patch of the version we actually published (authoritative), not the API
+            // response. Only here — where the catalog is selected — so version and selection stay in sync.
+            string bumped = BumpPatch(publishedVersionTag);
+            _versionTagField.value = bumped;
+            EditorPrefs.SetString(VERSION_TAG_KEY, bumped);
+        }
+        finally
+        {
+            _suppressVersionAutoFill = false;
+        }
+    }
+
+    // Increments the patch component of a semver string. Pre-release/build suffixes are dropped;
+    // missing components default to 0; unparseable input resets to "1.0.0".
+    private static string BumpPatch(string version)
+    {
+        if (string.IsNullOrWhiteSpace(version)) { return "1.0.0"; }
+
+        string core = version.Trim();
+        int suffix = core.IndexOfAny(new[] { '-', '+' });
+        if (suffix >= 0) { core = core.Substring(0, suffix); }
+
+        string[] parts = core.Split('.');
+        if (!TryParseLeadingInt(parts.Length > 0 ? parts[0] : "", out int major))
+        {
+            return "1.0.0"; // not a recognizable version — start fresh
+        }
+        TryParseLeadingInt(parts.Length > 1 ? parts[1] : "", out int minor);
+        TryParseLeadingInt(parts.Length > 2 ? parts[2] : "", out int patch);
+
+        return $"{major}.{minor}.{patch + 1}";
+    }
+
+    private static bool TryParseLeadingInt(string s, out int value)
+    {
+        value = 0;
+        if (string.IsNullOrEmpty(s)) { return false; }
+
+        int i = 0;
+        while (i < s.Length && char.IsDigit(s[i])) { i++; }
+        if (i == 0) { return false; }
+
+        return int.TryParse(s.Substring(0, i), out value);
     }
 
     #endregion

@@ -14,6 +14,7 @@ using Auth0.AuthenticationApi.Models;
 using Auth0.Api.Credentials;
 using WorldPublisher;
 using VirtualVenues.Plugins.Nmkr.Editor;
+using VirtualVenues.Editor.ProjectSetup;
 
 public class WorldPublisherUI : EditorWindow
 {
@@ -41,9 +42,18 @@ public class WorldPublisherUI : EditorWindow
     private ProgressBar _progressBar;
     private Label _versionLabel;
 
+    // Project setup banner
+    private VisualElement _setupBanner;
+    private Label _setupBannerMessage;
+    private Button _setupFixButton;
+
     // State
     private bool _isPublishing = false;
     private bool _loggedIn = false;
+
+    // Bumped on sign-out and at the top of CheckAuth so a background refresh continuation can detect a
+    // stale auth context and bail before mutating UI. Mirrors BuildUploaderUI.
+    private int _authGen = 0;
     private int _currentStep = 0;
     private string _versionedBundleName;
     private string _outputFolder = "Assets/WorldMapAssetBundles";
@@ -74,6 +84,24 @@ public class WorldPublisherUI : EditorWindow
         WorldPublisherUI window = GetWindow<WorldPublisherUI>();
         window.titleContent = new GUIContent("World Publisher");
         window.minSize = new Vector2(400, 600);
+    }
+
+    private void OnEnable()
+    {
+        AuthManager.AuthStateChanged += OnAuthStateChanged;
+    }
+
+    private void OnDisable()
+    {
+        AuthManager.AuthStateChanged -= OnAuthStateChanged;
+    }
+
+    private void OnAuthStateChanged()
+    {
+        // OnEnable can fire before CreateGUI builds the UI; bail until our elements exist. The initial
+        // sync still happens via CreateGUI -> InitializeUI -> CheckAuth().
+        if (_authButton == null) { return; }
+        CheckAuth();
     }
 
     public void CreateGUI()
@@ -137,6 +165,10 @@ public class WorldPublisherUI : EditorWindow
         _progressMessage = root.Q<Label>("progress-message");
         _progressBar = root.Q<ProgressBar>("progress-bar");
         _versionLabel = root.Q<Label>("version-label");
+
+        _setupBanner = root.Q<VisualElement>("setup-banner");
+        _setupBannerMessage = root.Q<Label>("setup-banner-message");
+        _setupFixButton = root.Q<Button>("setup-fix-button");
     }
 
     private void SetupEventHandlers()
@@ -145,6 +177,45 @@ public class WorldPublisherUI : EditorWindow
         _verificationUrlButton.clicked += () => Application.OpenURL(_verificationUrlButton.text);
         _copyCodeButton.clicked += () => EditorGUIUtility.systemCopyBuffer = _userCodeField.value;
         _publishButton.clicked += OnPublishButtonClicked;
+
+        if (_setupFixButton != null) { _setupFixButton.clicked += OnSetupFixClicked; }
+    }
+
+    private void OnSetupFixClicked()
+    {
+        ProjectSetupWindow.ShowWindow();
+        UpdateSetupBanner();
+    }
+
+    /// <summary>
+    /// Shows a non-blocking warning, listing exactly which rendering settings would make uploaded worlds
+    /// render pink in the WebGPU client. Only shown in creator projects (SDK installed as a package) —
+    /// the SDK's own development repo uses a different, intentional quality setup. Publishing is never blocked.
+    /// </summary>
+    private void UpdateSetupBanner()
+    {
+        if (_setupBanner == null) { return; }
+
+        if (!ProjectSetupInstaller.IsConsumerProject())
+        {
+            _setupBanner.style.display = DisplayStyle.None;
+            return;
+        }
+
+        System.Collections.Generic.List<string> issues = ProjectSetupInstaller.GetCriticalIssues();
+        if (issues.Count == 0)
+        {
+            _setupBanner.style.display = DisplayStyle.None;
+            return;
+        }
+
+        _setupBanner.style.display = DisplayStyle.Flex;
+        if (_setupBannerMessage != null)
+        {
+            _setupBannerMessage.text =
+                "This project isn't set up for VirtualVenues — worlds may render pink. Needs fixing:\n• " +
+                string.Join("\n• ", issues);
+        }
     }
 
     private void InitializeUI()
@@ -160,9 +231,10 @@ public class WorldPublisherUI : EditorWindow
             _worldNameField.value = EditorPrefs.GetString(WORLD_NAME_KEY, "");
         }
 
+        // CheckAuth drives the world-list refresh (sync fast path + background), so no separate refresh here.
         CheckAuth();
         PrePopulateSceneSelection();
-        RefreshWorldList();
+        UpdateSetupBanner();
     }
 
     private void SetVersionLabel()
@@ -220,39 +292,86 @@ public class WorldPublisherUI : EditorWindow
         public string version;
     }
 
-    private async void CheckAuth()
+    private void CheckAuth()
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
+        int authGen = ++_authGen;
         Debug.Log("[Auth][WorldPublisher] CheckAuth start");
 
-        _loggedIn = AuthManager.Instance.Credentials.HasValidCredentials();
-        Debug.Log($"[Auth][WorldPublisher] hasValid={_loggedIn} — {sw.ElapsedMilliseconds}ms");
+        // Sync fast path: cached, non-expired access token in PlayerPrefs. Restores the logged-in UI
+        // before any await so the window never shows the Login button next to the publisher section.
+        if (AuthManager.Instance.Credentials.TryGetCachedCredentials(out var cached))
+        {
+            _credentials = cached;
+            _userInfo = cached.User;
+            _loggedIn = true;
+            WorldPublisherApi.SetAccessToken(cached.AccessToken, cached.ExpiresAt);
+            UpdateAuthUI(true);
+            Debug.Log($"[Auth][WorldPublisher] CheckAuth sync restore done — {sw.ElapsedMilliseconds}ms, expiresAt={cached.ExpiresAt:O}");
+            _ = RefreshAuthInBackgroundAsync(authGen);
+            return;
+        }
 
-        if (_loggedIn)
+        // Cached access token expired or missing. If a refresh token exists, the background pass can recover.
+        if (AuthManager.Instance.Credentials.HasValidCredentials())
+        {
+            Debug.Log($"[Auth][WorldPublisher] no cached creds but refresh-token recovery available — {sw.ElapsedMilliseconds}ms");
+            _ = RefreshAuthInBackgroundAsync(authGen);
+            return;
+        }
+
+        _loggedIn = false;
+        _credentials = null;
+        _userInfo = null;
+        _worlds = Array.Empty<World>();
+        WorldPublisherApi.ClearToken();
+        UpdateAuthUI(false);
+        Debug.Log($"[Auth][WorldPublisher] CheckAuth done — not logged in, {sw.ElapsedMilliseconds}ms");
+    }
+
+    private async Task RefreshAuthInBackgroundAsync(int authGen)
+    {
+        try
         {
             var stepSw = System.Diagnostics.Stopwatch.StartNew();
-            _credentials = await AuthManager.Instance.Credentials.GetCredentials();
-            Debug.Log($"[Auth][WorldPublisher] GetCredentials done — {stepSw.ElapsedMilliseconds}ms, expiresAt={_credentials?.ExpiresAt:O}");
-
-            stepSw.Restart();
-            _userInfo = await AuthManager.Instance.Auth0.GetUserInfoAsync(_credentials.AccessToken);
-            Debug.Log($"[Auth][WorldPublisher] GetUserInfo done — {stepSw.ElapsedMilliseconds}ms");
-
-            if (_credentials != null && !string.IsNullOrEmpty(_credentials.AccessToken))
+            var refreshed = await AuthManager.Instance.Credentials.GetCredentials();
+            if (authGen != _authGen)
             {
-                WorldPublisherApi.SetAccessToken(_credentials.AccessToken, _credentials.ExpiresAt);
+                Debug.Log("[Auth][WorldPublisher] refresh continuation aborted — auth generation changed");
+                return;
             }
+            Debug.Log($"[Auth][WorldPublisher] background GetCredentials done — {stepSw.ElapsedMilliseconds}ms, expiresAt={refreshed?.ExpiresAt:O}");
 
-            Debug.Log($"[Auth][WorldPublisher] CheckAuth ready — totalMs={sw.ElapsedMilliseconds}");
-            UpdateAuthUI(true);
-            RefreshWorldList();
+            if (refreshed != null && !string.IsNullOrEmpty(refreshed.AccessToken))
+            {
+                _credentials = refreshed;
+                _userInfo = refreshed.User ?? _userInfo;
+                _loggedIn = true;
+                WorldPublisherApi.SetAccessToken(refreshed.AccessToken, refreshed.ExpiresAt);
+                UpdateAuthUI(true);
+            }
         }
-        else
+        catch (Exception ex)
         {
-            WorldPublisherApi.ClearToken();
-            UpdateAuthUI(false);
-            Debug.Log($"[Auth][WorldPublisher] CheckAuth done — not logged in, {sw.ElapsedMilliseconds}ms");
+            if (authGen != _authGen) { return; }
+            Debug.LogWarning($"[Auth][WorldPublisher] background credential refresh failed: {ex.Message}");
+
+            // Only flip to logged-out if PlayerPrefs itself reports no valid record. Transient network
+            // errors must not sign the user out from a still-cached valid session.
+            if (!AuthManager.Instance.Credentials.HasValidCredentials())
+            {
+                _loggedIn = false;
+                _credentials = null;
+                _userInfo = null;
+                _worlds = Array.Empty<World>();
+                WorldPublisherApi.ClearToken();
+                UpdateAuthUI(false);
+            }
+            return;
         }
+
+        if (authGen != _authGen) { return; }
+        RefreshWorldList();
     }
 
     private void UpdateAuthUI(bool isLoggedIn)
@@ -277,11 +396,12 @@ public class WorldPublisherUI : EditorWindow
         if (_loggedIn)
         {
             // Sign out
+            _authGen++; // invalidate any in-flight background refresh
             AuthManager.Instance.Credentials.ClearCredentials();
             WorldPublisherApi.ClearToken();
             _worlds = Array.Empty<World>();
-            CheckAuth();
             ShowAuthResult("");
+            AuthManager.NotifyAuthStateChanged(); // event drives CheckAuth in every window (incl. this one)
         }
         else
         {
@@ -326,9 +446,8 @@ public class WorldPublisherUI : EditorWindow
             AuthManager.Instance.Credentials.SaveCredentials(tokenResp, scope);
             Debug.Log($"[Auth][WorldPublisher] credentials saved — totalMs={sw.ElapsedMilliseconds}");
 
-            CheckAuth();
-            RefreshWorldList();
             ShowAuthResult("");
+            AuthManager.NotifyAuthStateChanged(); // event drives CheckAuth (+ world refresh) in every window
         }
         catch (Exception ex)
         {

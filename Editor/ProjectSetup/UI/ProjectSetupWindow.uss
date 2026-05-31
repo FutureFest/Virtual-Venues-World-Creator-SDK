@@ -1,0 +1,127 @@
+.ps-container {
+    padding: 12px;
+    flex-grow: 1;
+}
+
+.ps-title {
+    font-size: 16px;
+    -unity-font-style: bold;
+    color: #D4D4D4;
+    margin-bottom: 4px;
+}
+
+.ps-intro {
+    font-size: 11px;
+    color: #B0B0B0;
+    white-space: normal;
+    margin-bottom: 8px;
+}
+
+.ps-summary {
+    font-size: 12px;
+    -unity-font-style: bold;
+    white-space: normal;
+    padding: 8px;
+    margin-bottom: 8px;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+}
+
+.ps-checklist-scroll {
+    flex-grow: 1;
+    min-height: 180px;
+    margin-bottom: 8px;
+}
+
+/* One requirement row */
+.setup-row {
+    flex-direction: row;
+    align-items: center;
+    padding: 6px 8px;
+    margin: 3px 0;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+}
+
+.setup-row-icon {
+    width: 18px;
+    font-size: 14px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    margin-right: 6px;
+}
+
+.setup-row-title {
+    font-size: 12px;
+    color: #E0E0E0;
+}
+
+.setup-row-detail {
+    font-size: 10px;
+    color: #909090;
+    white-space: normal;
+}
+
+.setup-row-fix {
+    width: 56px;
+    height: 22px;
+    margin-left: 6px;
+}
+
+.setup-row-fix:disabled {
+    opacity: 0.4;
+}
+
+/* Action buttons */
+.ps-buttons {
+    flex-direction: row;
+    margin: 4px 0 8px 0;
+}
+
+.ps-primary {
+    flex-grow: 1;
+    height: 30px;
+    background-color: #2196F3;
+    color: white;
+    -unity-font-style: bold;
+    border-radius: 3px;
+}
+
+.ps-primary:hover {
+    background-color: #1976D2;
+}
+
+.ps-primary:disabled {
+    background-color: #757575;
+    color: #B0B0B0;
+}
+
+.ps-secondary {
+    width: 90px;
+    height: 30px;
+    margin-left: 6px;
+    border-radius: 3px;
+}
+
+/* Log */
+.ps-log-title {
+    font-size: 12px;
+    -unity-font-style: bold;
+    color: #B8B8B8;
+    margin-bottom: 2px;
+}
+
+.ps-log {
+    min-height: 80px;
+    max-height: 140px;
+    background-color: rgba(0, 0, 0, 0.25);
+    border-radius: 4px;
+    padding: 4px 6px;
+}
+
+.ps-log Label {
+    font-size: 10px;
+    color: #C0C0C0;
+    white-space: normal;
+    margin: 1px 0;
+}

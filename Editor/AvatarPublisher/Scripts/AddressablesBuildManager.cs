@@ -182,6 +182,33 @@ namespace VirtualVenues.Editor.AvatarPublisher
         /// </summary>
         public static BuildResult BuildForWebGPU(IProgress<(float progress, string message)> progress = null)
         {
+            // Addressables builds for the editor's active build target, so the avatar bundles
+            // must be built with Web active to load in the WebGPU UPC client. Switch the active
+            // platform here the same way the Build Uploader does for UPC builds. Remember the
+            // developer's current platform so we can restore it afterwards — leaving the project
+            // on WebGL triggers surprise reimports/domain reloads that wipe the publisher window.
+            BuildTarget originalTarget = EditorUserBuildSettings.activeBuildTarget;
+            BuildTargetGroup originalGroup = EditorUserBuildSettings.selectedBuildTargetGroup;
+            bool switchedTarget = false;
+
+            if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.WebGL)
+            {
+                progress?.Report((0.05f, "Switching to WebGL platform..."));
+                Debug.Log("Switching to WebGL platform for avatar catalog build...");
+                bool switched = EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.WebGL, BuildTarget.WebGL);
+                if (!switched)
+                {
+                    return new BuildResult
+                    {
+                        Success = false,
+                        Error = "Failed to switch the active build target to WebGL. " +
+                                "Ensure Web Build Support is installed (Unity Hub > Add Modules), then try again.",
+                        OutputPath = null
+                    };
+                }
+                switchedTarget = true;
+            }
+
             var settings = GetOrCreateSettings();
 
             progress?.Report((0.1f, "Preparing build..."));
@@ -241,6 +268,14 @@ namespace VirtualVenues.Editor.AvatarPublisher
             {
                 // Restore previous settings
                 AddressableAssetSettingsDefaultObject.Settings = previousSettings;
+
+                // Restore the developer's original build target if we switched it, so publishing
+                // avatars doesn't silently leave the project on WebGL.
+                if (switchedTarget && EditorUserBuildSettings.activeBuildTarget != originalTarget)
+                {
+                    Debug.Log($"Restoring active build target to {originalTarget}...");
+                    EditorUserBuildSettings.SwitchActiveBuildTarget(originalGroup, originalTarget);
+                }
             }
         }
 

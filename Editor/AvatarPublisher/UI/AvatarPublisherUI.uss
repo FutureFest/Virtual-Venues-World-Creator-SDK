@@ -4,15 +4,15 @@
 }
 
 .section {
-    margin-bottom: 20px;
-    padding: 10px;
+    margin-bottom: 10px;
+    padding: 8px;
     background-color: rgba(0, 0, 0, 0.1);
     border-radius: 4px;
 }
 
 .subsection {
-    margin: 10px 0;
-    padding: 8px;
+    margin: 5px 0;
+    padding: 6px;
     background-color: rgba(255, 255, 255, 0.05);
     border-radius: 3px;
 }
@@ -20,14 +20,14 @@
 .section-title {
     font-size: 16px;
     -unity-font-style: bold;
-    margin-bottom: 10px;
+    margin-bottom: 6px;
     color: #D4D4D4;
 }
 
 .subsection-title {
     font-size: 14px;
     -unity-font-style: bold;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
     color: #B8B8B8;
 }
 
@@ -91,12 +91,18 @@
 
 /* Catalog Mode Styles */
 .catalog-mode-group {
-    flex-direction: row;
     margin: 5px 0;
 }
 
-.catalog-mode-group > RadioButton {
+/* RadioButtonGroup nests its buttons in an inner container; target it (not the group root)
+   so the options lay out horizontally. */
+.catalog-mode-group .unity-radio-button-group__container {
+    flex-direction: row;
+}
+
+.catalog-mode-group RadioButton {
     margin-right: 15px;
+    margin-bottom: 0;
 }
 
 .catalog-name-input {
@@ -116,17 +122,21 @@
 
 /* Build Mode Styles */
 .build-mode-group {
-    flex-direction: row;
     margin: 5px 0;
 }
 
-.build-mode-group > RadioButton {
+.build-mode-group .unity-radio-button-group__container {
+    flex-direction: row;
+}
+
+.build-mode-group RadioButton {
     margin-right: 15px;
+    margin-bottom: 0;
 }
 
 /* Prefab Selection Styles */
 .prefab-foldout {
-    margin: 10px 0;
+    margin: 5px 0;
     padding: 5px;
     background-color: rgba(255, 255, 255, 0.03);
     border-radius: 3px;
@@ -243,7 +253,7 @@
 
 /* Metadata Foldout Styles */
 .metadata-foldout {
-    margin: 10px 0;
+    margin: 5px 0;
     padding: 5px;
     background-color: rgba(255, 255, 255, 0.03);
     border-radius: 3px;
@@ -286,7 +296,7 @@
 }
 
 .metadata-field-label {
-    width: 60px;
+    width: 45px;
     font-size: 11px;
     color: #999999;
 }
@@ -325,7 +335,7 @@
 
 /* Button Styles */
 .button-section {
-    margin: 15px 0;
+    margin: 8px 0;
 }
 
 .primary-button {
@@ -385,6 +395,51 @@
     margin: 5px 0;
 }
 
+/* Inline label + control row (condensed layout) */
+.field-row {
+    flex-direction: row;
+    align-items: center;
+    margin: 3px 0;
+}
+
+.field-row-label {
+    width: 90px;
+    flex-shrink: 0;
+    -unity-font-style: bold;
+    color: #B8B8B8;
+}
+
+.field-row > .catalog-name-input,
+.field-row > .catalog-dropdown,
+.field-row > .version-tag-input {
+    flex-grow: 1;
+}
+
+/* Two metadata fields side by side */
+.metadata-field-pair {
+    flex-direction: row;
+    margin: 3px 0;
+}
+
+.metadata-field-pair > .metadata-field-row {
+    flex-grow: 1;
+    min-width: 120px;
+    margin: 0;
+}
+
+/* Drag-and-drop hint inside the prefab foldouts */
+.drag-hint {
+    font-size: 10px;
+    color: #777777;
+    -unity-font-style: italic;
+    -unity-text-align: middle-center;
+    margin-top: 4px;
+    padding: 3px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+}
+
 Label {
     margin: 2px 0;
 }
@@ -409,7 +464,7 @@ Button {
 
 /* Catalog List Styles */
 .catalog-list-scroll {
-    flex-grow: 1;
+    max-height: 280px;
     min-height: 100px;
     margin: 5px 0;
 }

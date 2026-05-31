@@ -5,7 +5,11 @@ A Unity package for creating custom virtual worlds and stages for the VirtualVen
 ## Requirements
 
 - **Unity 6000.1** or later
-- **Dependencies**: `com.unity.nuget.newtonsoft-json` (auto-installed)
+- **Build modules**: WebGL Build Support (player client) and Linux Build Support (dedicated server) — install from the Unity Hub
+- **Dependencies**: `com.unity.nuget.newtonsoft-json` and `com.unity.addressables` (auto-installed)
+- **Run `VirtualVenues > Project Setup`** once to configure rendering, so worlds don't render pink in the browser
+
+> **Before publishing, read [REQUIREMENTS.md](REQUIREMENTS.md)** — the full list of what your project, scene, and prefabs need to build and publish Worlds and Avatars (required vs. recommended vs. silent gotchas).
 
 ## Installation
 
@@ -23,6 +27,16 @@ https://github.com/VirtualVenues/VirtualVenuesSDK.git
 2. Copy the `VirtualVenuesSDK` folder into your project's `Assets/` or `Packages/` directory
 
 ## Features
+
+### Project Setup
+
+Configure a fresh project for VirtualVenues in one click.
+
+**Access:** `VirtualVenues > Project Setup`
+
+- A re-runnable checklist of the rendering/build settings worlds need (URP pipeline, Linear color space, WebGL → WebGPU, and more)
+- **Fix All** applies everything; re-running is safe
+- Run this first — without it, uploaded worlds render pink in the browser
 
 ### World Publisher
 
@@ -90,12 +104,15 @@ Create interactive objects in your world.
 
 ## Quick Start
 
-1. **Create a new scene** for your world
-2. **Add a Stage**: `GameObject > VirtualVenues > New Stage`
-3. **Add SpawnPoints**: `GameObject > VirtualVenues > Spawn Point` (add multiple for variety)
-4. **Add Fixtures**: Click the "+" button on the Stage gizmo to add lighting
-5. **Test locally**: Add `TestPlayerSpawner` prefab from `Runtime/Resources/`
-6. **Publish**: Open `VirtualVenues > World Publisher`, login, and upload
+1. **Set up the project**: `VirtualVenues > Project Setup` → Fix All (do this once per project)
+2. **Create a new scene** for your world
+3. **Add a Stage**: `GameObject > VirtualVenues > New Stage`
+4. **Add SpawnPoints**: `GameObject > VirtualVenues > Spawn Point` (add multiple for variety)
+5. **Add Fixtures**: Click the "+" button on the Stage gizmo to add lighting
+6. **Test locally**: Add `TestPlayerSpawner` prefab from `Runtime/Resources/`
+7. **Publish**: Open `VirtualVenues > World Publisher`, login, and upload
+
+See **[REQUIREMENTS.md](REQUIREMENTS.md)** for the complete World and Avatar publishing requirements.
 
 ## Scene Testing
 

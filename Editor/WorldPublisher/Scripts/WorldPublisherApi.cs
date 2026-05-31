@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Auth0;
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -63,10 +64,11 @@ namespace WorldPublisher
     {
         private const string BASE_URL = "https://jsxf2xqpn4.execute-api.us-east-1.amazonaws.com/dev";
 
-        public static string AccessToken { get; set; }
-        public static DateTime AccessTokenExpiry { get; set; }
+        // Token surface delegates to the shared EditorAuthToken so all tools read one token (no drift).
+        public static string AccessToken => EditorAuthToken.AccessToken;
+        public static DateTime AccessTokenExpiry => EditorAuthToken.AccessTokenExpiry;
 
-        public static bool IsTokenValid => !string.IsNullOrEmpty(AccessToken) && DateTime.UtcNow < AccessTokenExpiry;
+        public static bool IsTokenValid => EditorAuthToken.IsValid;
 
         /// <summary>
         /// Request presigned S3 URLs for uploading UMS and UPC bundles
@@ -331,20 +333,12 @@ namespace WorldPublisher
         /// <summary>
         /// Set access token with expiry time
         /// </summary>
-        public static void SetAccessToken(string token, System.DateTime dataTime)
-        {
-            AccessToken = token;
-            AccessTokenExpiry = dataTime;
-        }
+        public static void SetAccessToken(string token, System.DateTime dataTime) => EditorAuthToken.Set(token, dataTime);
 
         /// <summary>
         /// Clear stored access token
         /// </summary>
-        public static void ClearToken()
-        {
-            AccessToken = null;
-            AccessTokenExpiry = DateTime.MinValue;
-        }
+        public static void ClearToken() => EditorAuthToken.Clear();
 
         /// <summary>
         /// Generate unique filename using SHA256 hash of content
