@@ -909,13 +909,29 @@ public class AvatarPublisherUI : EditorWindow
         var avatar = go.GetComponent<VirtualVenues.Avatar>();
         if (avatar == null)
         {
-            reason = $"\"{go.name}\" must have a VirtualVenues Avatar component on its root object to be published as an avatar (place it on the prefab root, not a child).";
+            // Distinguish "no Avatar at all" from "Avatar on a child" so the fix is obvious.
+            bool onChild = go.GetComponentInChildren<VirtualVenues.Avatar>(true) != null;
+            reason = onChild
+                ? $"\"{go.name}\" has its VirtualVenues Avatar component on a CHILD object. Move it to the prefab ROOT — the runtime swap and teardown require it there."
+                : $"\"{go.name}\" must have a VirtualVenues Avatar component on its root object to be published as an avatar (place it on the prefab root, not a child).";
             return false;
         }
         if (avatar.Animator == null)
         {
             reason = $"\"{go.name}\" Avatar has no Animator assigned. Assign the Animator before publishing.";
             return false;
+        }
+        // Hard-block on structural errors that would crash the runtime swap — most importantly a duplicate
+        // slot category, which throws in AvatarCustomization.Initialize(). Slot WARNINGS (empty renderers,
+        // out-of-range materialIndex, null pivots, dead/non-humanoid) are surfaced in the Avatar inspector
+        // and logged at publish, not blocked here.
+        foreach (VirtualVenues.AvatarCheck check in VirtualVenues.AvatarValidator.Validate(avatar))
+        {
+            if (check.Severity == VirtualVenues.AvatarCheckSeverity.Error)
+            {
+                reason = $"\"{go.name}\": {check.Message}";
+                return false;
+            }
         }
         reason = null;
         return true;
@@ -945,6 +961,67 @@ public class AvatarPublisherUI : EditorWindow
             if (!IsValidCosmeticPrefab(p, out string reason)) { return reason; }
         }
         return null;
+    }
+
+    // Catalog content (bundles + metadata) is keyed by prefab.name, shared across avatars AND cosmetics,
+    // so two prefabs with the same name silently overwrite each other in the published catalog. Returns
+    // the first colliding name (case-insensitive), or null if all names are unique.
+    private string FirstDuplicatePrefabName()
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in _avatarPrefabs)
+        {
+            if (p == null) { continue; }
+            if (!seen.Add(p.name)) { return p.name; }
+        }
+        foreach (var p in _cosmeticPrefabs)
+        {
+            if (p == null) { continue; }
+            if (!seen.Add(p.name)) { return p.name; }
+        }
+        return null;
+    }
+
+    // Non-blocking: logs every AvatarValidator WARNING (empty renderers, out-of-range materialIndex, null
+    // item pivots, dead/non-humanoid) for the selected avatar prefabs so a creator who publishes without
+    // opening each inspector still sees them. Errors are hard-blocked separately in IsValidAvatarPrefab.
+    private void LogAvatarSlotWarnings()
+    {
+        if (_buildModeGroup == null || _buildModeGroup.value != 0) { return; } // auto-build only
+        foreach (var p in _avatarPrefabs)
+        {
+            if (p == null) { continue; }
+            var avatar = p.GetComponent<VirtualVenues.Avatar>();
+            if (avatar == null) { continue; }
+            foreach (VirtualVenues.AvatarCheck check in VirtualVenues.AvatarValidator.Validate(avatar))
+            {
+                if (check.Severity == VirtualVenues.AvatarCheckSeverity.Warning)
+                {
+                    Debug.LogWarning($"[AvatarPublisher] \"{p.name}\": {check.Message}");
+                }
+            }
+        }
+    }
+
+    // Permissive version-tag shape check: a leading numeric component, dot-separated, with an optional
+    // -prerelease / +build suffix (consistent with BumpPatch). Deliberately loose so it never rejects a
+    // tag a creator legitimately wants — the only requirement is that it starts like a version.
+    private static bool IsPlausibleVersionTag(string tag)
+    {
+        return System.Text.RegularExpressions.Regex.IsMatch(tag, @"^\d+(\.\d+)*([-+].+)?$");
+    }
+
+    // Fast-fail for the most common version mistake — re-using the current latest tag — using the cached
+    // catalog summary, so the creator isn't told only after a full WebGPU build + upload via a 409. This
+    // is a best-effort pre-check (the catalog list is eventually-consistent) and does NOT replace the
+    // authoritative server-side version-exists (409) check at confirm time.
+    private bool VersionTagMatchesSelectedLatest(string versionTag)
+    {
+        int index = _catalogDropdown != null ? _catalogDropdown.index : -1;
+        if (index < 0 || index >= _catalogs.Length) { return false; }
+        string latest = _catalogs[index].latestVersionTag;
+        return !string.IsNullOrEmpty(latest) &&
+               string.Equals(latest.Trim(), versionTag, StringComparison.OrdinalIgnoreCase);
     }
 
     // --- Auto-build prefab-selection persistence (survives window reconstruction) ---
@@ -1604,6 +1681,7 @@ public class AvatarPublisherUI : EditorWindow
     private void OnPublishButtonClicked()
     {
         if (!ValidatePublishInputs()) { return; }
+        LogAvatarSlotWarnings();
         if (!ConfirmProjectSetupOrCancel()) { return; }
 
         bool isAutoBuild = _buildModeGroup.value == 0;
@@ -1701,12 +1779,25 @@ public class AvatarPublisherUI : EditorWindow
             }
         }
 
-        // Check version tag
+        // Check version tag: present, plausibly-shaped, and (for existing catalogs) not already the latest —
+        // so a stale/duplicate version fails in milliseconds instead of after a full build + upload (409).
         string versionTag = _versionTagField?.value?.Trim();
         if (string.IsNullOrEmpty(versionTag))
         {
             Debug.LogWarning("[AvatarPublisher] Validation failed: Version tag is required.");
             ShowVersionTagError("Please enter a version tag.");
+            isValid = false;
+        }
+        else if (!IsPlausibleVersionTag(versionTag))
+        {
+            Debug.LogWarning($"[AvatarPublisher] Validation failed: version tag \"{versionTag}\" is not a recognizable version.");
+            ShowVersionTagError("Version tag should look like 1.0.0 — numeric, dot-separated, with an optional -suffix.");
+            isValid = false;
+        }
+        else if (!isNewCatalog && VersionTagMatchesSelectedLatest(versionTag))
+        {
+            Debug.LogWarning($"[AvatarPublisher] Validation failed: version \"{versionTag}\" is already the latest for this catalog.");
+            ShowVersionTagError($"Version \"{versionTag}\" is already the latest for this catalog. Bump the version before publishing.");
             isValid = false;
         }
 
@@ -1734,6 +1825,17 @@ public class AvatarPublisherUI : EditorWindow
                     Debug.LogWarning($"[AvatarPublisher] Validation failed: invalid prefab — {invalidReason}");
                     ShowPrefabsError(invalidReason);
                     isValid = false;
+                }
+                else
+                {
+                    // Catalog content is keyed by prefab.name, so duplicate names silently overwrite.
+                    string dupName = FirstDuplicatePrefabName();
+                    if (!string.IsNullOrEmpty(dupName))
+                    {
+                        Debug.LogWarning($"[AvatarPublisher] Validation failed: duplicate prefab name \"{dupName}\".");
+                        ShowPrefabsError($"Two prefabs are named \"{dupName}\". Catalog content is keyed by prefab name, so duplicates overwrite each other — rename one.");
+                        isValid = false;
+                    }
                 }
             }
         }
