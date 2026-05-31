@@ -35,6 +35,7 @@ public class WorldPublisherUI : EditorWindow
     private Label _worldListEmptyLabel;
 
     private ObjectField _sceneSelector;
+    private Button _useActiveSceneButton;
     private Button _publishButton;
 
     private VisualElement _progressSection;
@@ -159,6 +160,7 @@ public class WorldPublisherUI : EditorWindow
 
         _sceneSelector = root.Q<ObjectField>("scene-selector");
         _sceneSelector.objectType = typeof(SceneAsset);
+        _useActiveSceneButton = root.Q<Button>("use-active-scene-button");
         _publishButton = root.Q<Button>("publish-button");
 
         _progressSection = root.Q<VisualElement>("progress-section");
@@ -176,6 +178,7 @@ public class WorldPublisherUI : EditorWindow
         _authButton.clicked += OnAuthButtonClicked;
         _verificationUrlButton.clicked += () => Application.OpenURL(_verificationUrlButton.text);
         _copyCodeButton.clicked += () => EditorGUIUtility.systemCopyBuffer = _userCodeField.value;
+        _useActiveSceneButton.clicked += OnUseActiveSceneClicked;
         _publishButton.clicked += OnPublishButtonClicked;
 
         if (_setupFixButton != null) { _setupFixButton.clicked += OnSetupFixClicked; }
@@ -681,6 +684,29 @@ public class WorldPublisherUI : EditorWindow
                 _sceneSelector.value = AssetDatabase.LoadAssetAtPath<SceneAsset>(openScene.path);
             }
         }
+    }
+
+    private void OnUseActiveSceneClicked()
+    {
+        Scene activeScene = EditorSceneManager.GetActiveScene();
+        if (!activeScene.isLoaded || string.IsNullOrEmpty(activeScene.path))
+        {
+            EditorUtility.DisplayDialog("No Saved Active Scene",
+                "The current active scene hasn't been saved to disk yet. Save the scene first, then try again.",
+                "OK");
+            return;
+        }
+
+        SceneAsset sceneAsset = AssetDatabase.LoadAssetAtPath<SceneAsset>(activeScene.path);
+        if (sceneAsset == null)
+        {
+            EditorUtility.DisplayDialog("Scene Not Found",
+                $"Could not load a SceneAsset for the active scene at: {activeScene.path}",
+                "OK");
+            return;
+        }
+
+        _sceneSelector.value = sceneAsset;
     }
 
     private void OnPublishButtonClicked()

@@ -33,6 +33,7 @@
                 <ui:VisualElement class="subsection">
                     <ui:Label text="Select Scene to Publish:" />
                     <uie:ObjectField name="scene-selector" type="UnityEditor.SceneAsset, UnityEditor" allow-scene-objects="false" />
+                    <ui:Button name="use-active-scene-button" text="Use Active Scene" class="use-active-scene-button" />
                 </ui:VisualElement>
                 <ui:VisualElement class="button-section">
                     <ui:Button name="publish-button" text="Publish World Map" class="primary-button" />

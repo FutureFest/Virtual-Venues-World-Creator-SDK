@@ -167,6 +167,14 @@ ObjectField {
     height: 22px;
 }
 
+.use-active-scene-button {
+    height: 22px;
+    margin: 4px 0 0 0;
+    padding: 0 10px;
+    align-self: flex-start;
+    font-size: 11px;
+}
+
 /* Button Styles */
 .button-section {
     margin: 15px 0;
@@ -264,6 +272,9 @@ Button {
 .world-list-scroll {
     flex-grow: 1;
     min-height: 100px;
+    /* Bound the height so the list scrolls on its own instead of growing unbounded
+       inside the window's outer ScrollView (where flex-grow can't constrain it). */
+    max-height: 320px;
     margin: 5px 0;
 }
 

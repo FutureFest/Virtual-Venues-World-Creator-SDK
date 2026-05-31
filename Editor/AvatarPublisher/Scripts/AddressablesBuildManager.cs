@@ -65,6 +65,41 @@ namespace VirtualVenues.Editor.AvatarPublisher
             return _settings;
         }
 
+        /// <summary>
+        /// Ensures Unity's default Addressables config folder exists before we touch the global
+        /// <see cref="AddressableAssetSettingsDefaultObject.Settings"/>. On a fresh consumer project that
+        /// folder is absent; the setter's <c>AssetDatabase.CreateAsset(".../DefaultObject.asset")</c> then
+        /// throws the native "Creating asset at path ... failed." and aborts the publish. Idempotent — a
+        /// no-op (and never clobbers) when the folder already exists.
+        /// </summary>
+        private static void EnsureDefaultAddressablesFolder()
+        {
+            string defaultConfigFolder = AddressableAssetSettingsDefaultObject.kDefaultConfigFolder; // "Assets/AddressableAssetsData"
+            if (AssetDatabase.IsValidFolder(defaultConfigFolder)) { return; }
+
+            string parent = Path.GetDirectoryName(defaultConfigFolder).Replace('\\', '/'); // "Assets"
+            string leaf = Path.GetFileName(defaultConfigFolder);                            // "AddressableAssetsData"
+            AssetDatabase.CreateFolder(parent, leaf);
+        }
+
+        /// <summary>
+        /// Removes the global Addressables default (config object + DefaultObject.asset) that the temporary
+        /// swap in <see cref="BuildForWebGPU"/> caused Unity to create on a project that previously had none,
+        /// so the consumer project keeps no project-wide pointer at the SDK's isolated settings. The SDK's own
+        /// settings under <c>Assets/VirtualVenues/Addressables</c> are left untouched. Any in-memory cached
+        /// default self-heals on the next domain reload, which a publish always triggers.
+        /// </summary>
+        private static void RemoveTemporaryGlobalDefault()
+        {
+            EditorBuildSettings.RemoveConfigObject(AddressableAssetSettingsDefaultObject.kDefaultConfigObjectName);
+
+            string defaultObjectPath = $"{AddressableAssetSettingsDefaultObject.kDefaultConfigFolder}/DefaultObject.asset";
+            if (AssetDatabase.LoadAssetAtPath<AddressableAssetSettingsDefaultObject>(defaultObjectPath) != null)
+            {
+                AssetDatabase.DeleteAsset(defaultObjectPath);
+            }
+        }
+
         private static void SetupProfile(AddressableAssetSettings settings)
         {
             string profileId = settings.profileSettings.GetProfileId(PROFILE_NAME);
@@ -213,6 +248,19 @@ namespace VirtualVenues.Editor.AvatarPublisher
 
             progress?.Report((0.1f, "Preparing build..."));
 
+            // A fresh consumer project has never set up Addressables, so the global default config
+            // folder doesn't exist yet. Create it before we swap (and later restore) the global
+            // default below — otherwise Unity's setter throws "Creating asset at path
+            // Assets/AddressableAssetsData/DefaultObject.asset failed." and the publish aborts.
+            EnsureDefaultAddressablesFolder();
+
+            // Snapshot whether the consumer project already had a global Addressables default registered.
+            // If it didn't, the swap below makes Unity create one (config object + DefaultObject.asset);
+            // we tear that back down in the finally so a fresh project is left exactly as we found it.
+            bool globalDefaultExisted = EditorBuildSettings.TryGetConfigObject(
+                AddressableAssetSettingsDefaultObject.kDefaultConfigObjectName,
+                out AddressableAssetSettingsDefaultObject _);
+
             // Store current active settings
             var previousSettings = AddressableAssetSettingsDefaultObject.Settings;
 
@@ -266,15 +314,44 @@ namespace VirtualVenues.Editor.AvatarPublisher
             }
             finally
             {
-                // Restore previous settings
-                AddressableAssetSettingsDefaultObject.Settings = previousSettings;
+                // Put the global Addressables default back the way we found it — but never let a restore
+                // failure mask the real build result (a throw here would replace the catch's BuildResult).
+                try
+                {
+                    if (globalDefaultExisted)
+                    {
+                        // The project already had a global default; restore it.
+                        if (previousSettings != null)
+                        {
+                            AddressableAssetSettingsDefaultObject.Settings = previousSettings;
+                        }
+                    }
+                    else
+                    {
+                        // The swap created a global default in a project that had none. Remove it so the
+                        // consumer project is left without a global Addressables default, exactly as we
+                        // found it; the SDK's isolated settings remain for the next publish.
+                        RemoveTemporaryGlobalDefault();
+                    }
+                }
+                catch (Exception restoreEx)
+                {
+                    Debug.LogError($"Failed to restore Addressables default settings: {restoreEx.Message}");
+                }
 
                 // Restore the developer's original build target if we switched it, so publishing
                 // avatars doesn't silently leave the project on WebGL.
-                if (switchedTarget && EditorUserBuildSettings.activeBuildTarget != originalTarget)
+                try
                 {
-                    Debug.Log($"Restoring active build target to {originalTarget}...");
-                    EditorUserBuildSettings.SwitchActiveBuildTarget(originalGroup, originalTarget);
+                    if (switchedTarget && EditorUserBuildSettings.activeBuildTarget != originalTarget)
+                    {
+                        Debug.Log($"Restoring active build target to {originalTarget}...");
+                        EditorUserBuildSettings.SwitchActiveBuildTarget(originalGroup, originalTarget);
+                    }
+                }
+                catch (Exception targetEx)
+                {
+                    Debug.LogError($"Failed to restore build target to {originalTarget}: {targetEx.Message}");
                 }
             }
         }

@@ -13,6 +13,7 @@ using Auth0.AuthenticationApi.Models;
 using Auth0.Api.Credentials;
 using AvatarPublisher;
 using VirtualVenues.Editor.AvatarPublisher;
+using VirtualVenues.Editor.ProjectSetup;
 
 public class AvatarPublisherUI : EditorWindow
 {
@@ -1603,6 +1604,7 @@ public class AvatarPublisherUI : EditorWindow
     private void OnPublishButtonClicked()
     {
         if (!ValidatePublishInputs()) { return; }
+        if (!ConfirmProjectSetupOrCancel()) { return; }
 
         bool isAutoBuild = _buildModeGroup.value == 0;
         if (isAutoBuild)
@@ -1613,6 +1615,47 @@ public class AvatarPublisherUI : EditorWindow
         {
             StartManualPublishing();
         }
+    }
+
+    // In a creator's project (SDK installed as a package), warn when critical VirtualVenues Project Setup
+    // steps are still unfixed — publishing from a mis-configured project (wrong pipeline, unassigned URP
+    // global settings, Gamma color space) can yield avatars that render pink/black in the player. Soft gate:
+    // the user can open Project Setup to fix it, publish anyway, or cancel. No-op in this dev repo
+    // (IsConsumerProject() is false) and when there are no critical issues.
+    private bool ConfirmProjectSetupOrCancel()
+    {
+        if (!ProjectSetupInstaller.IsConsumerProject()) { return true; }
+
+        List<string> issues = ProjectSetupInstaller.GetCriticalIssues();
+        if (issues.Count == 0) { return true; }
+
+        string message =
+            "This project hasn't completed VirtualVenues Project Setup. These critical settings still need fixing:\n\n" +
+            "• " + string.Join("\n• ", issues) +
+            "\n\nPublishing now may produce avatars that render pink or black in the player. " +
+            "Open Project Setup to fix these first.";
+
+        int choice = EditorUtility.DisplayDialogComplex(
+            "Project Setup Incomplete",
+            message,
+            "Open Project Setup", // 0
+            "Cancel",             // 1
+            "Publish Anyway");    // 2
+
+        if (choice == 0)
+        {
+            ProjectSetupWindow.ShowWindow();
+            return false;
+        }
+
+        if (choice == 2)
+        {
+            Debug.LogWarning("[AvatarPublisher] Publishing despite unresolved critical Project Setup issues: " +
+                             string.Join(", ", issues));
+            return true;
+        }
+
+        return false; // Cancel
     }
 
     private bool ValidatePublishInputs()
