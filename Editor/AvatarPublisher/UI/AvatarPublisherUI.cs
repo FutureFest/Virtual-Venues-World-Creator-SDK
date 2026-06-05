@@ -14,6 +14,7 @@ using Auth0.Api.Credentials;
 using AvatarPublisher;
 using VirtualVenues.Editor.AvatarPublisher;
 using VirtualVenues.Editor.ProjectSetup;
+using VirtualVenues.Editor.UI;
 
 public class AvatarPublisherUI : EditorWindow
 {
@@ -212,6 +213,8 @@ public class AvatarPublisherUI : EditorWindow
                 rootVisualElement.styleSheets.Add(styleSheet);
             }
         }
+
+        VVEditorUI.ApplyTheme(rootVisualElement, "Avatar Publisher", "Publish avatars & cosmetics");
 
         BindUIElements();
         SetupEventHandlers();

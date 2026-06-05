@@ -1,0 +1,117 @@
+/* =========================================================================
+   VirtualVenues editor theme — shared design tokens + branded header.
+   Mirrors the web dashboard look: navy raised panels/headers, cyan/teal +
+   green-teal accents, rounded translucent cards. The far window body sits on
+   Unity's neutral editor gray so it blends with the dock tab chrome rather than
+   reading as a navy block. Added to each tool window as the base stylesheet
+   (lowest precedence) so each window's own USS can still override.
+
+   Tokens are declared on .vv-theme and INHERIT to every descendant, so any
+   window that adds the .vv-theme class can read them with var(--vv-*).
+   USS has no gradients — the gradient identity is carried by the VV logo PNG;
+   every accent here is a solid color.  C# side mirror: VVColors.cs.
+   ========================================================================= */
+
+.vv-theme {
+    /* Surfaces — the far window body is Unity's neutral editor/dock gray so it
+       blends with the tab bar, while raised panels/headers keep the navy brand. */
+    --vv-bg:               rgb(56, 56, 56);          /* #383838 Unity dark window chrome */
+    --vv-bg-raised:        rgb(17, 23, 38);          /* #111726 navy header/panel */
+    --vv-surface:          rgba(255, 255, 255, 0.04);
+    --vv-surface-hover:    rgba(255, 255, 255, 0.07);
+    --vv-surface-strong:   rgba(255, 255, 255, 0.06);
+    --vv-inset:            rgba(0, 0, 0, 0.25);
+
+    /* Borders */
+    --vv-border:           rgba(255, 255, 255, 0.07);
+    --vv-border-strong:    rgba(255, 255, 255, 0.13);
+
+    /* Text */
+    --vv-text:             rgb(237, 242, 250);       /* #EDF2FA */
+    --vv-text-muted:       rgb(148, 163, 184);       /* #94A3B8 */
+    --vv-text-faint:       rgb(100, 116, 139);       /* #64748B */
+    --vv-text-on-accent:   rgb(8, 13, 22);           /* near-black on bright CTAs */
+
+    /* Accents */
+    --vv-accent:           rgb(34, 211, 238);        /* #22D3EE cyan */
+    --vv-accent-soft:      rgba(34, 211, 238, 0.14);
+    --vv-accent-teal:      rgb(45, 212, 191);        /* #2DD4BF */
+    --vv-blue:             rgb(59, 130, 246);        /* #3B82F6 */
+
+    /* Primary CTA (green-teal) */
+    --vv-primary:          rgb(16, 185, 129);        /* #10B981 */
+    --vv-primary-hover:    rgb(20, 184, 166);        /* #14B8A6 */
+    --vv-primary-soft:     rgba(16, 185, 129, 0.16);
+
+    /* Status */
+    --vv-success:          rgb(52, 211, 153);        /* #34D399 */
+    --vv-warning:          rgb(245, 166, 35);        /* #F5A623 amber */
+    --vv-warning-soft:     rgba(245, 166, 35, 0.14);
+    --vv-danger:           rgb(248, 113, 113);       /* #F87171 */
+    --vv-danger-hover:     rgb(239, 68, 68);         /* #EF4444 */
+    --vv-danger-soft:      rgba(248, 113, 113, 0.14);
+
+    /* Disabled */
+    --vv-disabled-bg:      rgba(255, 255, 255, 0.07);
+    --vv-disabled-text:    rgba(148, 163, 184, 0.55);
+
+    /* Plugin accent hook — defaults to VV primary; a plugin window (e.g. NMKR)
+       overrides these locally to keep its own brand color. */
+    --vv-plugin-accent:        rgb(16, 185, 129);
+    --vv-plugin-accent-hover:  rgb(20, 184, 166);
+    --vv-plugin-accent-text:   rgb(8, 13, 22);
+    --vv-plugin-accent-soft:   rgba(16, 185, 129, 0.16);
+
+    background-color: var(--vv-bg);
+    flex-grow: 1;
+}
+
+/* ---- Branded header (built in code by VVEditorUI.BuildHeader) ------------- */
+.vv-header {
+    flex-direction: row;
+    align-items: center;
+    margin: 8px 8px 12px 8px;
+    padding: 12px 14px;
+    background-color: var(--vv-bg-raised);
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: var(--vv-border);
+}
+
+.vv-logo {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    margin-right: 12px;
+    flex-shrink: 0;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.vv-logo--corner {
+    width: 26px;
+    height: 26px;
+    min-width: 26px;
+    min-height: 26px;
+    margin-right: 10px;
+    flex-shrink: 0;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.vv-header-text {
+    flex-direction: column;
+    flex-grow: 1;
+}
+
+.vv-wordmark {
+    font-size: 16px;
+    -unity-font-style: bold;
+    color: var(--vv-text);
+    margin: 0;
+}
+
+.vv-subtitle {
+    font-size: 11px;
+    color: var(--vv-text-muted);
+    margin-top: 1px;
+}

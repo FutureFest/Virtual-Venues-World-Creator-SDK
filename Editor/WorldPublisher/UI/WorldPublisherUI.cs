@@ -15,6 +15,7 @@ using Auth0.Api.Credentials;
 using WorldPublisher;
 using VirtualVenues.Plugins.Nmkr.Editor;
 using VirtualVenues.Editor.ProjectSetup;
+using VirtualVenues.Editor.UI;
 
 public class WorldPublisherUI : EditorWindow
 {
@@ -126,6 +127,8 @@ public class WorldPublisherUI : EditorWindow
         }
 
         visualTree.CloneTree(rootVisualElement);
+
+        VVEditorUI.ApplyTheme(rootVisualElement, "World Publisher", "Publish worlds to VirtualVenues");
 
         BindUIElements();
         SetupEventHandlers();

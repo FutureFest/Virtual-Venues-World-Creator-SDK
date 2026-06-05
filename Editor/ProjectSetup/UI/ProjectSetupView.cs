@@ -3,6 +3,7 @@ using System.IO;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
+using VirtualVenues.Editor.UI;
 
 namespace VirtualVenues.Editor.ProjectSetup
 {
@@ -14,9 +15,10 @@ namespace VirtualVenues.Editor.ProjectSetup
     /// </summary>
     public class ProjectSetupView : VisualElement
     {
-        private static readonly Color OkColor = new Color(0.35f, 0.85f, 0.45f);
-        private static readonly Color FixColor = new Color(0.98f, 0.78f, 0.30f);
-        private static readonly Color NaColor = new Color(0.60f, 0.60f, 0.60f);
+        // Mirror the VirtualVenues palette (VVTheme.uss) so row icons match the themed UI.
+        private static readonly Color OkColor = VVColors.Success;
+        private static readonly Color FixColor = VVColors.Warning;
+        private static readonly Color NaColor = VVColors.Muted;
 
         private VisualElement _checklist;
         private Label _summary;
@@ -26,12 +28,14 @@ namespace VirtualVenues.Editor.ProjectSetup
 
         public ProjectSetupView()
         {
-            VisualTreeAsset uxml = LoadAsset<VisualTreeAsset>("ProjectSetupWindow");
-            StyleSheet uss = LoadAsset<StyleSheet>("ProjectSetupWindow");
+            VisualTreeAsset uxml = VVEditorUI.LoadAsset<VisualTreeAsset>("ProjectSetupWindow");
+            StyleSheet uss = VVEditorUI.LoadAsset<StyleSheet>("ProjectSetupWindow");
             if (uxml == null) { Add(new Label("Could not load ProjectSetupWindow.uxml")); return; }
 
             uxml.CloneTree(this);
             if (uss != null) { styleSheets.Add(uss); }
+
+            VVEditorUI.ApplyTheme(this, "Project Setup", "Make this project render correctly in the browser");
 
             _checklist = this.Q<VisualElement>("checklist-container");
             _summary = this.Q<Label>("summary-label");
@@ -186,19 +190,6 @@ namespace VirtualVenues.Editor.ProjectSetup
                 _log.Add(new Label(line));
             }
             _log.schedule.Execute(() => _log.scrollOffset = new Vector2(0, float.MaxValue));
-        }
-
-        private T LoadAsset<T>(string nameWithoutExtension) where T : Object
-        {
-            string[] guids = AssetDatabase.FindAssets($"{nameWithoutExtension} t:{typeof(T).Name}");
-            foreach (string guid in guids)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guid);
-                if (Path.GetFileNameWithoutExtension(path) != nameWithoutExtension) { continue; }
-                T asset = AssetDatabase.LoadAssetAtPath<T>(path);
-                if (asset != null) { return asset; }
-            }
-            return null;
         }
 
         private static string IconFor(SetupState state)

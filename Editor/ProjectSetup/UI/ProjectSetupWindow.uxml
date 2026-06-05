@@ -1,6 +1,5 @@
 <ui:UXML xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="True">
     <ui:VisualElement class="ps-container">
-        <ui:Label text="VirtualVenues Project Setup" class="ps-title" />
         <ui:Label text="Match this project to the VirtualVenues template so worlds you upload render correctly in the browser (WebGPU) client instead of appearing pink." class="ps-intro" />
         <ui:Label name="summary-label" class="ps-summary" />
         <ui:ScrollView class="ps-checklist-scroll">

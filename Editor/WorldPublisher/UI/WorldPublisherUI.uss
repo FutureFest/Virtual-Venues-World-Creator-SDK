@@ -1,3 +1,7 @@
+/* World Publisher — VirtualVenues themed.
+   Class names are unchanged (C# bindings rely on them); only the look is rebuilt
+   on the shared tokens from VVTheme.uss (added as the base sheet by VVEditorUI). */
+
 .main-container {
     padding: 10px;
     flex-grow: 1;
@@ -9,16 +13,16 @@
     align-items: center;
     padding: 8px 10px;
     margin-bottom: 12px;
-    background-color: rgba(255, 152, 0, 0.12);
+    background-color: var(--vv-warning-soft);
     border-width: 1px;
-    border-color: rgba(255, 152, 0, 0.45);
-    border-radius: 4px;
+    border-color: var(--vv-warning);
+    border-radius: 10px;
 }
 
 .setup-banner-message {
     flex-grow: 1;
     font-size: 11px;
-    color: #FFB74D;
+    color: var(--vv-warning);
     white-space: normal;
     margin-right: 8px;
 }
@@ -26,116 +30,131 @@
 .setup-banner-button {
     width: 70px;
     height: 24px;
-    background-color: #FB8C00;
-    color: white;
+    background-color: var(--vv-warning);
+    color: var(--vv-text-on-accent);
     -unity-font-style: bold;
-    border-radius: 3px;
+    border-width: 0;
+    border-radius: 6px;
 }
 
 .setup-banner-button:hover {
-    background-color: #EF6C00;
+    background-color: rgb(255, 183, 77);
 }
 
+/* Cards */
 .section {
-    margin-bottom: 20px;
-    padding: 10px;
-    background-color: rgba(0, 0, 0, 0.1);
-    border-radius: 4px;
+    margin-bottom: 16px;
+    padding: 12px;
+    background-color: var(--vv-surface);
+    border-width: 1px;
+    border-color: var(--vv-border);
+    border-radius: 10px;
 }
 
 .subsection {
-    margin: 10px 0;
+    margin: 8px 0;
     padding: 8px;
-    background-color: rgba(255, 255, 255, 0.05);
-    border-radius: 3px;
+    background-color: var(--vv-surface-strong);
+    border-radius: 6px;
 }
 
 .section-title {
-    font-size: 16px;
+    font-size: 15px;
     -unity-font-style: bold;
     margin-bottom: 10px;
-    color: #D4D4D4;
+    color: var(--vv-text);
 }
 
 .subsection-title {
-    font-size: 14px;
+    font-size: 13px;
     -unity-font-style: bold;
     margin-bottom: 8px;
-    color: #B8B8B8;
+    color: var(--vv-text-muted);
 }
 
-/* Authentication Styles */
+/* Authentication */
 .user-greeting {
     font-size: 14px;
     -unity-font-style: bold;
     margin-bottom: 8px;
-    color: #4CAF50;
+    color: var(--vv-success);
 }
 
 .auth-button {
     width: 100px;
-    height: 25px;
+    height: 26px;
     margin: 5px 0;
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--vv-accent);
+    -unity-font-style: bold;
+    border-width: 1px;
+    border-color: var(--vv-accent);
+    border-radius: 6px;
+}
+
+.auth-button:hover {
+    background-color: var(--vv-accent-soft);
 }
 
 .device-flow-container {
     margin: 10px 0;
     padding: 10px;
-    background-color: rgba(0, 100, 200, 0.1);
-    border-radius: 4px;
+    background-color: var(--vv-accent-soft);
+    border-radius: 8px;
     border-width: 1px;
-    border-color: rgba(0, 100, 200, 0.3);
+    border-color: var(--vv-accent);
 }
 
 .code-field {
     flex-grow: 1;
     margin: 0 5px;
     -unity-font-style: bold;
-    background-color: rgba(0, 0, 0, 0.2);
+    background-color: var(--vv-inset);
 }
 
 .link-button {
-    color: #448AFF;
-    background-color: transparent;
+    color: var(--vv-accent);
+    background-color: rgba(0, 0, 0, 0);
     border-width: 0;
     -unity-text-align: middle-left;
     cursor: link;
 }
 
 .link-button:hover {
-    color: #82B1FF;
+    color: var(--vv-accent-teal);
 }
 
 .auth-result {
     margin: 10px 0;
     padding: 8px;
-    border-radius: 3px;
+    border-radius: 6px;
 }
 
 .auth-result-error {
-    color: #FF5252;
-    background-color: rgba(255, 0, 0, 0.1);
+    color: var(--vv-danger);
+    background-color: var(--vv-danger-soft);
 }
 
 .auth-result-success {
-    color: #4CAF50;
-    background-color: rgba(76, 175, 80, 0.1);
+    color: var(--vv-success);
+    background-color: var(--vv-primary-soft);
 }
 
-/* World Info Styles */
+/* World info */
 .world-info-container {
     padding: 10px;
-    background-color: rgba(0, 0, 0, 0.2);
-    border-radius: 4px;
+    background-color: var(--vv-inset);
+    border-radius: 8px;
     margin: 5px 0;
 }
 
 .info-box {
     padding: 10px;
-    background-color: rgba(255, 193, 7, 0.1);
-    border-radius: 4px;
+    background-color: var(--vv-warning-soft);
+    border-radius: 8px;
     border-width: 1px;
-    border-color: rgba(255, 193, 7, 0.3);
+    border-color: var(--vv-warning);
+    color: var(--vv-text-muted);
 }
 
 .url-row {
@@ -153,7 +172,7 @@
 .url-field {
     flex-grow: 1;
     margin: 0 5px;
-    background-color: rgba(0, 0, 0, 0.2);
+    background-color: var(--vv-inset);
 }
 
 .copy-button {
@@ -161,7 +180,7 @@
     height: 20px;
 }
 
-/* Scene Selection */
+/* Scene selection */
 ObjectField {
     margin: 5px 0;
     height: 22px;
@@ -175,53 +194,58 @@ ObjectField {
     font-size: 11px;
 }
 
-/* Button Styles */
+/* Buttons */
 .button-section {
-    margin: 15px 0;
+    margin: 14px 0;
 }
 
 .primary-button {
     height: 30px;
     margin: 5px 0;
-    background-color: #2196F3;
-    color: white;
+    background-color: var(--vv-primary);
+    color: var(--vv-text-on-accent);
     -unity-font-style: bold;
-    border-radius: 3px;
+    border-width: 0;
+    border-radius: 6px;
 }
 
 .primary-button:hover {
-    background-color: #1976D2;
+    background-color: var(--vv-primary-hover);
 }
 
 .primary-button:disabled {
-    background-color: #757575;
-    color: #B0B0B0;
+    background-color: var(--vv-disabled-bg);
+    color: var(--vv-disabled-text);
 }
 
 .danger-button {
     height: 30px;
     margin: 5px 0;
-    background-color: #F44336;
-    color: white;
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--vv-danger);
     -unity-font-style: bold;
-    border-radius: 3px;
+    border-width: 1px;
+    border-color: var(--vv-danger-soft);
+    border-radius: 6px;
 }
 
 .danger-button:hover {
-    background-color: #D32F2F;
+    background-color: var(--vv-danger-soft);
+    color: var(--vv-danger-hover);
 }
 
 .danger-button:disabled {
-    background-color: #757575;
-    color: #B0B0B0;
+    background-color: var(--vv-disabled-bg);
+    color: var(--vv-disabled-text);
+    border-color: var(--vv-border);
 }
 
-/* Progress Styles */
+/* Progress */
 .progress-section {
     margin: 10px 0;
     padding: 10px;
-    background-color: rgba(0, 0, 0, 0.2);
-    border-radius: 4px;
+    background-color: var(--vv-inset);
+    border-radius: 8px;
 }
 
 .progress-bar {
@@ -230,16 +254,16 @@ ObjectField {
 }
 
 .progress-bar > .unity-progress-bar__background {
-    background-color: rgba(0, 0, 0, 0.3);
-    border-radius: 3px;
+    background-color: var(--vv-inset);
+    border-radius: 6px;
 }
 
 .progress-bar > .unity-progress-bar__progress {
-    background-color: #4CAF50;
-    border-radius: 3px;
+    background-color: var(--vv-primary);
+    border-radius: 6px;
 }
 
-/* General Helper Styles */
+/* Helpers */
 .row {
     flex-direction: row;
     align-items: center;
@@ -248,6 +272,7 @@ ObjectField {
 
 Label {
     margin: 2px 0;
+    color: var(--vv-text);
 }
 
 TextField {
@@ -258,17 +283,17 @@ Button {
     margin: 2px 0;
 }
 
-/* Version Label */
+/* Version label */
 .version-label {
     position: absolute;
     bottom: 4px;
     right: 8px;
     font-size: 10px;
-    color: #888888;
+    color: var(--vv-text-faint);
     -unity-text-align: middle-right;
 }
 
-/* World List Styles */
+/* World list */
 .world-list-scroll {
     flex-grow: 1;
     min-height: 100px;
@@ -282,23 +307,23 @@ Button {
     padding: 5px;
 }
 
-/* World Card Styles */
+/* World cards */
 .world-card {
-    padding: 8px;
-    margin: 4px 0;
-    background-color: rgba(255, 255, 255, 0.05);
-    border-radius: 4px;
+    padding: 10px;
+    margin: 6px 0;
+    background-color: var(--vv-surface);
+    border-radius: 10px;
     border-width: 1px;
-    border-color: rgba(255, 255, 255, 0.1);
+    border-color: var(--vv-border);
 }
 
 .world-card:hover {
-    background-color: rgba(255, 255, 255, 0.08);
+    background-color: var(--vv-surface-hover);
 }
 
 .world-card-highlight {
-    border-color: #4CAF50;
-    border-width: 2px;
+    border-color: var(--vv-primary);
+    border-width: 1px;
 }
 
 .world-card-header {
@@ -315,12 +340,12 @@ Button {
 .world-name {
     font-size: 13px;
     -unity-font-style: bold;
-    color: #E0E0E0;
+    color: var(--vv-text);
 }
 
 .world-id {
     font-size: 9px;
-    color: #666666;
+    color: var(--vv-text-faint);
     margin-top: 2px;
 }
 
@@ -332,7 +357,7 @@ Button {
 
 .world-date {
     font-size: 10px;
-    color: #888888;
+    color: var(--vv-text-muted);
 }
 
 .world-card-buttons {
@@ -345,6 +370,7 @@ Button {
     min-width: 60px;
     margin-left: 6px;
     font-size: 11px;
+    border-radius: 6px;
 }
 
 .inline-button {
@@ -352,16 +378,17 @@ Button {
     min-width: 50px;
     margin-left: 4px;
     font-size: 11px;
+    border-radius: 6px;
 }
 
-/* Error Label */
+/* Error label */
 .error-label {
-    color: #FF5252;
+    color: var(--vv-danger);
     font-size: 11px;
     margin-top: 4px;
 }
 
-/* World Name Input */
+/* World name input */
 .world-name-input {
     margin: 5px 0;
     height: 24px;

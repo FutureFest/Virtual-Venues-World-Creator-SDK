@@ -1,95 +1,111 @@
+/* Avatar Publisher — VirtualVenues themed.
+   Class names are unchanged (C# bindings rely on them); only the look is rebuilt
+   on the shared tokens from VVTheme.uss (added as the base sheet by VVEditorUI). */
+
 .main-container {
     padding: 10px;
     flex-grow: 1;
 }
 
 .section {
-    margin-bottom: 10px;
-    padding: 8px;
-    background-color: rgba(0, 0, 0, 0.1);
-    border-radius: 4px;
+    margin-bottom: 12px;
+    padding: 12px;
+    background-color: var(--vv-surface);
+    border-width: 1px;
+    border-color: var(--vv-border);
+    border-radius: 10px;
 }
 
 .subsection {
-    margin: 5px 0;
-    padding: 6px;
-    background-color: rgba(255, 255, 255, 0.05);
-    border-radius: 3px;
+    margin: 6px 0;
+    padding: 8px;
+    background-color: var(--vv-surface-strong);
+    border-radius: 6px;
 }
 
 .section-title {
-    font-size: 16px;
+    font-size: 15px;
     -unity-font-style: bold;
     margin-bottom: 6px;
-    color: #D4D4D4;
+    color: var(--vv-text);
 }
 
 .subsection-title {
-    font-size: 14px;
+    font-size: 13px;
     -unity-font-style: bold;
     margin-bottom: 4px;
-    color: #B8B8B8;
+    color: var(--vv-text-muted);
 }
 
-/* Authentication Styles */
+/* Authentication */
 .user-greeting {
     font-size: 14px;
     -unity-font-style: bold;
     margin-bottom: 8px;
-    color: #4CAF50;
+    color: var(--vv-success);
 }
 
 .auth-button {
     width: 100px;
-    height: 25px;
+    height: 26px;
     margin: 5px 0;
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--vv-accent);
+    -unity-font-style: bold;
+    border-width: 1px;
+    border-color: var(--vv-accent);
+    border-radius: 6px;
+}
+
+.auth-button:hover {
+    background-color: var(--vv-accent-soft);
 }
 
 .device-flow-container {
     margin: 10px 0;
     padding: 10px;
-    background-color: rgba(0, 100, 200, 0.1);
-    border-radius: 4px;
+    background-color: var(--vv-accent-soft);
+    border-radius: 8px;
     border-width: 1px;
-    border-color: rgba(0, 100, 200, 0.3);
+    border-color: var(--vv-accent);
 }
 
 .code-field {
     flex-grow: 1;
     margin: 0 5px;
     -unity-font-style: bold;
-    background-color: rgba(0, 0, 0, 0.2);
+    background-color: var(--vv-inset);
 }
 
 .link-button {
-    color: #448AFF;
-    background-color: transparent;
+    color: var(--vv-accent);
+    background-color: rgba(0, 0, 0, 0);
     border-width: 0;
     -unity-text-align: middle-left;
     cursor: link;
 }
 
 .link-button:hover {
-    color: #82B1FF;
+    color: var(--vv-accent-teal);
 }
 
 .auth-result {
     margin: 10px 0;
     padding: 8px;
-    border-radius: 3px;
+    border-radius: 6px;
 }
 
 .auth-result-error {
-    color: #FF5252;
-    background-color: rgba(255, 0, 0, 0.1);
+    color: var(--vv-danger);
+    background-color: var(--vv-danger-soft);
 }
 
 .auth-result-success {
-    color: #4CAF50;
-    background-color: rgba(76, 175, 80, 0.1);
+    color: var(--vv-success);
+    background-color: var(--vv-primary-soft);
 }
 
-/* Catalog Mode Styles */
+/* Catalog mode */
 .catalog-mode-group {
     margin: 5px 0;
 }
@@ -120,7 +136,7 @@
     height: 24px;
 }
 
-/* Build Mode Styles */
+/* Build mode */
 .build-mode-group {
     margin: 5px 0;
 }
@@ -134,12 +150,12 @@
     margin-bottom: 0;
 }
 
-/* Prefab Selection Styles */
+/* Prefab selection */
 .prefab-foldout {
     margin: 5px 0;
     padding: 5px;
-    background-color: rgba(255, 255, 255, 0.03);
-    border-radius: 3px;
+    background-color: var(--vv-surface);
+    border-radius: 6px;
 }
 
 .prefab-foldout > Toggle {
@@ -155,8 +171,8 @@
     align-items: center;
     margin: 4px 0;
     padding: 4px;
-    background-color: rgba(0, 0, 0, 0.1);
-    border-radius: 3px;
+    background-color: var(--vv-inset);
+    border-radius: 6px;
 }
 
 .prefab-object-field {
@@ -168,30 +184,31 @@
     width: 22px;
     height: 22px;
     font-size: 14px;
-    color: #FF5252;
-    background-color: transparent;
+    color: var(--vv-danger);
+    background-color: rgba(0, 0, 0, 0);
     border-width: 0;
     margin-left: 4px;
 }
 
 .remove-prefab-button:hover {
-    color: #FF8A80;
+    color: var(--vv-danger-hover);
 }
 
 .add-prefab-button {
     height: 24px;
     margin-top: 5px;
-    background-color: rgba(76, 175, 80, 0.2);
+    color: var(--vv-primary);
+    background-color: var(--vv-primary-soft);
     border-width: 1px;
-    border-color: rgba(76, 175, 80, 0.4);
-    border-radius: 3px;
+    border-color: var(--vv-primary);
+    border-radius: 6px;
 }
 
 .add-prefab-button:hover {
-    background-color: rgba(76, 175, 80, 0.3);
+    background-color: rgba(16, 185, 129, 0.28);
 }
 
-/* Bundle Folder Styles */
+/* Bundle folder */
 .bundle-folder-input {
     flex-grow: 1;
     margin-right: 5px;
@@ -206,13 +223,13 @@
 .bundle-files-section {
     margin-top: 8px;
     padding: 8px;
-    background-color: rgba(0, 0, 0, 0.15);
-    border-radius: 3px;
+    background-color: var(--vv-inset);
+    border-radius: 6px;
 }
 
 .file-counter {
     font-size: 12px;
-    color: #888888;
+    color: var(--vv-text-muted);
     margin-bottom: 5px;
     -unity-font-style: italic;
 }
@@ -229,8 +246,8 @@
 .bundle-item {
     padding: 3px 6px;
     margin: 2px 0;
-    background-color: rgba(255, 255, 255, 0.05);
-    border-radius: 2px;
+    background-color: var(--vv-surface);
+    border-radius: 6px;
     flex-direction: row;
     align-items: center;
 }
@@ -238,25 +255,25 @@
 .bundle-item-name {
     flex-grow: 1;
     font-size: 11px;
-    color: #C0C0C0;
+    color: var(--vv-text-muted);
 }
 
 .bundle-item-size {
     font-size: 10px;
-    color: #888888;
+    color: var(--vv-text-faint);
     margin-left: 8px;
 }
 
 .bundle-item-required {
-    color: #4CAF50;
+    color: var(--vv-success);
 }
 
-/* Metadata Foldout Styles */
+/* Metadata foldouts */
 .metadata-foldout {
     margin: 5px 0;
     padding: 5px;
-    background-color: rgba(255, 255, 255, 0.03);
-    border-radius: 3px;
+    background-color: var(--vv-surface);
+    border-radius: 6px;
 }
 
 .metadata-foldout > Toggle {
@@ -270,10 +287,10 @@
 .metadata-entry {
     margin: 5px 0;
     padding: 8px;
-    background-color: rgba(0, 0, 0, 0.15);
-    border-radius: 3px;
+    background-color: var(--vv-inset);
+    border-radius: 6px;
     border-width: 1px;
-    border-color: rgba(255, 255, 255, 0.1);
+    border-color: var(--vv-border);
 }
 
 .metadata-entry-header {
@@ -286,7 +303,7 @@
 .metadata-entry-title {
     font-size: 12px;
     -unity-font-style: bold;
-    color: #B8B8B8;
+    color: var(--vv-text-muted);
 }
 
 .metadata-field-row {
@@ -298,7 +315,7 @@
 .metadata-field-label {
     width: 45px;
     font-size: 11px;
-    color: #999999;
+    color: var(--vv-text-muted);
 }
 
 .metadata-field {
@@ -311,29 +328,30 @@
     width: 22px;
     height: 22px;
     font-size: 14px;
-    color: #FF5252;
-    background-color: transparent;
+    color: var(--vv-danger);
+    background-color: rgba(0, 0, 0, 0);
     border-width: 0;
 }
 
 .remove-metadata-button:hover {
-    color: #FF8A80;
+    color: var(--vv-danger-hover);
 }
 
 .add-metadata-button {
     height: 24px;
     margin-top: 5px;
-    background-color: rgba(33, 150, 243, 0.2);
+    color: var(--vv-accent);
+    background-color: var(--vv-accent-soft);
     border-width: 1px;
-    border-color: rgba(33, 150, 243, 0.4);
-    border-radius: 3px;
+    border-color: var(--vv-accent);
+    border-radius: 6px;
 }
 
 .add-metadata-button:hover {
-    background-color: rgba(33, 150, 243, 0.3);
+    background-color: rgba(34, 211, 238, 0.24);
 }
 
-/* Button Styles */
+/* Buttons */
 .button-section {
     margin: 8px 0;
 }
@@ -341,36 +359,41 @@
 .primary-button {
     height: 30px;
     margin: 5px 0;
-    background-color: #2196F3;
-    color: white;
+    background-color: var(--vv-primary);
+    color: var(--vv-text-on-accent);
     -unity-font-style: bold;
-    border-radius: 3px;
+    border-width: 0;
+    border-radius: 6px;
 }
 
 .primary-button:hover {
-    background-color: #1976D2;
+    background-color: var(--vv-primary-hover);
 }
 
 .primary-button:disabled {
-    background-color: #757575;
-    color: #B0B0B0;
+    background-color: var(--vv-disabled-bg);
+    color: var(--vv-disabled-text);
 }
 
 .danger-button {
-    background-color: #F44336;
-    color: white;
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--vv-danger);
+    border-width: 1px;
+    border-color: var(--vv-danger-soft);
+    border-radius: 6px;
 }
 
 .danger-button:hover {
-    background-color: #D32F2F;
+    background-color: var(--vv-danger-soft);
+    color: var(--vv-danger-hover);
 }
 
-/* Progress Styles */
+/* Progress */
 .progress-section {
     margin: 10px 0;
     padding: 10px;
-    background-color: rgba(0, 0, 0, 0.2);
-    border-radius: 4px;
+    background-color: var(--vv-inset);
+    border-radius: 8px;
 }
 
 .progress-bar {
@@ -379,16 +402,16 @@
 }
 
 .progress-bar > .unity-progress-bar__background {
-    background-color: rgba(0, 0, 0, 0.3);
-    border-radius: 3px;
+    background-color: var(--vv-inset);
+    border-radius: 6px;
 }
 
 .progress-bar > .unity-progress-bar__progress {
-    background-color: #4CAF50;
-    border-radius: 3px;
+    background-color: var(--vv-primary);
+    border-radius: 6px;
 }
 
-/* General Helper Styles */
+/* Helpers */
 .row {
     flex-direction: row;
     align-items: center;
@@ -406,7 +429,7 @@
     width: 90px;
     flex-shrink: 0;
     -unity-font-style: bold;
-    color: #B8B8B8;
+    color: var(--vv-text-muted);
 }
 
 .field-row > .catalog-name-input,
@@ -430,18 +453,19 @@
 /* Drag-and-drop hint inside the prefab foldouts */
 .drag-hint {
     font-size: 10px;
-    color: #777777;
+    color: var(--vv-text-faint);
     -unity-font-style: italic;
     -unity-text-align: middle-center;
     margin-top: 4px;
     padding: 3px;
     border-width: 1px;
-    border-color: rgba(255, 255, 255, 0.12);
-    border-radius: 3px;
+    border-color: var(--vv-border);
+    border-radius: 6px;
 }
 
 Label {
     margin: 2px 0;
+    color: var(--vv-text);
 }
 
 TextField {
@@ -452,17 +476,17 @@ Button {
     margin: 2px 0;
 }
 
-/* Version Label */
+/* Version label */
 .version-label {
     position: absolute;
     bottom: 4px;
     right: 8px;
     font-size: 10px;
-    color: #888888;
+    color: var(--vv-text-faint);
     -unity-text-align: middle-right;
 }
 
-/* Catalog List Styles */
+/* Catalog list */
 .catalog-list-scroll {
     max-height: 280px;
     min-height: 100px;
@@ -473,23 +497,23 @@ Button {
     padding: 5px;
 }
 
-/* Catalog Card Styles */
+/* Catalog cards */
 .catalog-card {
-    padding: 8px;
-    margin: 4px 0;
-    background-color: rgba(255, 255, 255, 0.05);
-    border-radius: 4px;
+    padding: 10px;
+    margin: 6px 0;
+    background-color: var(--vv-surface);
+    border-radius: 10px;
     border-width: 1px;
-    border-color: rgba(255, 255, 255, 0.1);
+    border-color: var(--vv-border);
 }
 
 .catalog-card:hover {
-    background-color: rgba(255, 255, 255, 0.08);
+    background-color: var(--vv-surface-hover);
 }
 
 .catalog-card-highlight {
-    border-color: #4CAF50;
-    border-width: 2px;
+    border-color: var(--vv-primary);
+    border-width: 1px;
 }
 
 .catalog-card-header {
@@ -506,12 +530,12 @@ Button {
 .catalog-name {
     font-size: 13px;
     -unity-font-style: bold;
-    color: #E0E0E0;
+    color: var(--vv-text);
 }
 
 .catalog-id {
     font-size: 9px;
-    color: #666666;
+    color: var(--vv-text-faint);
     margin-top: 2px;
 }
 
@@ -523,7 +547,7 @@ Button {
 
 .catalog-date {
     font-size: 10px;
-    color: #888888;
+    color: var(--vv-text-muted);
 }
 
 .catalog-card-buttons {
@@ -533,16 +557,16 @@ Button {
 
 .catalog-version-count {
     font-size: 11px;
-    color: #888888;
+    color: var(--vv-text-muted);
     margin-right: 10px;
 }
 
 .catalog-version-tag {
     font-size: 10px;
-    color: #4CAF50;
-    background-color: rgba(76, 175, 80, 0.15);
-    padding: 2px 6px;
-    border-radius: 2px;
+    color: var(--vv-success);
+    background-color: var(--vv-primary-soft);
+    padding: 2px 8px;
+    border-radius: 999px;
     margin-right: 5px;
 }
 
@@ -551,6 +575,7 @@ Button {
     min-width: 60px;
     margin-left: 6px;
     font-size: 11px;
+    border-radius: 6px;
 }
 
 .inline-button {
@@ -558,25 +583,27 @@ Button {
     min-width: 50px;
     margin-left: 4px;
     font-size: 11px;
+    border-radius: 6px;
 }
 
-/* Error Label */
+/* Error label */
 .error-label {
-    color: #FF5252;
+    color: var(--vv-danger);
     font-size: 11px;
     margin-top: 4px;
 }
 
-/* Info Box */
+/* Info box */
 .info-box {
     padding: 10px;
-    background-color: rgba(255, 193, 7, 0.1);
-    border-radius: 4px;
+    background-color: var(--vv-warning-soft);
+    border-radius: 8px;
     border-width: 1px;
-    border-color: rgba(255, 193, 7, 0.3);
+    border-color: var(--vv-warning);
+    color: var(--vv-text-muted);
 }
 
-/* Copy Button */
+/* Copy button */
 .copy-button {
     width: 50px;
     height: 20px;

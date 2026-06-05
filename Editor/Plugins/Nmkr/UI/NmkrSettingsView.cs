@@ -3,6 +3,7 @@ using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
+using VirtualVenues.Editor.UI;
 using VirtualVenues.Plugins.Nmkr;
 
 namespace VirtualVenues.Plugins.Nmkr.Editor
@@ -39,39 +40,47 @@ namespace VirtualVenues.Plugins.Nmkr.Editor
 
         public NmkrSettingsView()
         {
-            VisualTreeAsset uxml = LoadAsset<VisualTreeAsset>("NmkrSettingsWindow");
-            StyleSheet uss = LoadAsset<StyleSheet>("NmkrSettingsWindow");
+            VisualTreeAsset uxml = VVEditorUI.LoadAsset<VisualTreeAsset>("NmkrSettingsWindow");
+            StyleSheet uss = VVEditorUI.LoadAsset<StyleSheet>("NmkrSettingsWindow");
             if (uxml == null) { Add(new Label("Could not load NmkrSettingsWindow.uxml")); return; }
 
             uxml.CloneTree(this);
             if (uss != null) { styleSheets.Add(uss); }
 
+            // Wear the VV chrome (navy background + cards + tokens) but keep NMKR's own green:
+            // the .nmkr-root class locally overrides the --vv-plugin-accent tokens. No code header
+            // is inserted — this window already has its own header (we just add a small VV mark).
+            AddToClassList("nmkr-root");
+            VVEditorUI.ApplyTheme(this, null, null, insertHeader: false);
+
             BindUIElements();
             SetupEventHandlers();
             ApplyLogo();
+            ApplyVVBrandMark();
             TryLoadConfig();
-        }
-
-        private T LoadAsset<T>(string nameWithoutExtension) where T : Object
-        {
-            string typeFilter = $"t:{typeof(T).Name}";
-            string[] guids = AssetDatabase.FindAssets($"{nameWithoutExtension} {typeFilter}");
-            foreach (string g in guids)
-            {
-                string p = AssetDatabase.GUIDToAssetPath(g);
-                if (Path.GetFileNameWithoutExtension(p) != nameWithoutExtension) { continue; }
-                T asset = AssetDatabase.LoadAssetAtPath<T>(p);
-                if (asset != null) { return asset; }
-            }
-            return null;
         }
 
         private void ApplyLogo()
         {
             if (_logoImage == null) { return; }
-            Texture2D logo = LoadAsset<Texture2D>("nmkr-icon_1000x1000");
+            Texture2D logo = VVEditorUI.LoadAsset<Texture2D>("nmkr-icon_1000x1000");
             if (logo == null) { return; }
             _logoImage.style.backgroundImage = new StyleBackground(logo);
+        }
+
+        // Drops a small VirtualVenues mark at the start of the NMKR header, so the plugin reads as
+        // "VV platform hosting NMKR" while NMKR keeps its own green badge and buttons.
+        private void ApplyVVBrandMark()
+        {
+            VisualElement header = this.Q<VisualElement>("Header");
+            if (header == null) { return; }
+            if (header.Q<VisualElement>(className: "vv-logo--corner") != null) { return; }
+
+            var mark = new VisualElement();
+            mark.AddToClassList("vv-logo--corner");
+            Sprite logo = VVEditorUI.LoadLogoSmall();
+            if (logo != null) { mark.style.backgroundImage = new StyleBackground(logo); }
+            header.Insert(0, mark);
         }
 
         private void BindUIElements()
@@ -199,7 +208,7 @@ namespace VirtualVenues.Plugins.Nmkr.Editor
         {
             if (_statusLabel == null) { return; }
             _statusLabel.text = msg;
-            _statusLabel.style.color = new StyleColor(error ? new Color(0.95f, 0.35f, 0.35f) : new Color(0.35f, 0.85f, 0.45f));
+            _statusLabel.style.color = new StyleColor(error ? VVColors.Danger : VVColors.Success);
         }
     }
 }

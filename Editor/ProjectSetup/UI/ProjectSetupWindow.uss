@@ -1,18 +1,22 @@
+/* Project Setup — VirtualVenues themed.
+   Class names are unchanged (C# builds rows from them); the look is rebuilt on the
+   shared tokens from VVTheme.uss (added as the base sheet by VVEditorUI.ApplyTheme). */
+
 .ps-container {
     padding: 12px;
     flex-grow: 1;
 }
 
 .ps-title {
-    font-size: 16px;
+    font-size: 15px;
     -unity-font-style: bold;
-    color: #D4D4D4;
+    color: var(--vv-text);
     margin-bottom: 4px;
 }
 
 .ps-intro {
     font-size: 11px;
-    color: #B0B0B0;
+    color: var(--vv-text-muted);
     white-space: normal;
     margin-bottom: 8px;
 }
@@ -23,8 +27,8 @@
     white-space: normal;
     padding: 8px;
     margin-bottom: 8px;
-    background-color: rgba(0, 0, 0, 0.2);
-    border-radius: 4px;
+    background-color: var(--vv-inset);
+    border-radius: 8px;
 }
 
 .ps-checklist-scroll {
@@ -37,10 +41,16 @@
 .setup-row {
     flex-direction: row;
     align-items: center;
-    padding: 6px 8px;
-    margin: 3px 0;
-    background-color: rgba(255, 255, 255, 0.05);
-    border-radius: 4px;
+    padding: 8px 10px;
+    margin: 4px 0;
+    background-color: var(--vv-surface);
+    border-width: 1px;
+    border-color: var(--vv-border);
+    border-radius: 10px;
+}
+
+.setup-row:hover {
+    background-color: var(--vv-surface-hover);
 }
 
 .setup-row-icon {
@@ -48,17 +58,17 @@
     font-size: 14px;
     -unity-font-style: bold;
     -unity-text-align: middle-center;
-    margin-right: 6px;
+    margin-right: 8px;
 }
 
 .setup-row-title {
     font-size: 12px;
-    color: #E0E0E0;
+    color: var(--vv-text);
 }
 
 .setup-row-detail {
     font-size: 10px;
-    color: #909090;
+    color: var(--vv-text-muted);
     white-space: normal;
 }
 
@@ -66,6 +76,7 @@
     width: 56px;
     height: 22px;
     margin-left: 6px;
+    border-radius: 6px;
 }
 
 .setup-row-fix:disabled {
@@ -81,47 +92,56 @@
 .ps-primary {
     flex-grow: 1;
     height: 30px;
-    background-color: #2196F3;
-    color: white;
+    background-color: var(--vv-primary);
+    color: var(--vv-text-on-accent);
     -unity-font-style: bold;
-    border-radius: 3px;
+    border-width: 0;
+    border-radius: 6px;
 }
 
 .ps-primary:hover {
-    background-color: #1976D2;
+    background-color: var(--vv-primary-hover);
 }
 
 .ps-primary:disabled {
-    background-color: #757575;
-    color: #B0B0B0;
+    background-color: var(--vv-disabled-bg);
+    color: var(--vv-disabled-text);
 }
 
 .ps-secondary {
     width: 90px;
     height: 30px;
     margin-left: 6px;
-    border-radius: 3px;
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--vv-accent);
+    border-width: 1px;
+    border-color: var(--vv-accent);
+    border-radius: 6px;
+}
+
+.ps-secondary:hover {
+    background-color: var(--vv-accent-soft);
 }
 
 /* Log */
 .ps-log-title {
     font-size: 12px;
     -unity-font-style: bold;
-    color: #B8B8B8;
+    color: var(--vv-text-muted);
     margin-bottom: 2px;
 }
 
 .ps-log {
     min-height: 80px;
     max-height: 140px;
-    background-color: rgba(0, 0, 0, 0.25);
-    border-radius: 4px;
+    background-color: var(--vv-inset);
+    border-radius: 8px;
     padding: 4px 6px;
 }
 
 .ps-log Label {
     font-size: 10px;
-    color: #C0C0C0;
+    color: var(--vv-text-muted);
     white-space: normal;
     margin: 1px 0;
 }
