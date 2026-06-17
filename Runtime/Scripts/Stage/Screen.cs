@@ -16,7 +16,8 @@ namespace VirtualVenues.WorldCreator
         private string _texturePropertyName = "_BaseMap";
         private Vector2 _screenTilingScale = new Vector2(1f, 0.5f);
         private Vector2 _screenTextureOffset = Vector2.zero;
-        
+        [SerializeField] private string _screenSource = "";
+
         public static List<Screen> Instances => _instances;
         public static Action<Screen> onScreenAdded = null;
 
@@ -26,6 +27,15 @@ namespace VirtualVenues.WorldCreator
         public string TexturePropertyName => _texturePropertyName;
         public Vector2 TextureOffset => _screenTextureOffset;
         public Vector2 TextureTiling => _screenTilingScale;
+        public string ScreenSource => _screenSource;
+
+        /// <summary>
+        /// Initializes this screen from layout data. Safe to call after Awake/AddComponent.
+        /// </summary>
+        public void Configure(string screenSource)
+        {
+            _screenSource = screenSource;
+        }
 
         private void Awake()
         {
@@ -33,8 +43,13 @@ namespace VirtualVenues.WorldCreator
             {
                 _stage = this.gameObject.GetComponentInParent<Stage>();
             }
-            _screenTilingScale = _screenMesh.material.GetTextureScale(_texturePropertyName);
-            _screenTextureOffset = _screenMesh.material.GetTextureOffset(_texturePropertyName);
+            // Guard the mesh deref so a runtime-added Screen (e.g. via the UWE LayoutLoader, which
+            // AddComponents onto a bare GameObject before assigning a mesh) does not NRE in Awake.
+            if (_screenMesh != null && _screenMesh.material != null)
+            {
+                _screenTilingScale = _screenMesh.material.GetTextureScale(_texturePropertyName);
+                _screenTextureOffset = _screenMesh.material.GetTextureOffset(_texturePropertyName);
+            }
 
             AddScreen(this);
         }

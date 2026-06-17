@@ -26,6 +26,14 @@ namespace VirtualVenues.WorldCreator
             AddStage(this);
         }
 
+        /// <summary>
+        /// Initializes this stage from layout data. Safe to call after Awake/AddComponent.
+        /// </summary>
+        public void Configure(int stageIndex)
+        {
+            _stageIndex = stageIndex;
+        }
+
         private static void AddStage(Stage stage)
         {
             if (_instances.Contains(stage))

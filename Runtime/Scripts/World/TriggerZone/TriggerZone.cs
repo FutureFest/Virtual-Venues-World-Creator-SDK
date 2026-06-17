@@ -49,6 +49,16 @@ namespace VirtualVenues.WorldCreator
             _tracker.RemoveInstance(this);
         }
 
+        /// <summary>
+        /// Initializes this trigger zone from layout data. Safe to call after Awake/AddComponent.
+        /// Re-runs collider setup so a collider added after Awake is registered as a trigger.
+        /// </summary>
+        public void Configure(string zoneName)
+        {
+            _zoneName = zoneName;
+            SetupCollider();
+        }
+
         public void SetupCollider()
         {
             _collider = GetComponent<Collider>();

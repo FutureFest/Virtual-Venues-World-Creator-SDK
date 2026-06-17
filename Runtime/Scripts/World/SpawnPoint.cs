@@ -16,6 +16,12 @@ namespace VirtualVenues.WorldCreator
 
         public static Action<SpawnPoint> onSpawnPointAdded = null;
 
+        [SerializeField] private bool _isDefault = false;
+        [SerializeField] private string _team = "";
+
+        public bool IsDefault => _isDefault;
+        public string Team => _team;
+
 #if UNITY_EDITOR
         [Header("Gizmo Settings")]
         [Tooltip("Length of the direction arrow.")]
@@ -29,6 +35,15 @@ namespace VirtualVenues.WorldCreator
         private void Awake()
         {
             AddSpawnPoint(this);
+        }
+
+        /// <summary>
+        /// Initializes this spawn point from layout data. Safe to call after Awake/AddComponent.
+        /// </summary>
+        public void Configure(bool isDefault, string team)
+        {
+            _isDefault = isDefault;
+            _team = team;
         }
 
         private static void AddSpawnPoint(SpawnPoint spawnPoint)

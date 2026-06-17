@@ -1,0 +1,52 @@
+<ui:UXML xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="False">
+    <ui:ScrollView>
+        <ui:VisualElement class="main-container">
+            <ui:VisualElement name="auth-section" class="section">
+                <ui:Label name="user-greeting" class="user-greeting" />
+                <ui:Button name="auth-button" text="Login" class="auth-button" />
+                <ui:VisualElement name="device-flow-container" class="device-flow-container">
+                    <ui:Label text="1. In a browser on this computer or your phone, open:" />
+                    <ui:VisualElement class="row">
+                        <ui:Button name="verification-url" class="link-button" />
+                    </ui:VisualElement>
+                    <ui:Label text="2. Enter the device confirmation code:" />
+                    <ui:VisualElement class="row">
+                        <ui:TextField name="user-code" readonly="true" class="code-field" />
+                        <ui:Button name="copy-code-button" text="Copy" class="copy-button" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+                <ui:Label name="auth-result" class="auth-result" />
+            </ui:VisualElement>
+            <ui:VisualElement name="publisher-section" class="section">
+                <ui:Label text="Asset Pack Publisher" class="section-title" />
+                <ui:VisualElement class="subsection">
+                    <ui:Label text="Pack Name:" />
+                    <ui:TextField name="pack-name-field" class="text-input" />
+                    <ui:Label text="Version:" />
+                    <ui:TextField name="version-field" class="text-input" />
+                    <ui:Label text="Price (0 = free):" />
+                    <ui:IntegerField name="price-field" />
+                    <ui:Label text="Tags (comma-separated):" />
+                    <ui:TextField name="tags-field" class="text-input" />
+                    <ui:Label text="Categories (comma-separated):" />
+                    <ui:TextField name="categories-field" class="text-input" />
+                </ui:VisualElement>
+                <ui:VisualElement class="subsection">
+                    <ui:Label text="Assets" class="subsection-title" />
+                    <ui:VisualElement name="assets-container" class="assets-container" />
+                    <ui:Button name="add-asset-button" text="+ Add Asset" class="add-asset-button" />
+                    <ui:Label name="assets-error" class="error-label" />
+                </ui:VisualElement>
+                <ui:VisualElement class="button-section">
+                    <ui:Button name="build-publish-button" text="Build &amp; Publish to Marketplace" class="primary-button" />
+                </ui:VisualElement>
+                <ui:VisualElement name="progress-section" class="progress-section">
+                    <ui:Label name="progress-message" />
+                    <ui:ProgressBar name="progress-bar" class="progress-bar" />
+                </ui:VisualElement>
+                <ui:Label name="status-box" class="status-box" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:ScrollView>
+    <ui:Label name="version-label" class="version-label" />
+</ui:UXML>

@@ -1,0 +1,292 @@
+/* Asset Pack Publisher — VirtualVenues themed.
+   Shares the VVTheme.uss tokens (added as the base sheet by VVEditorUI). Class names mirror
+   the World / Avatar publishers so the look stays consistent across the SDK tool windows. */
+
+.main-container {
+    padding: 10px;
+    flex-grow: 1;
+}
+
+/* Cards */
+.section {
+    margin-bottom: 16px;
+    padding: 12px;
+    background-color: var(--vv-surface);
+    border-width: 1px;
+    border-color: var(--vv-border);
+    border-radius: 10px;
+}
+
+.subsection {
+    margin: 8px 0;
+    padding: 8px;
+    background-color: var(--vv-surface-strong);
+    border-radius: 6px;
+}
+
+.section-title {
+    font-size: 15px;
+    -unity-font-style: bold;
+    margin-bottom: 10px;
+    color: var(--vv-text);
+}
+
+.subsection-title {
+    font-size: 13px;
+    -unity-font-style: bold;
+    margin-bottom: 8px;
+    color: var(--vv-text-muted);
+}
+
+/* Authentication */
+.user-greeting {
+    font-size: 14px;
+    -unity-font-style: bold;
+    margin-bottom: 8px;
+    color: var(--vv-success);
+}
+
+.auth-button {
+    width: 100px;
+    height: 26px;
+    margin: 5px 0;
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--vv-accent);
+    -unity-font-style: bold;
+    border-width: 1px;
+    border-color: var(--vv-accent);
+    border-radius: 6px;
+}
+
+.auth-button:hover {
+    background-color: var(--vv-accent-soft);
+}
+
+.device-flow-container {
+    margin: 10px 0;
+    padding: 10px;
+    background-color: var(--vv-accent-soft);
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: var(--vv-accent);
+}
+
+.code-field {
+    flex-grow: 1;
+    margin: 0 5px 0 0;
+    -unity-font-style: bold;
+    background-color: var(--vv-inset);
+}
+
+.link-button {
+    color: var(--vv-accent);
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 0;
+    -unity-text-align: middle-left;
+    cursor: link;
+}
+
+.link-button:hover {
+    color: var(--vv-accent-teal);
+}
+
+.copy-button {
+    width: 50px;
+    height: 20px;
+}
+
+.auth-result {
+    margin: 10px 0;
+    padding: 8px;
+    border-radius: 6px;
+}
+
+.auth-result-error {
+    color: var(--vv-danger);
+    background-color: var(--vv-danger-soft);
+}
+
+.auth-result-success {
+    color: var(--vv-success);
+    background-color: var(--vv-primary-soft);
+}
+
+/* Pack metadata fields */
+.text-input {
+    margin: 2px 0 8px 0;
+    height: 22px;
+}
+
+IntegerField {
+    margin: 2px 0 8px 0;
+}
+
+/* Assets list */
+.assets-container {
+    margin: 4px 0;
+}
+
+.asset-row {
+    margin: 4px 0;
+    padding: 8px;
+    background-color: var(--vv-inset);
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: var(--vv-border);
+}
+
+.asset-row-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.asset-row-title {
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: var(--vv-text-muted);
+}
+
+.asset-object-field {
+    margin: 2px 0;
+    height: 22px;
+}
+
+.remove-asset-button {
+    width: 64px;
+    height: 20px;
+    font-size: 11px;
+    color: var(--vv-danger);
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 1px;
+    border-color: var(--vv-danger-soft);
+    border-radius: 6px;
+}
+
+.remove-asset-button:hover {
+    background-color: var(--vv-danger-soft);
+    color: var(--vv-danger-hover);
+}
+
+.add-asset-button {
+    height: 24px;
+    margin: 6px 0 2px 0;
+    align-self: flex-start;
+    padding: 0 12px;
+    font-size: 11px;
+}
+
+.asset-row-error {
+    color: var(--vv-warning);
+    font-size: 11px;
+    margin-top: 4px;
+    white-space: normal;
+}
+
+/* Buttons */
+.button-section {
+    margin: 14px 0;
+}
+
+.primary-button {
+    height: 30px;
+    margin: 5px 0;
+    background-color: var(--vv-primary);
+    color: var(--vv-text-on-accent);
+    -unity-font-style: bold;
+    border-width: 0;
+    border-radius: 6px;
+}
+
+.primary-button:hover {
+    background-color: var(--vv-primary-hover);
+}
+
+.primary-button:disabled {
+    background-color: var(--vv-disabled-bg);
+    color: var(--vv-disabled-text);
+}
+
+/* Progress */
+.progress-section {
+    margin: 10px 0;
+    padding: 10px;
+    background-color: var(--vv-inset);
+    border-radius: 8px;
+}
+
+.progress-bar {
+    height: 20px;
+    margin: 5px 0;
+}
+
+.progress-bar > .unity-progress-bar__background {
+    background-color: var(--vv-inset);
+    border-radius: 6px;
+}
+
+.progress-bar > .unity-progress-bar__progress {
+    background-color: var(--vv-primary);
+    border-radius: 6px;
+}
+
+/* Status / info */
+.status-box {
+    margin: 8px 0;
+    padding: 10px;
+    border-radius: 8px;
+    white-space: normal;
+}
+
+.status-info {
+    background-color: var(--vv-surface-strong);
+    color: var(--vv-text-muted);
+}
+
+.status-error {
+    background-color: var(--vv-danger-soft);
+    color: var(--vv-danger);
+}
+
+.status-success {
+    background-color: var(--vv-primary-soft);
+    color: var(--vv-success);
+}
+
+.error-label {
+    color: var(--vv-danger);
+    font-size: 11px;
+    margin-top: 4px;
+    white-space: normal;
+}
+
+/* Helpers */
+.row {
+    flex-direction: row;
+    align-items: center;
+    margin: 5px 0;
+}
+
+Label {
+    margin: 2px 0;
+    color: var(--vv-text);
+}
+
+TextField {
+    margin: 2px 0;
+}
+
+Button {
+    margin: 2px 0;
+}
+
+/* Version label */
+.version-label {
+    position: absolute;
+    bottom: 4px;
+    right: 8px;
+    font-size: 10px;
+    color: var(--vv-text-faint);
+    -unity-text-align: middle-right;
+}

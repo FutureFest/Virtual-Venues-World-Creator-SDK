@@ -48,6 +48,30 @@ namespace VirtualVenues.WorldCreator
             AddSpeaker(this);
         }
 
+        /// <summary>
+        /// Initializes this speaker from layout data. Safe to call after Awake/AddComponent.
+        /// speakerSource is "Artist" or "Visuals"; speakerChannel maps to the SpeakerChannel enum order
+        /// (0 = Mono, 1 = StereoLeft, 2 = StereoRight).
+        /// </summary>
+        public void Configure(string speakerSource, int speakerChannel)
+        {
+            _source = ParseSource(speakerSource);
+            _channel = ParseChannel(speakerChannel);
+        }
+
+        private static SpeakerSource ParseSource(string speakerSource)
+        {
+            if (speakerSource == "Visuals") { return SpeakerSource.Visuals; }
+            return SpeakerSource.Artist;
+        }
+
+        private static SpeakerChannel ParseChannel(int speakerChannel)
+        {
+            if (speakerChannel == (int)SpeakerChannel.StereoLeft) { return SpeakerChannel.StereoLeft; }
+            if (speakerChannel == (int)SpeakerChannel.StereoRight) { return SpeakerChannel.StereoRight; }
+            return SpeakerChannel.Mono;
+        }
+
         private void OnValidate()
         {
             if (_stage == null)

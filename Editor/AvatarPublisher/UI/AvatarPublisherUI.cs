@@ -1959,6 +1959,11 @@ public class AvatarPublisherUI : EditorWindow
             catalogId = reserveResponse.catalogId;
             versionId = reserveResponse.versionId;
 
+            // Bake a per-publish-unique bundle identity (fresh group GUID + versionId-suffixed names) so
+            // two catalogs/versions can coexist in one Unity session ("same files already loaded" fix).
+            // Must use the SERVER-confirmed versionId (the reserve response may replace the local one).
+            AddressablesBuildManager.SetBuildIdentity(versionId);
+
             // Derive contentBaseUrl from the presigned upload URL — the API is the
             // source of truth for which S3 bucket/region to use.
             var binUri = new Uri(reserveResponse.uploadUrlBin);
@@ -2007,6 +2012,11 @@ public class AvatarPublisherUI : EditorWindow
             byte[] hashData = null;
             var bundleFiles = new Dictionary<string, byte[]>();
 
+            // Bundles are filtered to THIS build's outputs — bundle names are unique per publish now,
+            // so a stale ContentData file that somehow survived the pre-clean must never be uploaded.
+            var builtBundles = new HashSet<string>(
+                buildResult.BundleFilePaths ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+
             foreach (var file in outputFiles)
             {
                 if (file.FileName.EndsWith(".bin"))
@@ -2017,7 +2027,7 @@ public class AvatarPublisherUI : EditorWindow
                 {
                     hashData = await Task.Run(() => File.ReadAllBytes(file.FilePath));
                 }
-                else if (file.IsBundle)
+                else if (file.IsBundle && builtBundles.Contains(Path.GetFullPath(file.FilePath)))
                 {
                     byte[] data = await Task.Run(() => File.ReadAllBytes(file.FilePath));
                     bundleFiles[file.FileName] = data;
