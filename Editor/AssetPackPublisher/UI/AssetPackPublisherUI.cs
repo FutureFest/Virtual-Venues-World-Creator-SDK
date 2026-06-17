@@ -10,7 +10,7 @@ using UnityEditor.UIElements; // ObjectField
 using UnityEngine;
 using UnityEngine.UIElements;
 using VirtualVenues.Editor.UI;  // VVEditorUI
-using VirtualVenues.Layout;     // AssetMeta, BoundsData, Vec3
+// AssetMeta / BoundsData / Vec3 live in this assembly (PublisherDtos.cs)
 
 namespace VirtualVenues.Editor.AssetPackPublisher
 {

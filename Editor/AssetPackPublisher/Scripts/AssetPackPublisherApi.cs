@@ -8,7 +8,7 @@ using Auth0;
 using UnityEngine;
 using UnityEngine.Networking;
 using VirtualVenues.Editor.Publishing; // AddressablesCatalogBuilder (BuildResult / BuildOutputFile)
-using VirtualVenues.Layout;            // AssetMeta, PackageMetadata, LibraryPackage
+// AssetMeta / PackageMetadata / LibraryPackage / UploadUrl live in this assembly (PublisherDtos.cs)
 
 namespace VirtualVenues.Editor.AssetPackPublisher
 {
