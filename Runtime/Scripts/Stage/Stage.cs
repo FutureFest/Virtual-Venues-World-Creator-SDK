@@ -15,23 +15,36 @@ namespace VirtualVenues.WorldCreator
 
         [SerializeField] private int _stageIndex = 0;
 
+        [Tooltip("When ON, this stage's media (artist/visuals video + screens) is live as soon as the world " +
+                 "loads. When OFF, the stage starts dark and is only switched on when a player enters a " +
+                 "Stage Trigger zone (a performance optimization for multi-stage venues).")]
+        [SerializeField] private bool _activateOnStart = true;
+
         public int StageIndex => _stageIndex;
+        public bool ActivateOnStart => _activateOnStart;
 
         public static Action<Stage> onStageAdded = null;
 
 
 
-        private void Awake()
+        private void Start()
         {
+            // Fallback for authored (prefab-placed) stages that are never Configure()'d by the layout:
+            // register with the serialized index. Idempotent — a no-op when Configure() already did.
             AddStage(this);
         }
 
         /// <summary>
         /// Initializes this stage from layout data. Safe to call after Awake/AddComponent.
         /// </summary>
-        public void Configure(int stageIndex)
+        public void Configure(int stageIndex, bool activateOnStart = true)
         {
             _stageIndex = stageIndex;
+            _activateOnStart = activateOnStart;
+            // Register AFTER the values are set. The UWE LayoutLoader AddComponents this marker and THEN
+            // calls Configure; registering in Awake (as before) made StageCoreConnector and any nested
+            // surface read the pre-Configure defaults. AddStage is idempotent, so Start() no-ops here.
+            AddStage(this);
         }
 
         private static void AddStage(Stage stage)

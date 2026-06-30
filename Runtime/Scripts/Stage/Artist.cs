@@ -9,6 +9,7 @@ namespace VirtualVenues.WorldCreator
         private static List<Artist> _instances = new List<Artist>();
 
         [SerializeField] private Stage _stage = null;
+        [SerializeField] private int _stageIndex = 0;
         [Space]
         [SerializeField] private Renderer _artistMesh = null;
         [SerializeField] private Texture2D _defaultTexture = null;
@@ -24,7 +25,16 @@ namespace VirtualVenues.WorldCreator
         public static List<Artist> Instances => _instances;
         public static Action<Artist> onArtistAdded = null;
 
-        public int StageIndex => _stage != null ? _stage.StageIndex : 0;
+        // Nested under a Stage inherits the parent's index; a standalone artist uses its own
+        // _stageIndex. Lazily resolve the parent so layout spawn-then-reparent ordering still inherits.
+        public int StageIndex
+        {
+            get
+            {
+                if (_stage == null) { _stage = GetComponentInParent<Stage>(); }
+                return _stage != null ? _stage.StageIndex : _stageIndex;
+            }
+        }
         public Renderer Renderer => _artistMesh;
         public Texture2D DefaultTexture => _defaultTexture;
         public string TexturePropertyName => _texturePropertyName;
@@ -35,12 +45,18 @@ namespace VirtualVenues.WorldCreator
 
         /// <summary>
         /// Initializes this artist from layout data. Safe to call after Awake/AddComponent.
+        /// stageIndex is the explicit target stage (ignored when nested under a Stage);
         /// artistPivotOffset is applied to the pivot's local position when a pivot is assigned.
         /// </summary>
-        public void Configure(Vector3 artistPivotOffset, string speakerSource)
+        public void Configure(int stageIndex, Vector3 artistPivotOffset, string speakerSource)
         {
+            _stageIndex = stageIndex;
             _speakerSource = speakerSource;
             if (_pivot != null) { _pivot.localPosition = artistPivotOffset; }
+            // Register AFTER the authored stage index is set (the UWE LayoutLoader adds this component
+            // then Configures); else StageCoreConnector would bind using the pre-Configure default.
+            // Idempotent — the Start() fallback no-ops once this has run.
+            AddArtist(this);
         }
 
         private void OnValidate()
@@ -61,7 +77,13 @@ namespace VirtualVenues.WorldCreator
                 _tilingScale = _artistMesh.material.GetTextureScale(_texturePropertyName);
                 _textureOffset = _artistMesh.material.GetTextureOffset(_texturePropertyName);
             }
+            // Registration intentionally deferred to Configure()/Start() — see Configure().
+        }
 
+        private void Start()
+        {
+            // Fallback for authored (prefab-placed) artists never Configure()'d by the layout:
+            // register with the serialized values. Idempotent — a no-op when Configure() already did.
             AddArtist(this);
         }
 

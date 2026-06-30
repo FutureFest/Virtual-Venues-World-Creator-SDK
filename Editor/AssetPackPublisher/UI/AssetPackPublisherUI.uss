@@ -184,6 +184,103 @@ IntegerField {
     white-space: normal;
 }
 
+/* Assets — drop zone */
+.asset-drop-zone {
+    margin: 4px 0 6px 0;
+    padding: 10px;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--vv-surface);
+    border-width: 1px;
+    border-color: var(--vv-border-strong);
+    border-radius: 6px;
+}
+
+.asset-drop-zone:hover {
+    border-color: var(--vv-accent);
+    background-color: var(--vv-accent-soft);
+}
+
+.asset-drop-zone-label {
+    color: var(--vv-text-muted);
+    font-size: 11px;
+    -unity-font-style: italic;
+}
+
+/* Assets — master/detail layout */
+.asset-master-detail {
+    flex-direction: row;
+    height: 300px;
+    margin: 4px 0;
+}
+
+.asset-list {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 280px;
+    background-color: var(--vv-inset);
+    border-width: 1px;
+    border-color: var(--vv-border);
+    border-radius: 6px;
+}
+
+.asset-detail {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 240px;
+    margin-left: 8px;
+    padding: 8px;
+    background-color: var(--vv-surface-strong);
+    border-radius: 6px;
+}
+
+/* Assets — list cells */
+.asset-cell-label {
+    -unity-text-align: middle-left;
+    color: var(--vv-text);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.asset-cell-icon {
+    width: 26px;
+    height: 26px;
+}
+
+.asset-list .unity-collection-view__item--selected {
+    background-color: var(--vv-accent-soft);
+}
+
+/* Assets — detail pane */
+.asset-detail-hint {
+    color: var(--vv-text-muted);
+    font-size: 11px;
+    white-space: normal;
+    -unity-font-style: italic;
+}
+
+.asset-detail-header {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.asset-detail-preview {
+    width: 96px;
+    height: 96px;
+    margin-right: 8px;
+    background-color: var(--vv-inset);
+    border-radius: 6px;
+}
+
+.asset-detail-title {
+    flex-grow: 1;
+    font-size: 12px;
+    -unity-font-style: bold;
+    color: var(--vv-text-muted);
+}
+
 /* Buttons */
 .button-section {
     margin: 14px 0;

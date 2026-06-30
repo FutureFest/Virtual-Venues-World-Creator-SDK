@@ -29,6 +29,10 @@ namespace VirtualVenues.Editor.AssetPackPublisher
     {
         private static readonly string[] Kinds = { "prop", "screen", "speaker", "stage", "artist" };
 
+        // Icon source per asset. Order must match IconModeNames (the dropdown choices) below.
+        private enum IconMode { Auto, Custom }
+        private static readonly List<string> IconModeNames = new List<string> { "Auto", "Custom" };
+
         private class Row
         {
             public GameObject prefab;
@@ -38,6 +42,21 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             public string category = "";
             public bool keyEdited;
             public bool nameEdited;
+
+            // Last-published thumbnail URL (carried from the AssetPackDefinition).
+            public string thumbnailUrl;
+            // Baked editor preview: the Texture2D shown in the row + its PNG bytes for upload. The window owns
+            // the Texture2D and Destroys it (on rebake, row removal, pack reload, and window close).
+            public Texture2D previewTex;
+            public byte[] previewPng;
+
+            // Icon source. Auto = render the prefab via AssetThumbnailBaker; Custom = use customIcon. Either way
+            // the resolved icon is baked into previewTex/previewPng (a readable copy the window owns), so the row
+            // display and the published thumbnail stay uniform.
+            public IconMode iconMode = IconMode.Auto;
+            // Creator-supplied texture used when iconMode == Custom. A project-asset REFERENCE (not owned — never
+            // Destroyed here); only the readable copy in previewTex is owned.
+            public Texture2D customIcon;
         }
 
         private enum StatusType { Info, Error, Success }
@@ -59,10 +78,15 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         private TextField _tagsField;
         private TextField _categoriesField;
 
-        // Assets list
+        // Assets list (master) + detail pane. The list is virtualized so it scales to large packs; the
+        // detail pane on the right edits whichever row is selected. _rows is the list's itemsSource.
         private VisualElement _assetsContainer;
         private Button _addAssetButton;
         private Label _assetsError;
+        private MultiColumnListView _assetList;
+        private VisualElement _detailPane;
+        private VisualElement _dropZone;
+        private int _selectedIndex = -1;
 
         // Publish
         private Button _buildPublishButton;
@@ -82,12 +106,19 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         // stale auth context and bail before mutating UI. Mirrors the World/Avatar publishers.
         private int _authGen;
 
+        // Pack persistence: the AssetPackDefinition currently being edited (the durable source of truth
+        // that survives closing/reopening Unity). null = no pack selected (publish still works but won't persist).
+        private AssetPackDefinition _activePack;
+        private ObjectField _packDefField;
+        private bool _alive; // true between CreateGUI and OnDisable; gates the deferred preview bake
+        private const string LAST_PACK_GUID_KEY = "AssetPackPublisher_LastPackGuid";
+
         [MenuItem("VirtualVenues/Asset Pack Publisher")]
         public static void ShowWindow()
         {
             var window = GetWindow<AssetPackPublisherUI>();
             window.titleContent = new GUIContent("Asset Pack Publisher");
-            window.minSize = new Vector2(440f, 560f);
+            window.minSize = new Vector2(700f, 600f); // wide enough for the list + detail panes side by side
             window.Show();
         }
 
@@ -99,6 +130,15 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         private void OnDisable()
         {
             AuthManager.AuthStateChanged -= OnAuthStateChanged;
+            _alive = false;
+            // Autosave on window close / domain reload so inspector-style edits aren't lost. SetDirty runs first
+            // inside SaveActivePack, so even if SaveAssets is skipped during teardown Unity flushes it on quit.
+            if (_activePack != null)
+            {
+                try { SaveActivePack(); }
+                catch (Exception ex) { Debug.LogWarning($"[AssetPackPublisher] autosave on close failed: {ex.Message}"); }
+            }
+            ClearRowPreviews();
         }
 
         private void OnAuthStateChanged()
@@ -140,6 +180,9 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             SetupEventHandlers();
             InitializeUI();
             SetVersionLabel();
+            BuildPackSection();
+            _alive = true; // before RestoreLastPack so its deferred preview bake is allowed to run
+            RestoreLastPack();
         }
 
         private void BindUIElements()
@@ -178,7 +221,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             _authButton.clicked += OnAuthButtonClicked;
             _verificationUrlButton.clicked += () => Application.OpenURL(_verificationUrlButton.text);
             _copyCodeButton.clicked += () => EditorGUIUtility.systemCopyBuffer = _userCodeField.value;
-            _addAssetButton.clicked += () => { _rows.Add(new Row()); UpdateAssetsUI(); };
+            _addAssetButton.clicked += () => AddRow(new Row());
             _buildPublishButton.clicked += BuildAndPublish;
             _packNameField.RegisterValueChangedCallback(_ => UpdatePublishButtonState());
         }
@@ -193,6 +236,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
 
             if (string.IsNullOrEmpty(_versionField.value)) { _versionField.value = "1.0.0"; }
 
+            BuildAssetsView(); // build the list + detail panes once, before the first UpdateAssetsUI refresh
             UpdateAssetsUI();
             CheckAuth();
         }
@@ -400,32 +444,252 @@ namespace VirtualVenues.Editor.AssetPackPublisher
 
         // ---- assets list ------------------------------------------------------------------------ //
 
+        // Refresh-only: the list + detail panes are built once in BuildAssetsView; here we just re-bind the
+        // (possibly changed) _rows, restore/clamp the selection, and rebuild the detail pane for it.
         private void UpdateAssetsUI()
         {
-            if (_assetsContainer == null) { return; }
+            if (_assetList == null) { return; }
 
-            _assetsContainer.Clear();
-            for (int i = 0; i < _rows.Count; i++)
+            _assetList.itemsSource = _rows;
+            _assetList.RefreshItems();
+
+            if (_rows.Count == 0)
             {
-                _assetsContainer.Add(CreateAssetRow(_rows[i], i));
+                _selectedIndex = -1;
+                _assetList.ClearSelection();
             }
+            else
+            {
+                if (_selectedIndex < 0 || _selectedIndex >= _rows.Count) { _selectedIndex = 0; }
+                _assetList.SetSelectionWithoutNotify(new[] { _selectedIndex });
+            }
+
+            RebuildDetailPane();
             UpdatePublishButtonState();
         }
 
-        private VisualElement CreateAssetRow(Row row, int index)
+        // Builds the master-detail assets view once: a drop zone, a virtualized columnar list (master) and an
+        // editable detail pane (detail). After this, all changes flow through UpdateAssetsUI (a refresh) — never
+        // a wholesale rebuild — so the list scales to large packs.
+        private void BuildAssetsView()
         {
-            var card = new VisualElement();
-            card.AddToClassList("asset-row");
+            if (_assetsContainer == null) { return; }
+            _assetsContainer.Clear();
+
+            _dropZone = new VisualElement();
+            _dropZone.AddToClassList("asset-drop-zone");
+            var dropLabel = new Label("Drag prefabs here to add them to the pack");
+            dropLabel.AddToClassList("asset-drop-zone-label");
+            _dropZone.Add(dropLabel);
+            RegisterPrefabDrop(_dropZone);
+            _assetsContainer.Add(_dropZone);
+
+            var masterDetail = new VisualElement();
+            masterDetail.AddToClassList("asset-master-detail");
+
+            _assetList = new MultiColumnListView();
+            _assetList.AddToClassList("asset-list");
+            _assetList.selectionType = SelectionType.Single;
+            _assetList.fixedItemHeight = 30f;
+            _assetList.showBorder = true;
+            BuildAssetColumns();
+            _assetList.itemsSource = _rows;
+            _assetList.selectedIndicesChanged += OnAssetSelectionChanged;
+            masterDetail.Add(_assetList);
+
+            _detailPane = new ScrollView();
+            _detailPane.AddToClassList("asset-detail");
+            masterDetail.Add(_detailPane);
+
+            // Drops anywhere over the list/detail area bubble up to here (in addition to the explicit drop zone).
+            RegisterPrefabDrop(masterDetail);
+
+            _assetsContainer.Add(masterDetail);
+            RebuildDetailPane();
+        }
+
+        private void BuildAssetColumns()
+        {
+            _assetList.columns.Add(new Column
+            {
+                name = "icon", title = string.Empty, width = 38f, minWidth = 38f, maxWidth = 38f,
+                makeCell = () => { var img = new Image { scaleMode = ScaleMode.ScaleToFit }; img.AddToClassList("asset-cell-icon"); return img; },
+                bindCell = (e, i) => { if (i >= 0 && i < _rows.Count) { ((Image)e).image = _rows[i].previewTex; } },
+            });
+            _assetList.columns.Add(new Column
+            {
+                name = "asset", title = "Asset", width = 150f, minWidth = 90f, stretchable = true,
+                makeCell = MakeCellLabel,
+                bindCell = (e, i) => { if (i >= 0 && i < _rows.Count) { ((Label)e).text = DisplayNameOf(_rows[i]); } },
+            });
+            _assetList.columns.Add(new Column
+            {
+                name = "key", title = "Key", width = 130f, minWidth = 80f, stretchable = true,
+                makeCell = MakeCellLabel,
+                bindCell = (e, i) => { if (i >= 0 && i < _rows.Count) { ((Label)e).text = string.IsNullOrEmpty(_rows[i].assetKey) ? "—" : _rows[i].assetKey; } },
+            });
+            _assetList.columns.Add(new Column
+            {
+                name = "kind", title = "Component", width = 90f, minWidth = 60f,
+                makeCell = MakeCellLabel,
+                bindCell = (e, i) => { if (i >= 0 && i < _rows.Count) { ((Label)e).text = Kinds[Mathf.Clamp(_rows[i].kindIndex, 0, Kinds.Length - 1)]; } },
+            });
+            _assetList.columns.Add(new Column
+            {
+                name = "category", title = "Category", width = 90f, minWidth = 60f, stretchable = true,
+                makeCell = MakeCellLabel,
+                bindCell = (e, i) => { if (i >= 0 && i < _rows.Count) { ((Label)e).text = string.IsNullOrEmpty(_rows[i].category) ? "—" : _rows[i].category; } },
+            });
+        }
+
+        private static VisualElement MakeCellLabel()
+        {
+            var label = new Label();
+            label.AddToClassList("asset-cell-label");
+            return label;
+        }
+
+        private static string DisplayNameOf(Row row)
+        {
+            if (!string.IsNullOrEmpty(row.displayName)) { return row.displayName; }
+            if (row.prefab != null) { return row.prefab.name; }
+            return "(no prefab)";
+        }
+
+        private void OnAssetSelectionChanged(IEnumerable<int> indices)
+        {
+            _selectedIndex = -1;
+            foreach (int i in indices) { _selectedIndex = i; break; }
+            RebuildDetailPane();
+        }
+
+        // Adds a row and selects it so the detail pane opens on it for editing.
+        private void AddRow(Row row)
+        {
+            _rows.Add(row);
+            _selectedIndex = _rows.Count - 1;
+            UpdateAssetsUI();
+        }
+
+        private void RemoveRow(int index)
+        {
+            if (index < 0 || index >= _rows.Count) { return; }
+            Row row = _rows[index];
+            if (row.previewTex != null) { DestroyImmediate(row.previewTex); row.previewTex = null; }
+            _rows.RemoveAt(index);
+            _selectedIndex = _rows.Count == 0 ? -1 : Mathf.Clamp(index, 0, _rows.Count - 1);
+            UpdateAssetsUI();
+        }
+
+        // ---- drag & drop (bulk-add prefabs from the Project window) ----------------------------- //
+
+        private void RegisterPrefabDrop(VisualElement target)
+        {
+            target.RegisterCallback<DragUpdatedEvent>(evt =>
+            {
+                bool anyPrefab = false;
+                foreach (UnityEngine.Object o in DragAndDrop.objectReferences) { if (IsProjectPrefab(o)) { anyPrefab = true; break; } }
+                DragAndDrop.visualMode = anyPrefab ? DragAndDropVisualMode.Copy : DragAndDropVisualMode.Rejected;
+                evt.StopPropagation();
+            });
+            target.RegisterCallback<DragPerformEvent>(evt =>
+            {
+                DragAndDrop.AcceptDrag();
+                AddDroppedPrefabs(DragAndDrop.objectReferences);
+                evt.StopPropagation();
+            });
+        }
+
+        private static bool IsProjectPrefab(UnityEngine.Object o)
+        {
+            // A prefab/model dragged from the Project window has an asset path; a scene object does not.
+            return o is GameObject && !string.IsNullOrEmpty(AssetDatabase.GetAssetPath(o));
+        }
+
+        private void AddDroppedPrefabs(UnityEngine.Object[] objects)
+        {
+            // Dedupe by asset GUID against existing rows AND within this dropped batch.
+            var seen = new HashSet<string>();
+            foreach (Row r in _rows)
+            {
+                if (r.prefab == null) { continue; }
+                string g = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(r.prefab));
+                if (!string.IsNullOrEmpty(g)) { seen.Add(g); }
+            }
+
+            int firstNew = _rows.Count;
+            int added = 0;
+            foreach (UnityEngine.Object o in objects)
+            {
+                if (!(o is GameObject go)) { continue; }
+                string path = AssetDatabase.GetAssetPath(go);
+                if (string.IsNullOrEmpty(path)) { continue; }
+                string guid = AssetDatabase.AssetPathToGUID(path);
+                if (string.IsNullOrEmpty(guid) || !seen.Add(guid)) { continue; }
+
+                _rows.Add(new Row
+                {
+                    prefab = go,
+                    kindIndex = 0,
+                    assetKey = DeriveAssetKey(Kinds[0], go.name),
+                    displayName = go.name,
+                });
+                added++;
+            }
+
+            if (added == 0) { return; }
+            _selectedIndex = firstNew; // select the first newly-added asset
+            UpdateAssetsUI();
+            // Bake the new icons off the hot path so a big drop doesn't stall the editor (LoadPack uses this too).
+            EditorApplication.delayCall += DeferredBakeRowPreviews;
+        }
+
+        // ---- detail pane (edits the selected row) ----------------------------------------------- //
+
+        private void RebuildDetailPane()
+        {
+            if (_detailPane == null) { return; }
+            _detailPane.Clear();
+
+            if (_selectedIndex < 0 || _selectedIndex >= _rows.Count)
+            {
+                var hint = new Label(_rows.Count == 0
+                    ? "No assets yet. Drag prefabs in, or use + Add Asset."
+                    : "Select an asset on the left to edit it.");
+                hint.AddToClassList("asset-detail-hint");
+                _detailPane.Add(hint);
+                return;
+            }
+
+            _detailPane.Add(BuildDetailEditor(_rows[_selectedIndex], _selectedIndex));
+        }
+
+        private VisualElement BuildDetailEditor(Row row, int index)
+        {
+            var editor = new VisualElement();
 
             var header = new VisualElement();
-            header.AddToClassList("asset-row-header");
+            header.AddToClassList("asset-detail-header");
+
+            var preview = new Image { scaleMode = ScaleMode.ScaleToFit };
+            preview.AddToClassList("asset-detail-preview");
+            preview.image = row.previewTex;
+            header.Add(preview);
+
             var title = new Label($"Asset {index + 1}");
-            title.AddToClassList("asset-row-title");
+            title.AddToClassList("asset-detail-title");
             header.Add(title);
-            var removeBtn = new Button(() => { _rows.Remove(row); UpdateAssetsUI(); }) { text = "Remove" };
+
+            var removeBtn = new Button(() => RemoveRow(index)) { text = "Remove" };
             removeBtn.AddToClassList("remove-asset-button");
             header.Add(removeBtn);
-            card.Add(header);
+            editor.Add(header);
+
+            // Declared before the prefab field so its callback can refresh these in place (no pane rebuild).
+            var keyError = new Label();
+            keyError.AddToClassList("asset-row-error");
+            var keyField = new TextField("Asset Key") { value = row.assetKey, tooltip = "Type_Id — exactly one underscore; Id has none." };
+            var nameField = new TextField("Display Name") { value = row.displayName };
 
             var prefabField = new ObjectField("Prefab")
             {
@@ -439,47 +703,100 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 row.prefab = evt.newValue as GameObject;
                 if (row.prefab != null)
                 {
-                    if (!row.keyEdited) { row.assetKey = DeriveAssetKey(Kinds[row.kindIndex], row.prefab.name); }
-                    if (!row.nameEdited && string.IsNullOrEmpty(row.displayName)) { row.displayName = row.prefab.name; }
+                    if (!row.keyEdited) { row.assetKey = DeriveAssetKey(Kinds[row.kindIndex], row.prefab.name); keyField.SetValueWithoutNotify(row.assetKey); }
+                    if (!row.nameEdited && string.IsNullOrEmpty(row.displayName)) { row.displayName = row.prefab.name; nameField.SetValueWithoutNotify(row.displayName); }
                 }
-                UpdateAssetsUI();
+                ApplyKeyError(keyError, row.assetKey);
+                BakeRowPreview(row);
+                preview.image = row.previewTex;
+                _assetList.RefreshItem(index);
+                UpdatePublishButtonState();
             });
-            card.Add(prefabField);
+            editor.Add(prefabField);
 
-            var kindField = new DropdownField("Kind", new List<string>(Kinds), Mathf.Clamp(row.kindIndex, 0, Kinds.Length - 1));
+            // --- icon source: Auto (render the prefab) or Custom (creator-supplied texture) ---
+            var iconModeField = new DropdownField("Icon", IconModeNames, (int)row.iconMode);
+            iconModeField.style.flexGrow = 1f;
+            var refreshIconBtn = new Button { text = "Refresh", tooltip = "Re-render the Auto preview (or re-load the custom image)." };
+
+            var customIconField = new ObjectField("Custom Icon")
+            {
+                objectType = typeof(Texture2D),
+                allowSceneObjects = false,
+                value = row.customIcon,
+            };
+            customIconField.AddToClassList("asset-object-field");
+            customIconField.style.display = row.iconMode == IconMode.Custom ? DisplayStyle.Flex : DisplayStyle.None;
+
+            var iconRow = new VisualElement();
+            iconRow.AddToClassList("row");
+            iconRow.Add(iconModeField);
+            iconRow.Add(refreshIconBtn);
+            editor.Add(iconRow);
+            editor.Add(customIconField);
+
+            refreshIconBtn.clicked += () =>
+            {
+                BakeRowPreview(row);
+                preview.image = row.previewTex;
+                _assetList.RefreshItem(index);
+            };
+            customIconField.RegisterValueChangedCallback(evt =>
+            {
+                row.customIcon = evt.newValue as Texture2D;
+                BakeRowPreview(row);
+                preview.image = row.previewTex;
+                _assetList.RefreshItem(index);
+            });
+            iconModeField.RegisterValueChangedCallback(evt =>
+            {
+                row.iconMode = evt.newValue == "Custom" ? IconMode.Custom : IconMode.Auto;
+                customIconField.style.display = row.iconMode == IconMode.Custom ? DisplayStyle.Flex : DisplayStyle.None;
+                BakeRowPreview(row); // Custom with no texture yet falls back to the Auto render
+                preview.image = row.previewTex;
+                _assetList.RefreshItem(index);
+            });
+
+            // The published asset's DEFAULT behaviour component (kind) — what UWE auto-attaches on drop.
+            var kindField = new DropdownField("Default component", new List<string>(Kinds), Mathf.Clamp(row.kindIndex, 0, Kinds.Length - 1));
             kindField.RegisterValueChangedCallback(evt =>
             {
                 int idx = Array.IndexOf(Kinds, evt.newValue);
                 row.kindIndex = idx < 0 ? 0 : idx;
-                if (row.prefab != null && !row.keyEdited) { row.assetKey = DeriveAssetKey(Kinds[row.kindIndex], row.prefab.name); }
-                UpdateAssetsUI();
+                if (row.prefab != null && !row.keyEdited) { row.assetKey = DeriveAssetKey(Kinds[row.kindIndex], row.prefab.name); keyField.SetValueWithoutNotify(row.assetKey); ApplyKeyError(keyError, row.assetKey); }
+                _assetList.RefreshItem(index);
             });
-            card.Add(kindField);
+            editor.Add(kindField);
 
-            var keyError = new Label();
-            keyError.AddToClassList("asset-row-error");
-
-            var keyField = new TextField("Asset Key") { value = row.assetKey, tooltip = "Type_Id — exactly one underscore; Id has none." };
             keyField.RegisterValueChangedCallback(evt =>
             {
                 row.assetKey = evt.newValue;
                 row.keyEdited = true;
                 ApplyKeyError(keyError, row.assetKey);
+                _assetList.RefreshItem(index);
             });
-            card.Add(keyField);
+            editor.Add(keyField);
 
-            var nameField = new TextField("Display Name") { value = row.displayName };
-            nameField.RegisterValueChangedCallback(evt => { row.displayName = evt.newValue; row.nameEdited = true; });
-            card.Add(nameField);
+            nameField.RegisterValueChangedCallback(evt =>
+            {
+                row.displayName = evt.newValue;
+                row.nameEdited = true;
+                _assetList.RefreshItem(index);
+            });
+            editor.Add(nameField);
 
             var categoryField = new TextField("Category") { value = row.category };
-            categoryField.RegisterValueChangedCallback(evt => row.category = evt.newValue);
-            card.Add(categoryField);
+            categoryField.RegisterValueChangedCallback(evt =>
+            {
+                row.category = evt.newValue;
+                _assetList.RefreshItem(index);
+            });
+            editor.Add(categoryField);
 
             ApplyKeyError(keyError, row.assetKey);
-            card.Add(keyError);
+            editor.Add(keyError);
 
-            return card;
+            return editor;
         }
 
         private static void ApplyKeyError(Label keyError, string assetKey)
@@ -511,6 +828,16 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 return;
             }
 
+            // Persist the in-progress pack BEFORE the long publish so nothing is lost, and bake the per-asset
+            // thumbnails now — in the current build target, before the Addressables build switches it to WebGL.
+            if (_activePack != null) { SaveActivePack(); }
+            Dictionary<string, byte[]> thumbnails = CollectThumbnails();
+            UpdateAssetsUI(); // rebind any row Image whose preview CollectThumbnails just re-baked
+
+            int prefabRowCount = 0;
+            foreach (Row r in _rows) { if (r.prefab != null && !string.IsNullOrEmpty(r.assetKey)) { prefabRowCount++; } }
+            int missingThumbs = prefabRowCount - thumbnails.Count;
+
             _publishing = true;
             UpdatePublishButtonState();
             _progressSection.style.display = DisplayStyle.Flex;
@@ -532,13 +859,18 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 int price = _priceField.value;
 
                 PublishResult result = await AssetPackPublisherApi.PublishAsync(
-                    builder, entries, metas, packName, version, price, tags, categories, "public", progress);
+                    builder, entries, metas, packName, version, price, tags, categories, "public",
+                    _activePack != null ? _activePack.packId : null, thumbnails, progress);
 
                 string baseUrl = result != null && result.assetPack != null ? result.assetPack.contentBaseUrl : "";
                 string packageId = result != null && result.assetPack != null ? result.assetPack.id : "";
+                if (_activePack != null && result != null && result.assetPack != null) { WritebackPublish(result); }
+                string thumbNote = missingThumbs > 0
+                    ? $"\nNote: {missingThumbs} of {prefabRowCount} icons could not be generated (those assets show a fallback icon)."
+                    : string.Empty;
                 SetStatus(
                     $"Published '{packName}' and added it to your library.\npackageId: {packageId}\ncontentBaseUrl: {baseUrl}\n" +
-                    "Open the World Editor (signed in as the same user) and it appears in the asset grid.",
+                    "Open the World Editor (signed in as the same user) and it appears in the asset grid." + thumbNote,
                     StatusType.Success);
             }
             catch (Exception e)
@@ -578,7 +910,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                     displayName = string.IsNullOrEmpty(row.displayName) ? row.prefab.name : row.displayName,
                     category = string.IsNullOrEmpty(row.category) ? "Uncategorized" : row.category,
                     kind = Kinds[row.kindIndex],
-                    thumbnailUrl = string.Empty,
+                    thumbnailUrl = row.thumbnailUrl ?? string.Empty,
                     bounds = ComputeBounds(row.prefab),
                 });
             }
@@ -587,6 +919,311 @@ namespace VirtualVenues.Editor.AssetPackPublisher
 
             metas = metaList.ToArray();
             return true;
+        }
+
+        // ---- pack persistence (AssetPackDefinition) --------------------------------------------- //
+
+        private void BuildPackSection()
+        {
+            if (_publisherSection == null) { return; }
+
+            var packSection = new VisualElement();
+            packSection.AddToClassList("subsection");
+
+            var titleLabel = new Label("Pack");
+            titleLabel.AddToClassList("subsection-title");
+            packSection.Add(titleLabel);
+
+            _packDefField = new ObjectField("Editing Pack")
+            {
+                objectType = typeof(AssetPackDefinition),
+                allowSceneObjects = false,
+                tooltip = "The saved pack you're editing. Pick one to reopen it, or create one with New Pack.",
+            };
+            _packDefField.RegisterValueChangedCallback(evt => LoadPack(evt.newValue as AssetPackDefinition));
+            packSection.Add(_packDefField);
+
+            var buttonRow = new VisualElement();
+            buttonRow.AddToClassList("row");
+            buttonRow.Add(new Button(OnNewPackClicked) { text = "New Pack" });
+            buttonRow.Add(new Button(OnSavePackClicked) { text = "Save Pack" });
+            packSection.Add(buttonRow);
+
+            // Insert right under the "Asset Pack Publisher" title (index 0), above the metadata fields.
+            _publisherSection.Insert(1, packSection);
+        }
+
+        private void OnNewPackClicked()
+        {
+            string path = EditorUtility.SaveFilePanelInProject(
+                "New Asset Pack", "New Asset Pack", "asset",
+                "Choose where to save the asset-pack definition (it lives in your project).");
+            if (string.IsNullOrEmpty(path)) { return; }
+
+            var def = ScriptableObject.CreateInstance<AssetPackDefinition>();
+            def.packName = Path.GetFileNameWithoutExtension(path);
+            def.version = "1.0.0";
+            AssetDatabase.CreateAsset(def, path);
+            AssetDatabase.SaveAssets();
+            LoadPack(def);
+            SetStatus($"Created pack '{def.packName}'. Add assets, then Build & Publish.", StatusType.Info);
+        }
+
+        private void OnSavePackClicked()
+        {
+            if (_activePack == null) { SetStatus("Create or select a pack first (New Pack).", StatusType.Error); return; }
+            SaveActivePack();
+            SetStatus($"Saved pack '{_activePack.packName}'.", StatusType.Success);
+        }
+
+        // Loads an AssetPackDefinition into the editor (metadata fields + rows), or detaches + resets when null.
+        private void LoadPack(AssetPackDefinition def)
+        {
+            // Autosave the OUTGOING pack before switching/detaching (covers the ObjectField picker AND the New Pack
+            // button, which both route here) so inspector-style "edit then navigate away" never loses work.
+            if (_activePack != null && _activePack != def) { SaveActivePack(); }
+
+            _activePack = def;
+            if (_packDefField != null) { _packDefField.SetValueWithoutNotify(def); }
+            PersistLastPackGuid(def);
+
+            ClearRowPreviews();
+            _rows.Clear();
+            // Reset selection so a (re)loaded pack deterministically opens on row 0 (non-empty) or no selection
+            // (empty) — without this, a stale index from the previous pack can carry over when the new pack is
+            // at least as large, highlighting/editing the wrong asset.
+            _selectedIndex = -1;
+
+            if (def == null)
+            {
+                // Detached: reset to a clean "no pack" state so a stray Build & Publish has nothing to publish and
+                // the UI matches the empty ObjectField.
+                _packNameField.value = string.Empty;
+                _versionField.value = "1.0.0";
+                _priceField.value = 0;
+                _tagsField.value = string.Empty;
+                _categoriesField.value = string.Empty;
+                UpdateAssetsUI();
+                return;
+            }
+
+            _packNameField.value = def.packName ?? string.Empty;
+            _versionField.value = string.IsNullOrEmpty(def.version) ? "1.0.0" : def.version;
+            _priceField.value = def.price;
+            _tagsField.value = def.tags ?? string.Empty;
+            _categoriesField.value = def.categories ?? string.Empty;
+
+            foreach (AssetPackDefinition.Item item in def.items)
+            {
+                if (item == null) { continue; }
+                _rows.Add(new Row
+                {
+                    prefab = item.prefab,
+                    assetKey = item.assetKey ?? string.Empty,
+                    displayName = item.displayName ?? string.Empty,
+                    category = item.category ?? string.Empty,
+                    kindIndex = Mathf.Max(0, Array.IndexOf(Kinds, string.IsNullOrEmpty(item.kind) ? "prop" : item.kind)),
+                    keyEdited = true,   // loaded values are authoritative — don't auto-derive over them
+                    nameEdited = true,
+                    thumbnailUrl = item.thumbnailUrl,
+                    iconMode = item.iconSource == "Custom" ? IconMode.Custom : IconMode.Auto,
+                    customIcon = LoadTextureByGuid(item.customIconGuid),
+                });
+            }
+            UpdateAssetsUI();
+
+            // Bake row previews OFF the synchronous window-open / post-recompile path (CreateGUI re-runs on every
+            // domain reload). Previews fill in a tick later; CollectThumbnails re-bakes synchronously at publish.
+            if (_rows.Count > 0) { EditorApplication.delayCall += DeferredBakeRowPreviews; }
+        }
+
+        // Deferred (next editor tick) bake of any row missing a preview. Guarded so it no-ops after the window
+        // closes and after another LoadPack already baked (only rows without a previewTex are baked).
+        private void DeferredBakeRowPreviews()
+        {
+            if (!_alive) { return; }
+            bool baked = false;
+            foreach (Row r in _rows)
+            {
+                if (r.previewTex != null) { continue; }
+                bool canBake = r.prefab != null || (r.iconMode == IconMode.Custom && r.customIcon != null);
+                if (!canBake) { continue; }
+                BakeRowPreview(r);
+                baked = true;
+            }
+            if (baked) { UpdateAssetsUI(); }
+        }
+
+        // Writes the current editor state (metadata + rows) back into the active pack asset. Leaves the publish
+        // bookkeeping (packId/lastVersionId/...) untouched — only WritebackPublish sets those.
+        private void SaveActivePack()
+        {
+            if (_activePack == null) { return; }
+
+            _activePack.packName = (_packNameField.value ?? string.Empty).Trim();
+            _activePack.version = string.IsNullOrWhiteSpace(_versionField.value) ? "1.0.0" : _versionField.value.Trim();
+            _activePack.price = _priceField.value;
+            _activePack.tags = _tagsField.value ?? string.Empty;
+            _activePack.categories = _categoriesField.value ?? string.Empty;
+
+            _activePack.items.Clear();
+            foreach (Row r in _rows)
+            {
+                _activePack.items.Add(new AssetPackDefinition.Item
+                {
+                    prefab = r.prefab,
+                    assetKey = r.assetKey,
+                    displayName = r.displayName,
+                    category = r.category,
+                    kind = Kinds[Mathf.Clamp(r.kindIndex, 0, Kinds.Length - 1)],
+                    thumbnailUrl = r.thumbnailUrl,
+                    iconSource = r.iconMode.ToString(),
+                    customIconGuid = r.customIcon != null
+                        ? AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(r.customIcon))
+                        : string.Empty,
+                });
+            }
+            EditorUtility.SetDirty(_activePack);
+            AssetDatabase.SaveAssets();
+        }
+
+        // After a successful publish, persist the backend identity + fresh thumbnail URLs into the pack asset.
+        private void WritebackPublish(PublishResult result)
+        {
+            // Guard against a partial confirm response (null/empty assetPack fields) blanking prior good values —
+            // packId is the load-bearing identity; lastVersionId/lastContentBaseUrl are informational bookkeeping.
+            if (!string.IsNullOrEmpty(result.assetPack.id)) { _activePack.packId = result.assetPack.id; }
+            if (!string.IsNullOrEmpty(result.assetPack.versionId)) { _activePack.lastVersionId = result.assetPack.versionId; }
+            if (!string.IsNullOrEmpty(result.assetPack.contentBaseUrl)) { _activePack.lastContentBaseUrl = result.assetPack.contentBaseUrl; }
+            _activePack.lastPublishedUtc = DateTime.UtcNow.ToString("o");
+            if (!string.IsNullOrWhiteSpace(_versionField.value)) { _activePack.version = _versionField.value.Trim(); }
+
+            if (result.assets != null)
+            {
+                var urlByKey = new Dictionary<string, string>();
+                foreach (AssetMeta m in result.assets)
+                {
+                    if (m != null && !string.IsNullOrEmpty(m.assetKey)) { urlByKey[m.assetKey] = m.thumbnailUrl; }
+                }
+                foreach (Row r in _rows)
+                {
+                    if (!string.IsNullOrEmpty(r.assetKey) && urlByKey.TryGetValue(r.assetKey, out string url)) { r.thumbnailUrl = url; }
+                }
+            }
+            SaveActivePack(); // rewrites items (incl. the fresh thumbnailUrl); leaves packId/lastVersionId set above
+        }
+
+        private void PersistLastPackGuid(AssetPackDefinition def)
+        {
+            string guid = string.Empty;
+            if (def != null)
+            {
+                string path = AssetDatabase.GetAssetPath(def);
+                if (!string.IsNullOrEmpty(path)) { guid = AssetDatabase.AssetPathToGUID(path); }
+            }
+            EditorPrefs.SetString(LAST_PACK_GUID_KEY, guid);
+        }
+
+        // Resolve a persisted custom-icon GUID back to its Texture2D (null if unset or the asset is gone).
+        private static Texture2D LoadTextureByGuid(string guid)
+        {
+            if (string.IsNullOrEmpty(guid)) { return null; }
+            string path = AssetDatabase.GUIDToAssetPath(guid);
+            if (string.IsNullOrEmpty(path)) { return null; }
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        }
+
+        private void RestoreLastPack()
+        {
+            string guid = EditorPrefs.GetString(LAST_PACK_GUID_KEY, string.Empty);
+            if (string.IsNullOrEmpty(guid)) { return; }
+            string path = AssetDatabase.GUIDToAssetPath(guid);
+            if (string.IsNullOrEmpty(path)) { return; }
+            var def = AssetDatabase.LoadAssetAtPath<AssetPackDefinition>(path);
+            if (def != null) { LoadPack(def); }
+        }
+
+        // ---- thumbnails ------------------------------------------------------------------------- //
+
+        // Bake (or clear) a row's editor preview from its prefab. The window owns row.previewTex.
+        private void BakeRowPreview(Row row)
+        {
+            if (row == null) { return; }
+            if (row.previewTex != null) { DestroyImmediate(row.previewTex); row.previewTex = null; }
+            row.previewPng = null;
+
+            // Custom: blit the creator's chosen texture into a readable square we own. Otherwise (Auto, or
+            // Custom with no texture picked yet) render the prefab through the shared baker.
+            Texture2D tex;
+            if (row.iconMode == IconMode.Custom && row.customIcon != null)
+            {
+                tex = ToReadableSquare(row.customIcon, 256);
+            }
+            else
+            {
+                if (row.prefab == null) { return; }
+                tex = AssetThumbnailBaker.BakeTexture(row.prefab, 256);
+            }
+            if (tex == null) { return; }
+
+            row.previewTex = tex;
+            try { row.previewPng = tex.EncodeToPNG(); }
+            catch (Exception ex) { Debug.LogWarning($"[AssetPackPublisher] preview encode failed: {ex.Message}"); }
+        }
+
+        // Blit any (possibly compressed / non-readable) texture into a readable square Texture2D the caller owns,
+        // so a creator's custom icon uploads + displays exactly like a baked one.
+        private static Texture2D ToReadableSquare(Texture src, int size)
+        {
+            if (src == null || size <= 0) { return null; }
+
+            RenderTexture rt = RenderTexture.GetTemporary(size, size, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+            RenderTexture prev = RenderTexture.active;
+            Texture2D tex = null;
+            try
+            {
+                RenderTexture.active = rt;
+                GL.Clear(true, true, new Color(0f, 0f, 0f, 0f)); // transparent background
+                Graphics.Blit(src, rt);
+
+                tex = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: false);
+                tex.ReadPixels(new Rect(0, 0, size, size), 0, 0);
+                tex.Apply();
+                return tex;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[AssetPackPublisher] custom icon read failed: {ex.Message}");
+                if (tex != null) { DestroyImmediate(tex); }
+                return null;
+            }
+            finally
+            {
+                RenderTexture.active = prev;
+                RenderTexture.ReleaseTemporary(rt);
+            }
+        }
+
+        private void ClearRowPreviews()
+        {
+            foreach (Row r in _rows)
+            {
+                if (r.previewTex != null) { DestroyImmediate(r.previewTex); r.previewTex = null; }
+                r.previewPng = null;
+            }
+        }
+
+        // PNG bytes per assetKey for upload (re-baking any that are missing).
+        private Dictionary<string, byte[]> CollectThumbnails()
+        {
+            var dict = new Dictionary<string, byte[]>();
+            foreach (Row r in _rows)
+            {
+                if (r.prefab == null || string.IsNullOrEmpty(r.assetKey)) { continue; }
+                if (r.previewPng == null) { BakeRowPreview(r); }
+                if (r.previewPng != null && !dict.ContainsKey(r.assetKey)) { dict[r.assetKey] = r.previewPng; }
+            }
+            return dict;
         }
 
         private void UpdateProgress(float value, string message)

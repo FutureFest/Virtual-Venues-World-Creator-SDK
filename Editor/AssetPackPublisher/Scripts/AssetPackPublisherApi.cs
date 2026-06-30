@@ -108,12 +108,29 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         public string packageId;
     }
 
+    /// <summary>GET /users/me/asset-packs response.</summary>
+    [Serializable]
+    public class AssetPackList
+    {
+        public AssetPack[] assetPacks;
+    }
+
+    /// <summary>GET /users/me/asset-packs/{id}/assets response (the stored asset manifest).</summary>
+    [Serializable]
+    public class AssetList
+    {
+        public AssetMeta[] assets;
+    }
+
     /// <summary>Result of the full publish + add-to-library flow.</summary>
     public class PublishResult
     {
         public AssetPack assetPack;
         public Listing listing;
         public LibraryPackage library; // reuses the runtime LibraryPackage DTO (same shape)
+
+        /// <summary>The asset metas as published — thumbnailUrl is filled in during the upload step.</summary>
+        public AssetMeta[] assets;
     }
 
     #endregion
@@ -191,6 +208,25 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             return await PostJsonAsync<LibraryPackage>($"{BASE_URL}/users/me/library", body);
         }
 
+        /// <summary>GET /users/me/asset-packs — list the caller's packs. Supports a future "import from account"
+        /// recovery flow (rebuild a local AssetPackDefinition when its .asset was lost; prefab links must be
+        /// re-bound by hand since the backend stores assetKeys, not Unity GUIDs).</summary>
+        public static async Task<AssetPack[]> GetAllPacksAsync()
+        {
+            RequireToken();
+            var list = await GetJsonAsync<AssetPackList>($"{BASE_URL}/users/me/asset-packs");
+            return list != null && list.assetPacks != null ? list.assetPacks : Array.Empty<AssetPack>();
+        }
+
+        /// <summary>GET /users/me/asset-packs/{id}/assets — the pack's stored asset manifest
+        /// (assetKey/displayName/category/kind/thumbnailUrl/bounds).</summary>
+        public static async Task<AssetMeta[]> GetPackAssetsAsync(string packId)
+        {
+            RequireToken();
+            var list = await GetJsonAsync<AssetList>($"{BASE_URL}/users/me/asset-packs/{Uri.EscapeDataString(packId)}/assets");
+            return list != null && list.assets != null ? list.assets : Array.Empty<AssetMeta>();
+        }
+
         // -------------------------------------------------------------------------------------------
         // Full publish orchestrator: create -> reserve -> build -> upload -> confirm -> add-to-library.
         // -------------------------------------------------------------------------------------------
@@ -210,17 +246,31 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             string[] tags,
             string[] categories,
             string visibility,
+            string existingPackId = null,
+            IReadOnlyDictionary<string, byte[]> thumbnails = null,
             IProgress<(float progress, string message)> progress = null)
         {
             if (builder == null) { throw new ArgumentNullException(nameof(builder)); }
             if (entries == null || entries.Count == 0) { throw new ArgumentException("At least one asset is required."); }
             RequireToken();
 
-            // 1) Create the draft pack.
-            progress?.Report((0.02f, "Creating asset pack..."));
-            AssetPack pack = await CreatePackAsync(packName, version, price);
-            if (pack == null || string.IsNullOrEmpty(pack.id)) { throw new Exception("Create pack returned no id."); }
-            string packId = pack.id;
+            // 1) Reuse the existing pack (UPDATE) or create a fresh draft. Reusing the packId keeps the
+            //    marketplace pack's identity across updates instead of minting a new pack every publish.
+            AssetPack pack;
+            string packId;
+            if (!string.IsNullOrEmpty(existingPackId))
+            {
+                progress?.Report((0.02f, "Updating existing asset pack..."));
+                packId = existingPackId;
+                pack = new AssetPack { id = packId, name = packName, version = version, price = price };
+            }
+            else
+            {
+                progress?.Report((0.02f, "Creating asset pack..."));
+                pack = await CreatePackAsync(packName, version, price);
+                if (pack == null || string.IsNullOrEmpty(pack.id)) { throw new Exception("Create pack returned no id."); }
+                packId = pack.id;
+            }
 
             // 2) versionId BEFORE the build (the remote load path is baked into the bundles at build time).
             string versionId = AddressablesCatalogBuilder.GenerateVersionId();
@@ -261,6 +311,30 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             {
                 throw new Exception("Build output is missing content_catalog.bin/.hash.");
             }
+
+            // 5b) Add per-asset thumbnails as extra objects ("thumb_<assetKey>.png") under the SAME version
+            //     prefix, and stamp each asset's public thumbnailUrl (contentBaseUrl keeps its trailing slash).
+            //     The backend presigns + HeadObject-verifies arbitrary object names, so thumbnails ride the
+            //     same upload/confirm path with no backend change and resolve publicly like the bundles do.
+            if (thumbnails != null && thumbnails.Count > 0)
+            {
+                var assetByKey = new Dictionary<string, AssetMeta>();
+                if (assets != null)
+                {
+                    foreach (AssetMeta m in assets)
+                    {
+                        if (m != null && !string.IsNullOrEmpty(m.assetKey)) { assetByKey[m.assetKey] = m; }
+                    }
+                }
+                foreach (KeyValuePair<string, byte[]> kv in thumbnails)
+                {
+                    if (string.IsNullOrEmpty(kv.Key) || kv.Value == null || kv.Value.Length == 0) { continue; }
+                    string objectName = $"thumb_{kv.Key}.png";
+                    objectBytes[objectName] = kv.Value;
+                    if (assetByKey.TryGetValue(kv.Key, out AssetMeta meta)) { meta.thumbnailUrl = contentBaseUrl + objectName; }
+                }
+            }
+
             string[] objectNames = objectBytes.Keys.ToArray();
 
             // 6) Presign all objects (same versionId) and PUT each.
@@ -308,7 +382,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             LibraryPackage library = await AddToLibraryAsync(libraryPackageId);
 
             progress?.Report((1f, "Published!"));
-            return new PublishResult { assetPack = confirm?.assetPack ?? pack, listing = confirm?.listing, library = library };
+            return new PublishResult { assetPack = confirm?.assetPack ?? pack, listing = confirm?.listing, library = library, assets = assets };
         }
 
         // -------------------------------------------------------------------------------------------
@@ -352,6 +426,22 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 www.uploadHandler = new UploadHandlerRaw(raw);
                 www.downloadHandler = new DownloadHandlerBuffer();
                 www.SetRequestHeader("Content-Type", "application/json");
+                www.SetRequestHeader("Authorization", $"Bearer {AccessToken}");
+                await SendWebRequestAsync(www);
+
+                if (www.result != UnityWebRequest.Result.Success)
+                {
+                    throw new Exception($"{url} failed ({www.responseCode}): {www.error} - {SafeBody(www)}");
+                }
+                try { return JsonUtility.FromJson<T>(www.downloadHandler.text); }
+                catch (Exception e) { throw new Exception($"Failed to parse response from {url}: {e.Message}"); }
+            }
+        }
+
+        private static async Task<T> GetJsonAsync<T>(string url) where T : class
+        {
+            using (UnityWebRequest www = UnityWebRequest.Get(url))
+            {
                 www.SetRequestHeader("Authorization", $"Bearer {AccessToken}");
                 await SendWebRequestAsync(www);
 
