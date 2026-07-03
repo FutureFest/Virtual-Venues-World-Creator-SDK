@@ -248,7 +248,8 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             string visibility,
             string existingPackId = null,
             IReadOnlyDictionary<string, byte[]> thumbnails = null,
-            IProgress<(float progress, string message)> progress = null)
+            IProgress<(float progress, string message)> progress = null,
+            string packManifestJson = null)
         {
             if (builder == null) { throw new ArgumentNullException(nameof(builder)); }
             if (entries == null || entries.Count == 0) { throw new ArgumentException("At least one asset is required."); }
@@ -333,6 +334,15 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                     objectBytes[objectName] = kv.Value;
                     if (assetByKey.TryGetValue(kv.Key, out AssetMeta meta)) { meta.thumbnailUrl = contentBaseUrl + objectName; }
                 }
+            }
+
+            // 5c) Composite manifest (pack_manifest.json): ONE extra object per version describing the
+            //     "Expose children" items so the World Editor explodes them into real child objects at
+            //     drop time. Same zero-backend ride-along as the thumbnails above; the UWE fetches
+            //     {contentBaseUrl}pack_manifest.json once per pack (404 = no composites).
+            if (!string.IsNullOrEmpty(packManifestJson))
+            {
+                objectBytes["pack_manifest.json"] = System.Text.Encoding.UTF8.GetBytes(packManifestJson);
             }
 
             string[] objectNames = objectBytes.Keys.ToArray();

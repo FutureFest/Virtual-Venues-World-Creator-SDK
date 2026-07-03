@@ -76,6 +76,15 @@ namespace VirtualVenues.Editor.AssetPackPublisher
 
             /// <summary>thumbnailUrl from the most recent publish (informational; re-baked each publish).</summary>
             public string thumbnailUrl;
+
+            /// <summary>
+            /// When true, this prefab's child GameObjects are published as EXPOSED nodes in the pack's
+            /// composite manifest (pack_manifest.json), so dropping the asset in the World Editor explodes
+            /// it into real, individually-editable child objects (Unity-style hierarchy). On (default) =
+            /// explode-on-drop; off = the asset stays one monolithic object. The pack still shows ONE grid
+            /// tile either way.
+            /// </summary>
+            public bool exposeChildren = true;
         }
     }
 }

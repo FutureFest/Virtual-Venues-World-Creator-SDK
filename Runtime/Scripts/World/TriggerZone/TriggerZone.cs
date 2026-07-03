@@ -61,7 +61,25 @@ namespace VirtualVenues.WorldCreator
 
         public void SetupCollider()
         {
-            _collider = GetComponent<Collider>();
+            // Prefer a collider ALREADY marked isTrigger (the UWE layout loader's collider component, or
+            // an authored trigger volume) — never convert a solid collider when a trigger one exists,
+            // since the solid one may be the object's deliberate collision shape. Only when NO trigger
+            // collider is present fall back to the legacy behaviour: convert the first collider found
+            // (creators author "TriggerZone + any collider" and rely on the auto-conversion).
+            _collider = null;
+            Collider[] colliders = GetComponents<Collider>();
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                if (colliders[i] != null && colliders[i].isTrigger) { _collider = colliders[i]; break; }
+            }
+
+            if (_collider == null)
+            {
+                for (int i = 0; i < colliders.Length; i++)
+                {
+                    if (colliders[i] != null) { _collider = colliders[i]; break; }
+                }
+            }
 
             if (_collider != null)
             {

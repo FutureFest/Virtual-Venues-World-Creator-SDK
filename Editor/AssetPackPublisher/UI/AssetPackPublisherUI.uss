@@ -358,6 +358,72 @@ IntegerField {
     white-space: normal;
 }
 
+/* Published packs (read-only backend list) — mirrors the Avatar publisher's catalog cards */
+.pack-list-container {
+    padding: 4px 0;
+}
+
+.pack-card {
+    padding: 10px;
+    margin: 6px 0;
+    background-color: var(--vv-surface);
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: var(--vv-border);
+}
+
+.pack-card:hover {
+    background-color: var(--vv-surface-hover);
+}
+
+.pack-card-highlight {
+    border-color: var(--vv-primary);
+}
+
+.pack-card-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.pack-card-info {
+    flex-grow: 1;
+}
+
+.pack-name {
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: var(--vv-text);
+}
+
+.pack-id {
+    font-size: 9px;
+    color: var(--vv-text-faint);
+    margin-top: 2px;
+}
+
+.pack-card-buttons {
+    flex-direction: row;
+    align-items: center;
+}
+
+.pack-version {
+    font-size: 10px;
+    color: var(--vv-success);
+    background-color: var(--vv-primary-soft);
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-right: 5px;
+}
+
+.action-button {
+    height: 24px;
+    min-width: 60px;
+    margin-left: 6px;
+    font-size: 11px;
+    border-radius: 6px;
+}
+
 /* Helpers */
 .row {
     flex-direction: row;

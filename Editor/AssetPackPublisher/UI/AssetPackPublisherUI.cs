@@ -57,6 +57,9 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             // Creator-supplied texture used when iconMode == Custom. A project-asset REFERENCE (not owned — never
             // Destroyed here); only the readable copy in previewTex is owned.
             public Texture2D customIcon;
+
+            // Publish this prefab's children as exposed manifest nodes (World-Editor explode-on-drop).
+            public bool exposeChildren = true;
         }
 
         private enum StatusType { Info, Error, Success }
@@ -112,6 +115,14 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         private ObjectField _packDefField;
         private bool _alive; // true between CreateGUI and OnDisable; gates the deferred preview bake
         private const string LAST_PACK_GUID_KEY = "AssetPackPublisher_LastPackGuid";
+
+        // Published packs (read-only backend list): the packs this account has published to the Marketplace,
+        // fetched via AssetPackPublisherApi.GetAllPacksAsync. Mirrors the Avatar/World publishers' item list.
+        // Delete is a follow-up pass — ff-api has no DELETE /users/me/asset-packs/{id} yet (see the backend spec).
+        private VisualElement _packListContainer;
+        private Label _packListEmptyLabel;
+        private Button _refreshPacksButton;
+        private AssetPack[] _publishedPacks = Array.Empty<AssetPack>();
 
         [MenuItem("VirtualVenues/Asset Pack Publisher")]
         public static void ShowWindow()
@@ -178,9 +189,13 @@ namespace VirtualVenues.Editor.AssetPackPublisher
 
             BindUIElements();
             SetupEventHandlers();
+            // Build the code-authored sections BEFORE InitializeUI so that InitializeUI's CheckAuth() can trigger
+            // the first RefreshPackList() against an already-built _packListContainer (both sections Insert/Add at
+            // fixed positions, so construction order doesn't affect layout).
+            BuildPackSection();
+            BuildPublishedPacksSection();
             InitializeUI();
             SetVersionLabel();
-            BuildPackSection();
             _alive = true; // before RestoreLastPack so its deferred preview bake is allowed to run
             RestoreLastPack();
         }
@@ -297,6 +312,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 _loggedIn = true;
                 AssetPackPublisherApi.SetAccessToken(cached.AccessToken, cached.ExpiresAt);
                 UpdateAuthUI(true);
+                _ = RefreshPackList();
                 _ = RefreshAuthInBackgroundAsync(authGen);
                 return;
             }
@@ -312,6 +328,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             _userInfo = null;
             AssetPackPublisherApi.ClearToken();
             UpdateAuthUI(false);
+            _ = RefreshPackList(); // clears the (now hidden) list so a different user's login can't flash stale packs
         }
 
         private async Task RefreshAuthInBackgroundAsync(int authGen)
@@ -327,6 +344,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                     _loggedIn = true;
                     AssetPackPublisherApi.SetAccessToken(refreshed.AccessToken, refreshed.ExpiresAt);
                     UpdateAuthUI(true);
+                    _ = RefreshPackList();
                 }
             }
             catch (Exception ex)
@@ -793,10 +811,51 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             });
             editor.Add(categoryField);
 
+            // --- composite: publish children as individually-editable World-Editor objects ---
+            var exposePreview = new Label();
+            exposePreview.AddToClassList("asset-detail-hint");
+            var exposeToggle = new Toggle("Expose children")
+            {
+                value = row.exposeChildren,
+                tooltip = "Publish this prefab's child objects as exposed nodes: dropping the asset in the "
+                        + "World Editor explodes it into a real, Unity-style hierarchy of editable objects. "
+                        + "The pack still shows ONE tile. Off = the asset stays a single object.",
+            };
+            exposeToggle.RegisterValueChangedCallback(evt =>
+            {
+                row.exposeChildren = evt.newValue;
+                UpdateExposePreview(exposePreview, row);
+            });
+            editor.Add(exposeToggle);
+            editor.Add(exposePreview);
+            UpdateExposePreview(exposePreview, row);
+
             ApplyKeyError(keyError, row.assetKey);
             editor.Add(keyError);
 
             return editor;
+        }
+
+        // Live "what will be exposed" summary under the Expose-children toggle (count + first node names).
+        private static void UpdateExposePreview(Label preview, Row row)
+        {
+            if (preview == null) { return; }
+            if (row == null || !row.exposeChildren) { preview.style.display = DisplayStyle.None; return; }
+            preview.style.display = DisplayStyle.Flex;
+            if (row.prefab == null) { preview.text = "Exposed children: (assign a prefab first)"; return; }
+
+            MfManifestEntry entry = AssetPackManifestBuilder.BuildEntry(
+                string.IsNullOrEmpty(row.assetKey) ? "preview" : row.assetKey, row.prefab);
+            int count = entry != null && entry.nodes != null ? entry.nodes.Length : 0;
+            if (count == 0) { preview.text = "Exposed children: none (no meaningful child nodes found)."; return; }
+
+            var names = new List<string>();
+            for (int i = 0; i < entry.nodes.Length && names.Count < 8; i++)
+            {
+                if (entry.nodes[i] != null) { names.Add(entry.nodes[i].name); }
+            }
+            string more = count > names.Count ? $" +{count - names.Count} more" : string.Empty;
+            preview.text = $"Exposed children ({count}): {string.Join(", ", names)}{more}";
         }
 
         private static void ApplyKeyError(Label keyError, string assetKey)
@@ -834,6 +893,10 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             Dictionary<string, byte[]> thumbnails = CollectThumbnails();
             UpdateAssetsUI(); // rebind any row Image whose preview CollectThumbnails just re-baked
 
+            // Composite manifest for "Expose children" items (null = none) — built now for the same reason
+            // as the thumbnails: read the prefabs before the Addressables build switches the target.
+            string packManifestJson = BuildPackManifestJson();
+
             int prefabRowCount = 0;
             foreach (Row r in _rows) { if (r.prefab != null && !string.IsNullOrEmpty(r.assetKey)) { prefabRowCount++; } }
             int missingThumbs = prefabRowCount - thumbnails.Count;
@@ -860,11 +923,14 @@ namespace VirtualVenues.Editor.AssetPackPublisher
 
                 PublishResult result = await AssetPackPublisherApi.PublishAsync(
                     builder, entries, metas, packName, version, price, tags, categories, "public",
-                    _activePack != null ? _activePack.packId : null, thumbnails, progress);
+                    _activePack != null ? _activePack.packId : null, thumbnails, progress, packManifestJson);
 
                 string baseUrl = result != null && result.assetPack != null ? result.assetPack.contentBaseUrl : "";
                 string packageId = result != null && result.assetPack != null ? result.assetPack.id : "";
                 if (_activePack != null && result != null && result.assetPack != null) { WritebackPublish(result); }
+                // Reflect the just-published pack in the list. The list is an eventually-consistent GSI read, so a
+                // brand-new pack may lag by a moment — the Refresh button covers that case.
+                _ = RefreshPackList();
                 string thumbNote = missingThumbs > 0
                     ? $"\nNote: {missingThumbs} of {prefabRowCount} icons could not be generated (those assets show a fallback icon)."
                     : string.Empty;
@@ -953,6 +1019,148 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             _publisherSection.Insert(1, packSection);
         }
 
+        // ---- published packs (read-only backend list) ------------------------------------------- //
+
+        // Builds the "Published Packs" section entirely in code (like BuildPackSection) and appends it to the
+        // bottom of the publisher section. Read-only for now: it lists the packs this account has published to
+        // the Marketplace (via AssetPackPublisherApi.GetAllPacksAsync) so creators can see what's live — the
+        // same affordance the Avatar / World publishers give. A Delete button is a follow-up pass; ff-api has no
+        // DELETE /users/me/asset-packs/{id} yet (see the backend handoff spec).
+        private void BuildPublishedPacksSection()
+        {
+            if (_publisherSection == null) { return; }
+
+            var section = new VisualElement();
+            section.AddToClassList("subsection");
+
+            var header = new VisualElement();
+            header.AddToClassList("row");
+            header.style.justifyContent = Justify.SpaceBetween;
+
+            var titleLabel = new Label("Published Packs");
+            titleLabel.AddToClassList("subsection-title");
+            header.Add(titleLabel);
+
+            _refreshPacksButton = new Button(() => _ = RefreshPackList()) { text = "Refresh" };
+            _refreshPacksButton.AddToClassList("action-button");
+            header.Add(_refreshPacksButton);
+            section.Add(header);
+
+            _packListEmptyLabel = new Label("You haven't published any packs yet.");
+            _packListEmptyLabel.AddToClassList("asset-detail-hint");
+            section.Add(_packListEmptyLabel);
+
+            _packListContainer = new VisualElement();
+            _packListContainer.AddToClassList("pack-list-container");
+            section.Add(_packListContainer);
+
+            _publisherSection.Add(section);
+        }
+
+        // Fetches this account's published packs and repaints the list. Guards on auth (GetAllPacksAsync throws
+        // without a valid token) and the _authGen generation (bail if sign-out/refresh raced the await), and never
+        // lets an exception escape into the editor loop. Mirrors AvatarPublisherUI.RefreshCatalogList.
+        private async Task RefreshPackList()
+        {
+            if (!_loggedIn || !AssetPackPublisherApi.IsTokenValid)
+            {
+                _publishedPacks = Array.Empty<AssetPack>();
+                UpdatePackListUI();
+                return;
+            }
+
+            int authGen = _authGen;
+            try
+            {
+                AssetPack[] packs = await AssetPackPublisherApi.GetAllPacksAsync();
+                if (authGen != _authGen) { return; }
+                _publishedPacks = packs ?? Array.Empty<AssetPack>();
+            }
+            catch (Exception ex)
+            {
+                if (authGen != _authGen) { return; }
+                Debug.LogWarning($"[AssetPackPublisher] Failed to load published packs: {ex.Message}");
+                _publishedPacks = Array.Empty<AssetPack>();
+            }
+            UpdatePackListUI();
+        }
+
+        // Repaints _packListContainer from _publishedPacks: empty-state label vs. one card per pack (sorted by
+        // name — the AssetPack DTO carries no updatedAt). Mirrors AvatarPublisherUI.UpdateCatalogListUI.
+        private void UpdatePackListUI()
+        {
+            if (_packListContainer == null) { return; }
+
+            _packListContainer.Clear();
+
+            if (_publishedPacks == null || _publishedPacks.Length == 0)
+            {
+                if (_packListEmptyLabel != null) { _packListEmptyLabel.style.display = DisplayStyle.Flex; }
+                return;
+            }
+
+            if (_packListEmptyLabel != null) { _packListEmptyLabel.style.display = DisplayStyle.None; }
+
+            var sorted = new List<AssetPack>(_publishedPacks);
+            sorted.Sort((a, b) => string.Compare(a?.name ?? string.Empty, b?.name ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+
+            foreach (AssetPack pack in sorted)
+            {
+                if (pack == null) { continue; }
+                _packListContainer.Add(CreatePackCard(pack));
+            }
+        }
+
+        // One read-only card per published pack: name + version + id, a Copy ID convenience, and (if the pack the
+        // creator is locally editing maps to this one) a highlight so they can see which listed pack is theirs.
+        private VisualElement CreatePackCard(AssetPack pack)
+        {
+            var card = new VisualElement();
+            card.AddToClassList("pack-card");
+            if (_activePack != null && !string.IsNullOrEmpty(_activePack.packId) && _activePack.packId == pack.id)
+            {
+                card.AddToClassList("pack-card-highlight");
+            }
+
+            var headerRow = new VisualElement();
+            headerRow.AddToClassList("pack-card-header");
+
+            var info = new VisualElement();
+            info.AddToClassList("pack-card-info");
+
+            var nameLabel = new Label(string.IsNullOrEmpty(pack.name) ? "Unnamed Pack" : pack.name);
+            nameLabel.AddToClassList("pack-name");
+            info.Add(nameLabel);
+
+            var idLabel = new Label(pack.id);
+            idLabel.AddToClassList("pack-id");
+            info.Add(idLabel);
+
+            headerRow.Add(info);
+
+            var buttons = new VisualElement();
+            buttons.AddToClassList("pack-card-buttons");
+
+            if (!string.IsNullOrEmpty(pack.version))
+            {
+                var versionLabel = new Label($"v{pack.version}");
+                versionLabel.AddToClassList("pack-version");
+                buttons.Add(versionLabel);
+            }
+
+            var copyBtn = new Button(() => EditorGUIUtility.systemCopyBuffer = pack.id) { text = "Copy ID" };
+            copyBtn.AddToClassList("action-button");
+            buttons.Add(copyBtn);
+
+            // TODO(delete pass): add a Delete button here once ff-api exposes DELETE /users/me/asset-packs/{id}.
+            // It mirrors AvatarPublisherUI.OnDeleteCatalogClicked: confirm dialog -> AssetPackPublisherApi.DeletePackAsync
+            // -> RefreshPackList(). See the backend handoff spec.
+
+            headerRow.Add(buttons);
+            card.Add(headerRow);
+            return card;
+        }
+
         private void OnNewPackClicked()
         {
             string path = EditorUtility.SaveFilePanelInProject(
@@ -986,6 +1194,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             _activePack = def;
             if (_packDefField != null) { _packDefField.SetValueWithoutNotify(def); }
             PersistLastPackGuid(def);
+            UpdatePackListUI(); // recolor the "which listed pack is mine" highlight for the new active pack
 
             ClearRowPreviews();
             _rows.Clear();
@@ -1028,6 +1237,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                     thumbnailUrl = item.thumbnailUrl,
                     iconMode = item.iconSource == "Custom" ? IconMode.Custom : IconMode.Auto,
                     customIcon = LoadTextureByGuid(item.customIconGuid),
+                    exposeChildren = item.exposeChildren,
                 });
             }
             UpdateAssetsUI();
@@ -1081,6 +1291,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                     customIconGuid = r.customIcon != null
                         ? AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(r.customIcon))
                         : string.Empty,
+                    exposeChildren = r.exposeChildren,
                 });
             }
             EditorUtility.SetDirty(_activePack);
@@ -1211,6 +1422,20 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 if (r.previewTex != null) { DestroyImmediate(r.previewTex); r.previewTex = null; }
                 r.previewPng = null;
             }
+        }
+
+        // pack_manifest.json body for the current rows ("Expose children" items only); null = no composites.
+        private string BuildPackManifestJson()
+        {
+            var composites = new List<KeyValuePair<string, GameObject>>();
+            foreach (Row r in _rows)
+            {
+                if (r != null && r.exposeChildren && r.prefab != null && !string.IsNullOrEmpty(r.assetKey))
+                {
+                    composites.Add(new KeyValuePair<string, GameObject>(r.assetKey, r.prefab));
+                }
+            }
+            return AssetPackManifestBuilder.BuildManifestJson(composites);
         }
 
         // PNG bytes per assetKey for upload (re-baking any that are missing).
