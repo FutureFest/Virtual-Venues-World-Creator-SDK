@@ -207,6 +207,62 @@ IntegerField {
     -unity-font-style: italic;
 }
 
+/* Assets — bulk ops bar (checkbox column) */
+.bulk-bar {
+    flex-direction: row;
+    align-items: center;
+    margin: 2px 0 4px 0;
+    padding: 4px 8px;
+    background-color: var(--vv-surface-strong);
+    border-radius: 6px;
+}
+
+.bulk-all-toggle {
+    margin-right: 10px;
+}
+
+.bulk-count-label {
+    flex-grow: 1;
+    font-size: 11px;
+    color: var(--vv-text-muted);
+}
+
+.asset-cell-select {
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+}
+
+.asset-cell-unbound {
+    color: var(--vv-warning);
+}
+
+/* Remote mode (editing a published pack loaded from the backend) */
+.remote-banner {
+    flex-direction: row;
+    align-items: center;
+    margin: 4px 0;
+    padding: 8px 10px;
+    background-color: var(--vv-accent-soft);
+    border-width: 1px;
+    border-color: var(--vv-accent);
+    border-radius: 6px;
+}
+
+.remote-banner-label {
+    flex-grow: 1;
+    font-size: 11px;
+    color: var(--vv-text);
+    white-space: normal;
+}
+
+.remote-tags-warning {
+    color: var(--vv-warning);
+    font-size: 11px;
+    margin: 2px 0 4px 0;
+    white-space: normal;
+}
+
 /* Assets — master/detail layout */
 .asset-master-detail {
     flex-direction: row;

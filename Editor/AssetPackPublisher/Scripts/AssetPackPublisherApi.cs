@@ -227,6 +227,43 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             return list != null && list.assets != null ? list.assets : Array.Empty<AssetMeta>();
         }
 
+        /// <summary>GET /users/me/asset-packs/{id} — one pack's current server state. Doubles as the
+        /// pre-publish staleness check (compare versionId against the one loaded into the session).
+        /// NOTE: tags/categories are NOT returned — they live on the marketplace Listing, not the pack
+        /// (see the asset-pack-edit backend spec).</summary>
+        public static async Task<AssetPack> GetPackAsync(string packId)
+        {
+            RequireToken();
+            return await GetJsonAsync<AssetPack>($"{BASE_URL}/users/me/asset-packs/{Uri.EscapeDataString(packId)}");
+        }
+
+        /// <summary>Plain GET of a PUBLIC pack object (thumb_*.png off contentBaseUrl — no auth, the
+        /// bucket serves them publicly). Returns null on any failure; the caller owns the texture.</summary>
+        public static async Task<Texture2D> DownloadTextureAsync(string url)
+        {
+            if (string.IsNullOrEmpty(url)) { return null; }
+            using (UnityWebRequest www = UnityWebRequestTexture.GetTexture(url))
+            {
+                await SendWebRequestAsync(www);
+                if (www.result != UnityWebRequest.Result.Success) { return null; }
+                try { return DownloadHandlerTexture.GetContent(www); }
+                catch { return null; }
+            }
+        }
+
+        /// <summary>Plain GET of a PUBLIC pack text object ({contentBaseUrl}pack_manifest.json).
+        /// Returns null on any failure — a 404 just means the version has no composites.</summary>
+        public static async Task<string> DownloadTextAsync(string url)
+        {
+            if (string.IsNullOrEmpty(url)) { return null; }
+            using (UnityWebRequest www = UnityWebRequest.Get(url))
+            {
+                await SendWebRequestAsync(www);
+                if (www.result != UnityWebRequest.Result.Success) { return null; }
+                return www.downloadHandler != null ? www.downloadHandler.text : null;
+            }
+        }
+
         // -------------------------------------------------------------------------------------------
         // Full publish orchestrator: create -> reserve -> build -> upload -> confirm -> add-to-library.
         // -------------------------------------------------------------------------------------------

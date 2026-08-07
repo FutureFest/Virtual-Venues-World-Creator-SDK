@@ -27,7 +27,15 @@ namespace VirtualVenues.Editor.AssetPackPublisher
     /// </summary>
     public class AssetPackPublisherUI : EditorWindow
     {
-        private static readonly string[] Kinds = { "prop", "screen", "speaker", "stage", "artist" };
+        // Two of these are NON-PREFAB kinds — the row binds an asset other than a GameObject and the
+        // published item is never a placeable grid tile:
+        //   "skybox"   a TEXTURE (equirect Texture2D or Cubemap): published as the texture itself + a baked
+        //              SkyboxRefl_<Id> reflection cubemap; UWE offers it in the World panel's Sky picker.
+        //   "material" a MATERIAL asset: published as-is and offered in UWE's Materials rail, to be assigned
+        //              into a renderer slot. READ-ONLY once published — its shader variants froze at publish
+        //              time, so a keyword-changing edit downstream would request a variant no player-side
+        //              setting can rescue. "Duplicate to UWE Material" is the escape hatch.
+        private static readonly string[] Kinds = { "prop", "screen", "speaker", "stage", "artist", "skybox", "material" };
 
         // Icon source per asset. Order must match IconModeNames (the dropdown choices) below.
         private enum IconMode { Auto, Custom }
@@ -36,6 +44,15 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         private class Row
         {
             public GameObject prefab;
+
+            // Skybox rows only (kind == "skybox"): the sky texture (equirect Texture2D or Cubemap).
+            public Texture texture;
+
+            // Material rows only (kind == "material"): the published Material asset.
+            // The row's "bound asset" is the texture for skybox rows, the material for material rows,
+            // and the prefab for everything else — see RowAsset.
+            public Material material;
+
             public int kindIndex;
             public string assetKey = "";
             public string displayName = "";
@@ -60,6 +77,23 @@ namespace VirtualVenues.Editor.AssetPackPublisher
 
             // Publish this prefab's children as exposed manifest nodes (World-Editor explode-on-drop).
             public bool exposeChildren = true;
+
+            // Checked in the list's checkbox column — drives the bulk-ops bar (mass delete etc.).
+            // Independent of the master-detail focus selection.
+            public bool selected;
+
+            // True when the row came from the backend (Remote mode). Remote keys are immutable (changing a
+            // published key orphans every layout instance using it) and skip ValidateAssetKey — legacy keys
+            // that predate validation were already accepted by the server and must survive a round-trip.
+            public bool remoteOrigin;
+
+            // True when the prefab was auto-matched by name during a remote load (surfaced in the UI so the
+            // creator verifies it — a wrong unique-name match would republish the wrong content).
+            public bool autoBound;
+
+            // Bounds as stored on the backend (Remote mode). Lets an unbound row keep its published bounds;
+            // rows with a prefab recompute at publish time as usual.
+            public BoundsData remoteBounds;
         }
 
         private enum StatusType { Info, Error, Success }
@@ -91,6 +125,14 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         private VisualElement _dropZone;
         private int _selectedIndex = -1;
 
+        // Bulk ops (checkbox column): the bar above the list with All/None + the registered actions.
+        // _bulkOps is a registry so future ops (bulk category set, bulk expose-children, ...) are one entry.
+        private VisualElement _bulkBar;
+        private Toggle _bulkAllToggle;
+        private Label _bulkCountLabel;
+        private readonly List<(string label, Action action)> _bulkOps = new List<(string, Action)>();
+        private readonly List<Button> _bulkOpButtons = new List<Button>();
+
         // Publish
         private Button _buildPublishButton;
         private VisualElement _progressSection;
@@ -115,6 +157,17 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         private ObjectField _packDefField;
         private bool _alive; // true between CreateGUI and OnDisable; gates the deferred preview bake
         private const string LAST_PACK_GUID_KEY = "AssetPackPublisher_LastPackGuid";
+
+        // Editor mode. Draft = the local-SO staging workflow above. Remote = the roster was loaded from the
+        // backend (Edit on a published pack card) — the SERVER is the source of truth, _activePack stays null,
+        // publish auto-bumps the server version, and write-through goes to _remoteSession.matchedDraft.
+        private enum EditorMode { Draft, Remote }
+        private EditorMode _mode = EditorMode.Draft;
+        private AssetPackRemoteSession _remoteSession;
+        private VisualElement _draftControls;    // ObjectField + New/Save buttons (hidden in Remote mode)
+        private VisualElement _remoteBanner;     // "Editing published pack ..." + Back to Drafts
+        private Label _remoteBannerLabel;
+        private Label _remoteTagsWarning;        // shown when no local draft could seed tags/categories
 
         // Published packs (read-only backend list): the packs this account has published to the Marketplace,
         // fetched via AssetPackPublisherApi.GetAllPacksAsync. Mirrors the Avatar/World publishers' item list.
@@ -483,7 +536,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             }
 
             RebuildDetailPane();
-            UpdatePublishButtonState();
+            UpdatePublishButtonState(); // also refreshes the bulk-ops bar
         }
 
         // Builds the master-detail assets view once: a drop zone, a virtualized columnar list (master) and an
@@ -501,6 +554,9 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             _dropZone.Add(dropLabel);
             RegisterPrefabDrop(_dropZone);
             _assetsContainer.Add(_dropZone);
+
+            BuildBulkBar();
+            _assetsContainer.Add(_bulkBar);
 
             var masterDetail = new VisualElement();
             masterDetail.AddToClassList("asset-master-detail");
@@ -530,6 +586,35 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         {
             _assetList.columns.Add(new Column
             {
+                name = "sel", title = string.Empty, width = 26f, minWidth = 26f, maxWidth = 26f,
+                // Virtualization-safe checkbox: the callback is registered ONCE per pooled cell and reads
+                // the CURRENT row index from userData (bindCell restamps it on every reuse) — binding a
+                // closure over `i` instead would fire against stale indices after the cell is recycled.
+                makeCell = () =>
+                {
+                    var toggle = new Toggle();
+                    toggle.AddToClassList("asset-cell-select");
+                    toggle.RegisterValueChangedCallback(evt =>
+                    {
+                        if (toggle.userData is int idx && idx >= 0 && idx < _rows.Count)
+                        {
+                            _rows[idx].selected = evt.newValue;
+                            UpdateBulkBar();
+                        }
+                    });
+                    // Checking a box must not steal the master-detail row focus (SelectionType.Single).
+                    toggle.RegisterCallback<PointerDownEvent>(evt => evt.StopPropagation());
+                    return toggle;
+                },
+                bindCell = (e, i) =>
+                {
+                    var toggle = (Toggle)e;
+                    toggle.userData = i;
+                    if (i >= 0 && i < _rows.Count) { toggle.SetValueWithoutNotify(_rows[i].selected); }
+                },
+            });
+            _assetList.columns.Add(new Column
+            {
                 name = "icon", title = string.Empty, width = 38f, minWidth = 38f, maxWidth = 38f,
                 makeCell = () => { var img = new Image { scaleMode = ScaleMode.ScaleToFit }; img.AddToClassList("asset-cell-icon"); return img; },
                 bindCell = (e, i) => { if (i >= 0 && i < _rows.Count) { ((Image)e).image = _rows[i].previewTex; } },
@@ -538,7 +623,14 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             {
                 name = "asset", title = "Asset", width = 150f, minWidth = 90f, stretchable = true,
                 makeCell = MakeCellLabel,
-                bindCell = (e, i) => { if (i >= 0 && i < _rows.Count) { ((Label)e).text = DisplayNameOf(_rows[i]); } },
+                bindCell = (e, i) =>
+                {
+                    if (i < 0 || i >= _rows.Count) { return; }
+                    Row row = _rows[i];
+                    var label = (Label)e;
+                    label.text = DisplayNameOf(row) + RowBindSuffix(row);
+                    label.EnableInClassList("asset-cell-unbound", row.remoteOrigin && RowAsset(row) == null);
+                },
             });
             _assetList.columns.Add(new Column
             {
@@ -571,7 +663,45 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         {
             if (!string.IsNullOrEmpty(row.displayName)) { return row.displayName; }
             if (row.prefab != null) { return row.prefab.name; }
-            return "(no prefab)";
+            if (row.texture != null) { return row.texture.name; }
+            if (row.material != null) { return row.material.name; }
+            if (IsSkyboxRow(row)) { return "(no texture)"; }
+            return IsMaterialRow(row) ? "(no material)" : "(no prefab)";
+        }
+
+        private static string KindOf(Row row)
+        {
+            return row == null ? "prop" : Kinds[Mathf.Clamp(row.kindIndex, 0, Kinds.Length - 1)];
+        }
+
+        /// <summary>True when the row's kind is "skybox" (a texture asset, not a prefab).</summary>
+        private static bool IsSkyboxRow(Row row)
+        {
+            return row != null && KindOf(row) == "skybox";
+        }
+
+        /// <summary>True when the row's kind is "material" (a Material asset, not a prefab).</summary>
+        private static bool IsMaterialRow(Row row)
+        {
+            return row != null && KindOf(row) == "material";
+        }
+
+        /// <summary>
+        /// True for any kind whose row binds something other than a prefab. The detail pane swaps its
+        /// object field on this, and "Expose children" is meaningless for all of them.
+        /// </summary>
+        private static bool IsNonPrefabRow(Row row)
+        {
+            return IsSkyboxRow(row) || IsMaterialRow(row);
+        }
+
+        /// <summary>The row's bound source asset: texture for skybox rows, material for material rows, prefab otherwise.</summary>
+        private static UnityEngine.Object RowAsset(Row row)
+        {
+            if (row == null) { return null; }
+            if (IsSkyboxRow(row)) { return row.texture; }
+            if (IsMaterialRow(row)) { return row.material; }
+            return row.prefab;
         }
 
         private void OnAssetSelectionChanged(IEnumerable<int> indices)
@@ -596,6 +726,98 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             if (row.previewTex != null) { DestroyImmediate(row.previewTex); row.previewTex = null; }
             _rows.RemoveAt(index);
             _selectedIndex = _rows.Count == 0 ? -1 : Mathf.Clamp(index, 0, _rows.Count - 1);
+            UpdateAssetsUI();
+        }
+
+        // Suffix shown after the display name in the Asset column (Remote mode binding state).
+        private static string RowBindSuffix(Row row)
+        {
+            if (!row.remoteOrigin) { return string.Empty; }
+            if (RowAsset(row) == null) { return " (unbound)"; }
+            if (row.autoBound) { return " (auto-matched)"; }
+            return string.Empty;
+        }
+
+        // ---- bulk ops (checkbox column) ----------------------------------------------------------- //
+
+        // The bar above the list: All/None + "N selected" + one button per registered op. Ops iterate the
+        // checked rows; the registry keeps adding future ops (bulk category set, ...) a one-liner.
+        private void BuildBulkBar()
+        {
+            _bulkOps.Clear();
+            _bulkOps.Add(("Delete Selected", BulkDeleteSelected));
+
+            _bulkBar = new VisualElement();
+            _bulkBar.AddToClassList("bulk-bar");
+
+            _bulkAllToggle = new Toggle("All") { tooltip = "Check/uncheck every asset in the list." };
+            _bulkAllToggle.AddToClassList("bulk-all-toggle");
+            _bulkAllToggle.RegisterValueChangedCallback(evt => SetAllSelected(evt.newValue));
+            _bulkBar.Add(_bulkAllToggle);
+
+            _bulkCountLabel = new Label();
+            _bulkCountLabel.AddToClassList("bulk-count-label");
+            _bulkBar.Add(_bulkCountLabel);
+
+            _bulkOpButtons.Clear();
+            foreach ((string label, Action action) op in _bulkOps)
+            {
+                var btn = new Button(op.action) { text = op.label };
+                btn.AddToClassList("action-button");
+                _bulkOpButtons.Add(btn);
+                _bulkBar.Add(btn);
+            }
+            UpdateBulkBar();
+        }
+
+        private void SetAllSelected(bool selected)
+        {
+            foreach (Row r in _rows) { r.selected = selected; }
+            _assetList.RefreshItems();
+            UpdateBulkBar();
+        }
+
+        private int CountSelectedRows()
+        {
+            int count = 0;
+            foreach (Row r in _rows) { if (r.selected) { count++; } }
+            return count;
+        }
+
+        // Bar visible whenever there are rows; op buttons enabled only with a non-empty check set.
+        private void UpdateBulkBar()
+        {
+            if (_bulkBar == null) { return; }
+            int count = CountSelectedRows();
+            _bulkBar.style.display = _rows.Count > 0 ? DisplayStyle.Flex : DisplayStyle.None;
+            _bulkAllToggle.SetValueWithoutNotify(_rows.Count > 0 && count == _rows.Count);
+            _bulkCountLabel.text = count > 0 ? $"{count} selected" : string.Empty;
+            foreach (Button btn in _bulkOpButtons) { btn.SetEnabled(count > 0 && !_publishing); }
+        }
+
+        private void BulkDeleteSelected()
+        {
+            int count = CountSelectedRows();
+            if (count == 0) { return; }
+
+            string warning = _mode == EditorMode.Remote
+                ? "\n\nThey will be removed from the live pack on your next publish, and will disappear from any layouts that placed them."
+                : string.Empty;
+            if (!EditorUtility.DisplayDialog("Delete Assets", $"Remove {count} asset(s) from this pack?{warning}", "Remove", "Cancel"))
+            {
+                return;
+            }
+
+            // Descending removal so indices stay valid; mirror RemoveRow's cleanup but with ONE UI refresh
+            // at the end (RemoveRow-in-a-loop would clamp the focus and repaint per row).
+            for (int i = _rows.Count - 1; i >= 0; i--)
+            {
+                Row row = _rows[i];
+                if (!row.selected) { continue; }
+                if (row.previewTex != null) { DestroyImmediate(row.previewTex); row.previewTex = null; }
+                _rows.RemoveAt(i);
+            }
+            _selectedIndex = _rows.Count == 0 ? -1 : Mathf.Clamp(_selectedIndex, 0, _rows.Count - 1);
             UpdateAssetsUI();
         }
 
@@ -709,6 +931,10 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             var keyField = new TextField("Asset Key") { value = row.assetKey, tooltip = "Type_Id — exactly one underscore; Id has none." };
             var nameField = new TextField("Display Name") { value = row.displayName };
 
+            bool isSkybox = IsSkyboxRow(row);
+            bool isMaterial = IsMaterialRow(row);
+            bool isNonPrefab = isSkybox || isMaterial;
+
             var prefabField = new ObjectField("Prefab")
             {
                 objectType = typeof(GameObject),
@@ -716,6 +942,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 value = row.prefab,
             };
             prefabField.AddToClassList("asset-object-field");
+            prefabField.style.display = isNonPrefab ? DisplayStyle.None : DisplayStyle.Flex;
             prefabField.RegisterValueChangedCallback(evt =>
             {
                 row.prefab = evt.newValue as GameObject;
@@ -729,8 +956,93 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 preview.image = row.previewTex;
                 _assetList.RefreshItem(index);
                 UpdatePublishButtonState();
+                if (row.remoteOrigin)
+                {
+                    row.autoBound = false; // a manual (re)bind is creator-verified
+                    // Re-lock/unlock the sibling fields for the new bind state — deferred, never rebuild
+                    // the pane from inside one of its own field callbacks.
+                    EditorApplication.delayCall += () => { if (_alive) { RebuildDetailPane(); } };
+                }
             });
             editor.Add(prefabField);
+
+            // --- skybox rows: the sky texture (equirect Texture2D or Cubemap) replaces the prefab ---
+            var skyboxHint = new Label();
+            skyboxHint.AddToClassList("asset-detail-hint");
+            var textureField = new ObjectField("Sky Texture")
+            {
+                objectType = typeof(Texture),
+                allowSceneObjects = false,
+                value = row.texture,
+                tooltip = "An equirect/panoramic Texture2D (~2:1) or a Cubemap. Published as-is; the "
+                        + "player wraps it in a shipped skybox material and pins a publish-baked "
+                        + "reflection cubemap for metallic surfaces.",
+            };
+            textureField.AddToClassList("asset-object-field");
+            textureField.style.display = isSkybox ? DisplayStyle.Flex : DisplayStyle.None;
+            skyboxHint.style.display = isSkybox ? DisplayStyle.Flex : DisplayStyle.None;
+            textureField.RegisterValueChangedCallback(evt =>
+            {
+                row.texture = evt.newValue as Texture;
+                if (row.texture != null)
+                {
+                    if (!row.keyEdited) { row.assetKey = DeriveAssetKey(Kinds[row.kindIndex], row.texture.name); keyField.SetValueWithoutNotify(row.assetKey); }
+                    if (!row.nameEdited && string.IsNullOrEmpty(row.displayName)) { row.displayName = row.texture.name; nameField.SetValueWithoutNotify(row.displayName); }
+                }
+                ApplyKeyError(keyError, row.assetKey);
+                UpdateSkyboxHint(skyboxHint, row);
+                BakeRowPreview(row);
+                preview.image = row.previewTex;
+                _assetList.RefreshItem(index);
+                UpdatePublishButtonState();
+                if (row.remoteOrigin)
+                {
+                    row.autoBound = false;
+                    EditorApplication.delayCall += () => { if (_alive) { RebuildDetailPane(); } };
+                }
+            });
+            editor.Add(textureField);
+            editor.Add(skyboxHint);
+            UpdateSkyboxHint(skyboxHint, row);
+
+            // --- material rows: the Material asset replaces the prefab ---
+            var materialHint = new Label(
+                "Published as-is and offered in the World Editor's Materials rail. READ-ONLY once published: "
+                + "its shader variants are frozen at publish time, so it can be assigned but not edited. A "
+                + "creator who needs to diverge uses " + '"' + "Duplicate to UWE Material" + '"' + ".");
+            materialHint.AddToClassList("asset-detail-hint");
+            var materialField = new ObjectField("Material")
+            {
+                objectType = typeof(Material),
+                allowSceneObjects = false,
+                value = row.material,
+                tooltip = "A Material asset. Published into the pack's Addressables catalog and assignable "
+                        + "into any renderer slot in the World Editor.",
+            };
+            materialField.AddToClassList("asset-object-field");
+            materialField.style.display = isMaterial ? DisplayStyle.Flex : DisplayStyle.None;
+            materialHint.style.display = isMaterial ? DisplayStyle.Flex : DisplayStyle.None;
+            materialField.RegisterValueChangedCallback(evt =>
+            {
+                row.material = evt.newValue as Material;
+                if (row.material != null)
+                {
+                    if (!row.keyEdited) { row.assetKey = DeriveAssetKey(Kinds[row.kindIndex], row.material.name); keyField.SetValueWithoutNotify(row.assetKey); }
+                    if (!row.nameEdited && string.IsNullOrEmpty(row.displayName)) { row.displayName = row.material.name; nameField.SetValueWithoutNotify(row.displayName); }
+                }
+                ApplyKeyError(keyError, row.assetKey);
+                BakeRowPreview(row);
+                preview.image = row.previewTex;
+                _assetList.RefreshItem(index);
+                UpdatePublishButtonState();
+                if (row.remoteOrigin)
+                {
+                    row.autoBound = false;
+                    EditorApplication.delayCall += () => { if (_alive) { RebuildDetailPane(); } };
+                }
+            });
+            editor.Add(materialField);
+            editor.Add(materialHint);
 
             // --- icon source: Auto (render the prefab) or Custom (creator-supplied texture) ---
             var iconModeField = new DropdownField("Icon", IconModeNames, (int)row.iconMode);
@@ -776,13 +1088,25 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             });
 
             // The published asset's DEFAULT behaviour component (kind) — what UWE auto-attaches on drop.
+            // "skybox" instead marks a TEXTURE asset for the World panel's Sky picker.
             var kindField = new DropdownField("Default component", new List<string>(Kinds), Mathf.Clamp(row.kindIndex, 0, Kinds.Length - 1));
             kindField.RegisterValueChangedCallback(evt =>
             {
+                string wasKind = KindOf(row);
                 int idx = Array.IndexOf(Kinds, evt.newValue);
                 row.kindIndex = idx < 0 ? 0 : idx;
-                if (row.prefab != null && !row.keyEdited) { row.assetKey = DeriveAssetKey(Kinds[row.kindIndex], row.prefab.name); keyField.SetValueWithoutNotify(row.assetKey); ApplyKeyError(keyError, row.assetKey); }
+                UnityEngine.Object source = RowAsset(row);
+                if (source != null && !row.keyEdited) { row.assetKey = DeriveAssetKey(Kinds[row.kindIndex], source.name); keyField.SetValueWithoutNotify(row.assetKey); ApplyKeyError(keyError, row.assetKey); }
                 _assetList.RefreshItem(index);
+                // WHICH object field the row shows (prefab / texture / material) is a function of the kind,
+                // so a change ACROSS binding classes has to rebuild the pane — deferred, never from inside
+                // one of its own field callbacks. Compare the binding class, not just "was it skybox":
+                // prop->material and skybox->material both need the swap.
+                bool wasNonPrefab = wasKind == "skybox" || wasKind == "material";
+                if (wasKind != KindOf(row) && (wasNonPrefab || IsNonPrefabRow(row)))
+                {
+                    EditorApplication.delayCall += () => { if (_alive) { RebuildDetailPane(); } };
+                }
             });
             editor.Add(kindField);
 
@@ -826,12 +1150,48 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 row.exposeChildren = evt.newValue;
                 UpdateExposePreview(exposePreview, row);
             });
+            // Meaningless for the non-prefab kinds (skybox / material: no prefab, never placed).
+            exposeToggle.style.display = isNonPrefab ? DisplayStyle.None : DisplayStyle.Flex;
             editor.Add(exposeToggle);
             editor.Add(exposePreview);
-            UpdateExposePreview(exposePreview, row);
+            if (isNonPrefab) { exposePreview.style.display = DisplayStyle.None; }
+            else { UpdateExposePreview(exposePreview, row); }
 
             ApplyKeyError(keyError, row.assetKey);
             editor.Add(keyError);
+
+            if (row.remoteOrigin)
+            {
+                // Published keys are immutable: layouts reference instances by pack + assetKey, so renaming
+                // a key would orphan every placed instance. Rebinding the prefab is always allowed.
+                keyField.SetEnabled(false);
+                keyField.tooltip = "Published asset keys are immutable — changing one would orphan every layout instance that placed this asset.";
+
+                if (RowAsset(row) == null)
+                {
+                    string unboundWhat = isSkybox ? "skybox's source texture"
+                        : isMaterial ? "item's source material"
+                        : "asset's source prefab";
+                    string unboundAssign = isSkybox ? "sky texture" : isMaterial ? "material" : "prefab";
+                    var unboundHint = new Label(
+                        $"Unbound: this {unboundWhat} was not found in this project. Assign the " +
+                        $"{unboundAssign} to edit or republish it — or Remove it from the pack.");
+                    unboundHint.AddToClassList("asset-row-error");
+                    editor.Insert(1, unboundHint); // right under the header
+                    iconRow.SetEnabled(false);
+                    customIconField.SetEnabled(false);
+                    kindField.SetEnabled(false);
+                    nameField.SetEnabled(false);
+                    categoryField.SetEnabled(false);
+                    exposeToggle.SetEnabled(false);
+                }
+                else if (row.autoBound)
+                {
+                    var autoHint = new Label("Prefab auto-matched by name — verify it is the right one before publishing.");
+                    autoHint.AddToClassList("asset-row-error");
+                    editor.Insert(1, autoHint);
+                }
+            }
 
             return editor;
         }
@@ -858,6 +1218,32 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             preview.text = $"Exposed children ({count}): {string.Join(", ", names)}{more}";
         }
 
+        // Advisory (never blocking) authoring feedback for a skybox row's texture: shape, equirect
+        // aspect, and size. Cubemaps and odd aspects still publish — they just look how they look.
+        private static void UpdateSkyboxHint(Label hint, Row row)
+        {
+            if (hint == null) { return; }
+            if (row == null || !IsSkyboxRow(row)) { hint.style.display = DisplayStyle.None; return; }
+            hint.style.display = DisplayStyle.Flex;
+
+            if (row.texture == null) { hint.text = "Assign an equirect/panoramic Texture2D (~2:1) or a Cubemap."; return; }
+            if (row.texture is Cubemap) { hint.text = $"Cubemap {row.texture.width}px — rendered via the Skybox/Cubemap template."; return; }
+            if (!(row.texture is Texture2D))
+            {
+                hint.text = $"Warning: {row.texture.GetType().Name} is not publishable as a skybox — use a Texture2D (equirect) or a Cubemap.";
+                return;
+            }
+
+            float aspect = row.texture.height > 0 ? (float)row.texture.width / row.texture.height : 0f;
+            string aspectNote = Mathf.Abs(aspect - 2f) > 0.15f
+                ? $" Warning: aspect {aspect:0.##}:1 — panoramic skies expect ~2:1 (distortion likely)."
+                : string.Empty;
+            string sizeNote = row.texture.width > 4096
+                ? $" Warning: {row.texture.width}px is large for WebGPU — consider ≤4096."
+                : string.Empty;
+            hint.text = $"Equirect {row.texture.width}×{row.texture.height} — rendered via the Skybox/Panoramic template.{aspectNote}{sizeNote}";
+        }
+
         private static void ApplyKeyError(Label keyError, string assetKey)
         {
             string err = ValidateAssetKey(assetKey);
@@ -869,23 +1255,95 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         {
             if (_buildPublishButton == null) { return; }
 
-            bool hasPrefabRow = false;
-            foreach (Row r in _rows) { if (r.prefab != null) { hasPrefabRow = true; break; } }
+            bool hasBoundRow = false;
+            foreach (Row r in _rows) { if (RowAsset(r) != null) { hasBoundRow = true; break; } }
 
-            bool canPublish = !_publishing && _loggedIn && hasPrefabRow &&
+            bool canPublish = !_publishing && _loggedIn && hasBoundRow &&
                 !string.IsNullOrWhiteSpace(_packNameField != null ? _packNameField.value : null);
+
+            if (_mode == EditorMode.Remote)
+            {
+                // A remote republish is a FULL rebuild — every remaining row must have a bound asset
+                // (BuildEntriesAndMetas silently skips unbound rows, which here would silently drop
+                // published assets). Unbound rows can be deleted, but they block publish until then.
+                var unboundKeys = new List<string>();
+                foreach (Row r in _rows)
+                {
+                    if (RowAsset(r) == null) { unboundKeys.Add(string.IsNullOrEmpty(r.assetKey) ? "(no key)" : r.assetKey); }
+                }
+                canPublish = canPublish && _rows.Count > 0 && unboundKeys.Count == 0;
+                if (_assetsError != null)
+                {
+                    if (unboundKeys.Count > 0)
+                    {
+                        _assetsError.text = $"Publish blocked — {unboundKeys.Count} unbound asset(s): {string.Join(", ", unboundKeys)}. Rebind the prefab(s) or remove the row(s).";
+                        _assetsError.style.display = DisplayStyle.Flex;
+                    }
+                    else
+                    {
+                        _assetsError.style.display = DisplayStyle.None;
+                    }
+                }
+            }
             _buildPublishButton.SetEnabled(canPublish);
+            UpdateBulkBar(); // op buttons also lock while publishing
         }
 
         // ---- build + publish -------------------------------------------------------------------- //
 
         private async void BuildAndPublish()
         {
+            // Re-entry guard: the remote pre-flight below awaits BEFORE _publishing disables the button,
+            // so a double-click could otherwise start two publishes.
+            if (_publishing) { return; }
+
+            // Remote pre-flight: staleness check + auto version bump, both off one fresh GET. Runs before
+            // anything is built/locked so a Cancel leaves the editor untouched.
+            string remoteVersion = null;
+            if (_mode == EditorMode.Remote)
+            {
+                if (_remoteSession == null || _remoteSession.pack == null) { SetStatus("No remote pack loaded.", StatusType.Error); return; }
+
+                // Defensive re-check of the publish gate: BuildEntriesAndMetas silently skips unbound
+                // rows, which in Remote mode would silently DROP published assets from the pack.
+                int unbound = 0;
+                foreach (Row r in _rows) { if (RowAsset(r) == null) { unbound++; } }
+                if (unbound > 0)
+                {
+                    SetStatus($"Cannot publish: {unbound} asset(s) are unbound. Rebind the asset(s) or remove the row(s).", StatusType.Error);
+                    return;
+                }
+
+                AssetPack fresh;
+                try { fresh = await AssetPackPublisherApi.GetPackAsync(_remoteSession.pack.id); }
+                catch (Exception ex) { SetStatus($"Pre-publish check failed: {ex.Message}", StatusType.Error); return; }
+
+                if (fresh != null && !string.IsNullOrEmpty(fresh.versionId) && fresh.versionId != _remoteSession.loadedVersionId)
+                {
+                    bool overwrite = EditorUtility.DisplayDialog(
+                        "Pack changed on the server",
+                        $"'{_remoteSession.pack.name}' was republished after you loaded it (server v{fresh.version}, you loaded v{_remoteSession.pack.version}).\n\n" +
+                        "Publishing now will overwrite those changes with what this window shows.",
+                        "Publish Anyway", "Cancel");
+                    if (!overwrite) { return; }
+                }
+
+                string serverVersion = fresh != null && !string.IsNullOrEmpty(fresh.version) ? fresh.version : _remoteSession.pack.version;
+                remoteVersion = AssetPackRemoteSession.BumpPatch(serverVersion);
+                _versionField.SetValueWithoutNotify(remoteVersion);
+            }
+
             if (!BuildEntriesAndMetas(out var entries, out var metas, out string error))
             {
                 SetStatus(error, StatusType.Error);
                 return;
             }
+
+            // Bake each skybox's companion reflection cubemap (SkyboxRefl_<Id>) into a temp Assets folder
+            // and append the entries — NOW, in the current build target, before the Addressables build
+            // switches it (same reasoning as the thumbnails below). The temp assets must survive until
+            // BuildForWebGPU has packed them; cleanup happens in finally.
+            List<string> skyboxReflTempAssets = AppendSkyboxReflectionEntries(entries);
 
             // Persist the in-progress pack BEFORE the long publish so nothing is lost, and bake the per-asset
             // thumbnails now — in the current build target, before the Addressables build switches it to WebGL.
@@ -898,7 +1356,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             string packManifestJson = BuildPackManifestJson();
 
             int prefabRowCount = 0;
-            foreach (Row r in _rows) { if (r.prefab != null && !string.IsNullOrEmpty(r.assetKey)) { prefabRowCount++; } }
+            foreach (Row r in _rows) { if (RowAsset(r) != null && !string.IsNullOrEmpty(r.assetKey)) { prefabRowCount++; } }
             int missingThumbs = prefabRowCount - thumbnails.Count;
 
             _publishing = true;
@@ -918,16 +1376,21 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 string[] tags = SplitCsv(_tagsField.value);
                 string[] categories = SplitCsv(_categoriesField.value);
                 string packName = (_packNameField.value ?? string.Empty).Trim();
-                string version = string.IsNullOrWhiteSpace(_versionField.value) ? "1.0.0" : _versionField.value.Trim();
+                string version = _mode == EditorMode.Remote
+                    ? remoteVersion // server version + auto patch bump (computed in the pre-flight above)
+                    : string.IsNullOrWhiteSpace(_versionField.value) ? "1.0.0" : _versionField.value.Trim();
                 int price = _priceField.value;
+                string existingPackId = _mode == EditorMode.Remote
+                    ? _remoteSession.pack.id
+                    : _activePack != null ? _activePack.packId : null;
 
                 PublishResult result = await AssetPackPublisherApi.PublishAsync(
                     builder, entries, metas, packName, version, price, tags, categories, "public",
-                    _activePack != null ? _activePack.packId : null, thumbnails, progress, packManifestJson);
+                    existingPackId, thumbnails, progress, packManifestJson);
 
                 string baseUrl = result != null && result.assetPack != null ? result.assetPack.contentBaseUrl : "";
                 string packageId = result != null && result.assetPack != null ? result.assetPack.id : "";
-                if (_activePack != null && result != null && result.assetPack != null) { WritebackPublish(result); }
+                if (result != null && result.assetPack != null) { WritebackPublish(result); }
                 // Reflect the just-published pack in the list. The list is an eventually-consistent GSI read, so a
                 // brand-new pack may lag by a moment — the Refresh button covers that case.
                 _ = RefreshPackList();
@@ -947,6 +1410,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             finally
             {
                 EditorApplication.UnlockReloadAssemblies();
+                DeleteTempReflectionAssets(skyboxReflTempAssets);
                 _publishing = false;
                 _progressSection.style.display = DisplayStyle.None;
                 UpdatePublishButtonState();
@@ -963,25 +1427,56 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             for (int i = 0; i < _rows.Count; i++)
             {
                 Row row = _rows[i];
-                if (row.prefab == null) { continue; }
+                UnityEngine.Object asset = RowAsset(row);
+                if (asset == null) { continue; }
 
-                string keyErr = ValidateAssetKey(row.assetKey);
-                if (!string.IsNullOrEmpty(keyErr)) { error = $"Asset {i + 1}: {keyErr}"; metas = null; return false; }
+                bool isSkybox = IsSkyboxRow(row);
+                if (isSkybox && !(row.texture is Texture2D) && !(row.texture is Cubemap))
+                {
+                    error = $"Asset {i + 1} ('{row.assetKey}'): a skybox must be a Texture2D (equirect) or a Cubemap, not {row.texture.GetType().Name}.";
+                    metas = null; return false;
+                }
+                // The runtime derives the baked reflection's key by swapping the "Skybox_" prefix for
+                // "SkyboxRefl_", so a skybox key MUST carry the canonical type token.
+                if (isSkybox && !row.remoteOrigin && (row.assetKey == null || !row.assetKey.StartsWith("Skybox_", StringComparison.Ordinal)))
+                {
+                    error = $"Asset {i + 1}: a skybox assetKey must start with 'Skybox_' (e.g. Skybox_SunsetBeach).";
+                    metas = null; return false;
+                }
+
+                // Material rows: the World Editor resolves a pack material by assetKey through
+                // ICatalogResolver.ResolveMaterial and its Materials rail filters tiles on the type token —
+                // so the key MUST carry the canonical prefix, exactly like Skybox_.
+                if (IsMaterialRow(row) && !row.remoteOrigin && (row.assetKey == null || !row.assetKey.StartsWith("Material_", StringComparison.Ordinal)))
+                {
+                    error = $"Asset {i + 1}: a material assetKey must start with 'Material_' (e.g. Material_RustyMetal).";
+                    metas = null; return false;
+                }
+
+                // Remote-origin keys skip format validation: they are immutable (read-only in the UI) and
+                // were already accepted by the server — legacy keys predating ValidateAssetKey must survive
+                // a load -> republish round-trip. Rows added in this session validate as usual.
+                if (!row.remoteOrigin)
+                {
+                    string keyErr = ValidateAssetKey(row.assetKey);
+                    if (!string.IsNullOrEmpty(keyErr)) { error = $"Asset {i + 1}: {keyErr}"; metas = null; return false; }
+                }
                 if (!seenKeys.Add(row.assetKey)) { error = $"Duplicate assetKey '{row.assetKey}'."; metas = null; return false; }
 
-                entries.Add(new AssetPackCatalogBuilder.AssetPackEntry { Prefab = row.prefab, AssetKey = row.assetKey });
+                entries.Add(new AssetPackCatalogBuilder.AssetPackEntry { Asset = asset, AssetKey = row.assetKey });
                 metaList.Add(new AssetMeta
                 {
                     assetKey = row.assetKey,
-                    displayName = string.IsNullOrEmpty(row.displayName) ? row.prefab.name : row.displayName,
+                    displayName = string.IsNullOrEmpty(row.displayName) ? asset.name : row.displayName,
                     category = string.IsNullOrEmpty(row.category) ? "Uncategorized" : row.category,
                     kind = Kinds[row.kindIndex],
                     thumbnailUrl = row.thumbnailUrl ?? string.Empty,
-                    bounds = ComputeBounds(row.prefab),
+                    // Skyboxes have no scene footprint — zero bounds (UWE never places them).
+                    bounds = isSkybox ? new BoundsData { center = new Vec3(), size = new Vec3() } : ComputeBounds(row.prefab),
                 });
             }
 
-            if (entries.Count == 0) { error = "Add at least one asset with a prefab + valid assetKey."; metas = null; return false; }
+            if (entries.Count == 0) { error = "Add at least one asset with a prefab/texture + valid assetKey."; metas = null; return false; }
 
             metas = metaList.ToArray();
             return true;
@@ -1000,6 +1495,28 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             titleLabel.AddToClassList("subsection-title");
             packSection.Add(titleLabel);
 
+            // Remote banner (hidden in Draft mode): what published pack is being edited + the way back.
+            _remoteBanner = new VisualElement();
+            _remoteBanner.AddToClassList("remote-banner");
+            _remoteBanner.style.display = DisplayStyle.None;
+            _remoteBannerLabel = new Label();
+            _remoteBannerLabel.AddToClassList("remote-banner-label");
+            _remoteBanner.Add(_remoteBannerLabel);
+            var backBtn = new Button(ExitRemoteMode) { text = "Back to Drafts" };
+            backBtn.AddToClassList("action-button");
+            _remoteBanner.Add(backBtn);
+            packSection.Add(_remoteBanner);
+
+            _remoteTagsWarning = new Label(
+                "Tags/Categories could not be loaded from the server (no local draft matches this pack) — " +
+                "re-enter them before publishing or the live listing's tags/categories will be cleared.");
+            _remoteTagsWarning.AddToClassList("remote-tags-warning");
+            _remoteTagsWarning.style.display = DisplayStyle.None;
+            packSection.Add(_remoteTagsWarning);
+
+            // Draft-mode controls, grouped so Remote mode can hide them as one.
+            _draftControls = new VisualElement();
+
             _packDefField = new ObjectField("Editing Pack")
             {
                 objectType = typeof(AssetPackDefinition),
@@ -1007,13 +1524,14 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 tooltip = "The saved pack you're editing. Pick one to reopen it, or create one with New Pack.",
             };
             _packDefField.RegisterValueChangedCallback(evt => LoadPack(evt.newValue as AssetPackDefinition));
-            packSection.Add(_packDefField);
+            _draftControls.Add(_packDefField);
 
             var buttonRow = new VisualElement();
             buttonRow.AddToClassList("row");
             buttonRow.Add(new Button(OnNewPackClicked) { text = "New Pack" });
             buttonRow.Add(new Button(OnSavePackClicked) { text = "Save Pack" });
-            packSection.Add(buttonRow);
+            _draftControls.Add(buttonRow);
+            packSection.Add(_draftControls);
 
             // Insert right under the "Asset Pack Publisher" title (index 0), above the metadata fields.
             _publisherSection.Insert(1, packSection);
@@ -1117,10 +1635,10 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         {
             var card = new VisualElement();
             card.AddToClassList("pack-card");
-            if (_activePack != null && !string.IsNullOrEmpty(_activePack.packId) && _activePack.packId == pack.id)
-            {
-                card.AddToClassList("pack-card-highlight");
-            }
+            bool isMine = _mode == EditorMode.Remote
+                ? _remoteSession != null && _remoteSession.pack != null && _remoteSession.pack.id == pack.id
+                : _activePack != null && !string.IsNullOrEmpty(_activePack.packId) && _activePack.packId == pack.id;
+            if (isMine) { card.AddToClassList("pack-card-highlight"); }
 
             var headerRow = new VisualElement();
             headerRow.AddToClassList("pack-card-header");
@@ -1148,6 +1666,13 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 buttons.Add(versionLabel);
             }
 
+            // Remote editing: load THIS pack's server state into the window (metadata + asset roster +
+            // thumbnails; prefabs re-bound from the local project). Canonical post-publish edit path.
+            var editBtn = new Button(() => OpenRemotePack(pack)) { text = "Edit" };
+            editBtn.AddToClassList("action-button");
+            editBtn.SetEnabled(!_publishing);
+            buttons.Add(editBtn);
+
             var copyBtn = new Button(() => EditorGUIUtility.systemCopyBuffer = pack.id) { text = "Copy ID" };
             copyBtn.AddToClassList("action-button");
             buttons.Add(copyBtn);
@@ -1159,6 +1684,220 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             headerRow.Add(buttons);
             card.Add(headerRow);
             return card;
+        }
+
+        // ---- remote mode (edit a published pack loaded from the backend) ------------------------- //
+
+        // Loads a published pack's server state into the window: pack metadata + asset roster (the two GETs)
+        // + pack_manifest.json for exposeChildren. Prefabs are re-bound locally (the backend stores assetKeys,
+        // not Unity GUIDs): matching local draft first (also recovers icon settings + tags/categories), then a
+        // unique prefab-name match, else the row loads "unbound" with its published thumbnail downloaded.
+        private async void OpenRemotePack(AssetPack packSummary)
+        {
+            if (_publishing || packSummary == null || string.IsNullOrEmpty(packSummary.id)) { return; }
+
+            int authGen = _authGen;
+            SetStatus($"Loading '{packSummary.name}' from the server...", StatusType.Info);
+
+            AssetPack pack;
+            AssetMeta[] assets;
+            try
+            {
+                Task<AssetPack> packTask = AssetPackPublisherApi.GetPackAsync(packSummary.id);
+                Task<AssetMeta[]> assetsTask = AssetPackPublisherApi.GetPackAssetsAsync(packSummary.id);
+                pack = await packTask;
+                assets = await assetsTask;
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Failed to load pack: {ex.Message}", StatusType.Error);
+                return;
+            }
+            if (authGen != _authGen || !_alive) { return; }
+            if (pack == null || string.IsNullOrEmpty(pack.id)) { SetStatus("Failed to load pack: empty response.", StatusType.Error); return; }
+
+            // pack_manifest.json (exposeChildren restore). Public object; absence/failure = no composites.
+            MfPackManifest manifest = null;
+            if (!string.IsNullOrEmpty(pack.contentBaseUrl))
+            {
+                string manifestJson = await AssetPackPublisherApi.DownloadTextAsync(pack.contentBaseUrl + "pack_manifest.json");
+                if (authGen != _authGen || !_alive) { return; }
+                if (!string.IsNullOrEmpty(manifestJson))
+                {
+                    try { manifest = JsonUtility.FromJson<MfPackManifest>(manifestJson); }
+                    catch (Exception ex) { Debug.LogWarning($"[AssetPackPublisher] pack_manifest.json parse failed: {ex.Message}"); }
+                }
+            }
+
+            // Leaving Draft mode: autosave the outgoing draft, then detach WITHOUT touching the last-pack
+            // EditorPrefs — Back to Drafts restores it.
+            if (_activePack != null) { SaveActivePack(); }
+            _activePack = null;
+            if (_packDefField != null) { _packDefField.SetValueWithoutNotify(null); }
+
+            _remoteSession = new AssetPackRemoteSession
+            {
+                pack = pack,
+                baselineAssets = assets ?? Array.Empty<AssetMeta>(),
+                loadedVersionId = pack.versionId,
+                manifest = manifest,
+                matchedDraft = AssetPackRemoteSession.FindMatchingDraft(pack.id),
+            };
+            _mode = EditorMode.Remote;
+
+            // Metadata from the server. Tags/categories are the exception: they live on the marketplace
+            // Listing, which GET pack does NOT return — only a matching local draft knows them (see the
+            // asset-pack-edit backend spec for the proper fix).
+            bool seeded = _remoteSession.matchedDraft != null;
+            _packNameField.value = pack.name ?? string.Empty;
+            _versionField.SetValueWithoutNotify(string.IsNullOrEmpty(pack.version) ? "1.0.0" : pack.version);
+            _priceField.value = pack.price;
+            _tagsField.value = seeded ? _remoteSession.matchedDraft.tags ?? string.Empty : string.Empty;
+            _categoriesField.value = seeded ? _remoteSession.matchedDraft.categories ?? string.Empty : string.Empty;
+            if (_remoteTagsWarning != null) { _remoteTagsWarning.style.display = seeded ? DisplayStyle.None : DisplayStyle.Flex; }
+
+            BuildRemoteRows();
+            SetModeUI();
+            UpdateAssetsUI();
+
+            int unbound = 0;
+            foreach (Row r in _rows) { if (r.prefab == null) { unbound++; } }
+            SetStatus(
+                unbound == 0
+                    ? $"Loaded '{pack.name}' ({_rows.Count} assets) from the server."
+                    : $"Loaded '{pack.name}' ({_rows.Count} assets) — {unbound} unbound (source prefab not found in this project). Rebind or remove them before publishing.",
+                unbound == 0 ? StatusType.Success : StatusType.Info);
+
+            // Previews: bound rows re-bake locally (deferred, off the hot path); unbound rows show their
+            // published thumbnail, downloaded off contentBaseUrl.
+            if (_rows.Count > 0) { EditorApplication.delayCall += DeferredBakeRowPreviews; }
+            foreach (Row r in _rows)
+            {
+                if (r.prefab == null && !string.IsNullOrEmpty(r.thumbnailUrl)) { _ = DownloadRowThumbnailAsync(r, authGen); }
+            }
+        }
+
+        // Rows from the server manifest, re-bound to local prefabs where possible.
+        private void BuildRemoteRows()
+        {
+            ClearRowPreviews();
+            _rows.Clear();
+            _selectedIndex = -1;
+
+            var draftItems = new Dictionary<string, AssetPackDefinition.Item>();
+            if (_remoteSession.matchedDraft != null)
+            {
+                foreach (AssetPackDefinition.Item item in _remoteSession.matchedDraft.items)
+                {
+                    if (item != null && !string.IsNullOrEmpty(item.assetKey)) { draftItems[item.assetKey] = item; }
+                }
+            }
+
+            foreach (AssetMeta meta in _remoteSession.baselineAssets)
+            {
+                if (meta == null || string.IsNullOrEmpty(meta.assetKey)) { continue; }
+                var row = new Row
+                {
+                    remoteOrigin = true,
+                    assetKey = meta.assetKey,
+                    displayName = meta.displayName ?? string.Empty,
+                    category = meta.category ?? string.Empty,
+                    kindIndex = Mathf.Max(0, Array.IndexOf(Kinds, string.IsNullOrEmpty(meta.kind) ? "prop" : meta.kind)),
+                    keyEdited = true,   // server values are authoritative — never auto-derive over them
+                    nameEdited = true,
+                    thumbnailUrl = meta.thumbnailUrl,
+                    remoteBounds = meta.bounds,
+                };
+
+                if (draftItems.TryGetValue(meta.assetKey, out AssetPackDefinition.Item item))
+                {
+                    row.prefab = item.prefab; // may still be null if the draft lost its reference
+                    row.texture = item.texture; // skybox rows bind textures instead
+                    row.iconMode = item.iconSource == "Custom" ? IconMode.Custom : IconMode.Auto;
+                    row.customIcon = LoadTextureByGuid(item.customIconGuid);
+                    row.exposeChildren = item.exposeChildren;
+                }
+                else
+                {
+                    // Skybox rows have no prefab to auto-match; the creator rebinds the texture by hand
+                    // (a wrong unique-NAME texture match would silently republish the wrong sky).
+                    row.prefab = IsSkyboxRow(row) ? null : AssetPackRemoteSession.FindPrefabByAssetKey(meta.assetKey);
+                    row.autoBound = row.prefab != null;
+                    // Only the version's manifest knows the flag: an entry exists iff the item published
+                    // with exposeChildren AND yielded nodes — so manifest-presence preserves the LIVE
+                    // explode-on-drop behavior exactly (incl. pre-manifest packs: no manifest, no explode).
+                    row.exposeChildren = _remoteSession.ManifestExposes(meta.assetKey);
+                }
+                _rows.Add(row);
+            }
+        }
+
+        // Fetch a published thumbnail into row.previewTex for a row with no local prefab to bake from.
+        // The window owns the texture (same lifecycle as baked previews).
+        private async Task DownloadRowThumbnailAsync(Row row, int authGen)
+        {
+            Texture2D tex = await AssetPackPublisherApi.DownloadTextureAsync(row.thumbnailUrl);
+            if (tex == null) { return; }
+            // The session may have moved on while downloading — never leak, never stomp a baked preview.
+            if (!_alive || authGen != _authGen || !_rows.Contains(row) || RowAsset(row) != null || row.previewTex != null)
+            {
+                DestroyImmediate(tex);
+                return;
+            }
+            row.previewTex = tex;
+            if (_assetList != null) { _assetList.RefreshItems(); }
+            if (_selectedIndex >= 0 && _selectedIndex < _rows.Count && _rows[_selectedIndex] == row) { RebuildDetailPane(); }
+        }
+
+        // Back to Drafts: drop the remote session and restore the last locally-edited draft (if any).
+        private void ExitRemoteMode()
+        {
+            if (_mode != EditorMode.Remote) { return; }
+            _mode = EditorMode.Draft;
+            _remoteSession = null;
+            ClearRowPreviews();
+            _rows.Clear();
+            _selectedIndex = -1;
+
+            // Manual field reset — NOT LoadPack(null), which would wipe the last-pack EditorPrefs entry
+            // that RestoreLastPack needs right below.
+            _packNameField.value = string.Empty;
+            _versionField.value = "1.0.0";
+            _priceField.value = 0;
+            _tagsField.value = string.Empty;
+            _categoriesField.value = string.Empty;
+
+            SetModeUI();
+            UpdateAssetsUI();
+            SetStatus(string.Empty, StatusType.Info);
+            RestoreLastPack();
+        }
+
+        // Show/hide the mode-specific chrome. Version becomes server-owned in Remote mode (auto-bumped at
+        // publish), so the field locks.
+        private void SetModeUI()
+        {
+            bool remote = _mode == EditorMode.Remote;
+            if (_remoteBanner != null) { _remoteBanner.style.display = remote ? DisplayStyle.Flex : DisplayStyle.None; }
+            if (_draftControls != null) { _draftControls.style.display = remote ? DisplayStyle.None : DisplayStyle.Flex; }
+            if (_versionField != null) { _versionField.SetEnabled(!remote); }
+            if (!remote)
+            {
+                if (_remoteTagsWarning != null) { _remoteTagsWarning.style.display = DisplayStyle.None; }
+                if (_assetsError != null) { _assetsError.style.display = DisplayStyle.None; }
+            }
+            UpdateRemoteBanner();
+            UpdatePackListUI(); // re-aim the "which listed pack is mine" highlight
+        }
+
+        private void UpdateRemoteBanner()
+        {
+            if (_remoteBannerLabel == null || _mode != EditorMode.Remote || _remoteSession == null || _remoteSession.pack == null) { return; }
+            string current = string.IsNullOrEmpty(_remoteSession.pack.version) ? "1.0.0" : _remoteSession.pack.version;
+            string next = AssetPackRemoteSession.BumpPatch(current);
+            _remoteBannerLabel.text =
+                $"Editing published pack '{_remoteSession.pack.name}' (v{current} → v{next} on publish). " +
+                "Publishing updates the LIVE marketplace pack.";
         }
 
         private void OnNewPackClicked()
@@ -1187,6 +1926,16 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         // Loads an AssetPackDefinition into the editor (metadata fields + rows), or detaches + resets when null.
         private void LoadPack(AssetPackDefinition def)
         {
+            // A draft load always exits Remote mode (New Pack / the ObjectField picker / RestoreLastPack all
+            // route here). ExitRemoteMode already flipped the mode before its own RestoreLastPack, so this
+            // only fires for direct draft loads while a remote session is open.
+            if (_mode == EditorMode.Remote)
+            {
+                _mode = EditorMode.Draft;
+                _remoteSession = null;
+                SetModeUI();
+            }
+
             // Autosave the OUTGOING pack before switching/detaching (covers the ObjectField picker AND the New Pack
             // button, which both route here) so inspector-style "edit then navigate away" never loses work.
             if (_activePack != null && _activePack != def) { SaveActivePack(); }
@@ -1228,6 +1977,8 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 _rows.Add(new Row
                 {
                     prefab = item.prefab,
+                    texture = item.texture,
+                    material = item.material,
                     assetKey = item.assetKey ?? string.Empty,
                     displayName = item.displayName ?? string.Empty,
                     category = item.category ?? string.Empty,
@@ -1256,7 +2007,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             foreach (Row r in _rows)
             {
                 if (r.previewTex != null) { continue; }
-                bool canBake = r.prefab != null || (r.iconMode == IconMode.Custom && r.customIcon != null);
+                bool canBake = RowAsset(r) != null || (r.iconMode == IconMode.Custom && r.customIcon != null);
                 if (!canBake) { continue; }
                 BakeRowPreview(r);
                 baked = true;
@@ -1269,19 +2020,29 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         private void SaveActivePack()
         {
             if (_activePack == null) { return; }
+            SaveDefinitionFromEditor(_activePack);
+        }
 
-            _activePack.packName = (_packNameField.value ?? string.Empty).Trim();
-            _activePack.version = string.IsNullOrWhiteSpace(_versionField.value) ? "1.0.0" : _versionField.value.Trim();
-            _activePack.price = _priceField.value;
-            _activePack.tags = _tagsField.value ?? string.Empty;
-            _activePack.categories = _categoriesField.value ?? string.Empty;
+        // Editor state (metadata fields + rows) -> the given definition asset. Shared by the Draft-mode
+        // autosaves (via SaveActivePack) and the Remote-mode publish write-through to the matched draft.
+        private void SaveDefinitionFromEditor(AssetPackDefinition def)
+        {
+            if (def == null) { return; }
 
-            _activePack.items.Clear();
+            def.packName = (_packNameField.value ?? string.Empty).Trim();
+            def.version = string.IsNullOrWhiteSpace(_versionField.value) ? "1.0.0" : _versionField.value.Trim();
+            def.price = _priceField.value;
+            def.tags = _tagsField.value ?? string.Empty;
+            def.categories = _categoriesField.value ?? string.Empty;
+
+            def.items.Clear();
             foreach (Row r in _rows)
             {
-                _activePack.items.Add(new AssetPackDefinition.Item
+                def.items.Add(new AssetPackDefinition.Item
                 {
                     prefab = r.prefab,
+                    texture = r.texture,
+                    material = r.material,
                     assetKey = r.assetKey,
                     displayName = r.displayName,
                     category = r.category,
@@ -1294,21 +2055,16 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                     exposeChildren = r.exposeChildren,
                 });
             }
-            EditorUtility.SetDirty(_activePack);
+            EditorUtility.SetDirty(def);
             AssetDatabase.SaveAssets();
         }
 
-        // After a successful publish, persist the backend identity + fresh thumbnail URLs into the pack asset.
+        // After a successful publish, persist the backend identity + fresh thumbnail URLs. Draft mode writes
+        // into the active pack asset; Remote mode refreshes the session (new versionId becomes the staleness
+        // baseline) and writes through to the matching local draft when one exists (the rebinding anchor).
         private void WritebackPublish(PublishResult result)
         {
-            // Guard against a partial confirm response (null/empty assetPack fields) blanking prior good values —
-            // packId is the load-bearing identity; lastVersionId/lastContentBaseUrl are informational bookkeeping.
-            if (!string.IsNullOrEmpty(result.assetPack.id)) { _activePack.packId = result.assetPack.id; }
-            if (!string.IsNullOrEmpty(result.assetPack.versionId)) { _activePack.lastVersionId = result.assetPack.versionId; }
-            if (!string.IsNullOrEmpty(result.assetPack.contentBaseUrl)) { _activePack.lastContentBaseUrl = result.assetPack.contentBaseUrl; }
-            _activePack.lastPublishedUtc = DateTime.UtcNow.ToString("o");
-            if (!string.IsNullOrWhiteSpace(_versionField.value)) { _activePack.version = _versionField.value.Trim(); }
-
+            // Fresh per-asset thumbnail URLs onto the rows (both modes).
             if (result.assets != null)
             {
                 var urlByKey = new Dictionary<string, string>();
@@ -1321,6 +2077,41 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                     if (!string.IsNullOrEmpty(r.assetKey) && urlByKey.TryGetValue(r.assetKey, out string url)) { r.thumbnailUrl = url; }
                 }
             }
+
+            if (_mode == EditorMode.Remote)
+            {
+                if (_remoteSession == null || result.assetPack == null) { return; }
+                _remoteSession.pack = result.assetPack;
+                if (!string.IsNullOrEmpty(result.assetPack.versionId)) { _remoteSession.loadedVersionId = result.assetPack.versionId; }
+                if (result.assets != null) { _remoteSession.baselineAssets = result.assets; }
+                if (!string.IsNullOrEmpty(result.assetPack.version)) { _versionField.SetValueWithoutNotify(result.assetPack.version); }
+                UpdateRemoteBanner();
+
+                AssetPackDefinition draft = _remoteSession.matchedDraft;
+                if (draft != null)
+                {
+                    SaveDefinitionFromEditor(draft);
+                    // Guard against a partial confirm response blanking prior good values (same rule as Draft).
+                    if (!string.IsNullOrEmpty(result.assetPack.id)) { draft.packId = result.assetPack.id; }
+                    if (!string.IsNullOrEmpty(result.assetPack.versionId)) { draft.lastVersionId = result.assetPack.versionId; }
+                    if (!string.IsNullOrEmpty(result.assetPack.contentBaseUrl)) { draft.lastContentBaseUrl = result.assetPack.contentBaseUrl; }
+                    draft.lastPublishedUtc = DateTime.UtcNow.ToString("o");
+                    EditorUtility.SetDirty(draft);
+                    AssetDatabase.SaveAssets();
+                }
+                return;
+            }
+
+            if (_activePack == null) { return; }
+
+            // Guard against a partial confirm response (null/empty assetPack fields) blanking prior good values —
+            // packId is the load-bearing identity; lastVersionId/lastContentBaseUrl are informational bookkeeping.
+            if (!string.IsNullOrEmpty(result.assetPack.id)) { _activePack.packId = result.assetPack.id; }
+            if (!string.IsNullOrEmpty(result.assetPack.versionId)) { _activePack.lastVersionId = result.assetPack.versionId; }
+            if (!string.IsNullOrEmpty(result.assetPack.contentBaseUrl)) { _activePack.lastContentBaseUrl = result.assetPack.contentBaseUrl; }
+            _activePack.lastPublishedUtc = DateTime.UtcNow.ToString("o");
+            if (!string.IsNullOrWhiteSpace(_versionField.value)) { _activePack.version = _versionField.value.Trim(); }
+
             SaveActivePack(); // rewrites items (incl. the fresh thumbnailUrl); leaves packId/lastVersionId set above
         }
 
@@ -1364,11 +2155,23 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             row.previewPng = null;
 
             // Custom: blit the creator's chosen texture into a readable square we own. Otherwise (Auto, or
-            // Custom with no texture picked yet) render the prefab through the shared baker.
+            // Custom with no texture picked yet) render the prefab through the shared baker — or, for a
+            // skybox row, render the sky texture through a template-material camera pass.
             Texture2D tex;
             if (row.iconMode == IconMode.Custom && row.customIcon != null)
             {
                 tex = ToReadableSquare(row.customIcon, 256);
+            }
+            else if (IsSkyboxRow(row))
+            {
+                if (row.texture == null) { return; }
+                tex = BakeSkyboxPreview(row.texture, 256);
+                if (tex == null && row.texture is Texture2D) { tex = ToReadableSquare(row.texture, 256); }
+            }
+            else if (IsMaterialRow(row))
+            {
+                if (row.material == null) { return; }
+                tex = BakeMaterialPreview(row.material, 256);
             }
             else
             {
@@ -1415,6 +2218,197 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             }
         }
 
+        // Render a material on a preview SPHERE — the same primitive Unity's own material inspector uses,
+        // and for the same reason: a sphere shows the specular lobe, the normal map and the silhouette
+        // falloff at once, where a flat swatch shows only base colour (which the creator already knows).
+        // Goes through the shared PreviewRenderUtility baker so material tiles light and frame exactly like
+        // prefab tiles; the temporary sphere is destroyed either way.
+        private static Texture2D BakeMaterialPreview(Material material, int size)
+        {
+            if (material == null) { return null; }
+            GameObject sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            try
+            {
+                sphere.hideFlags = HideFlags.HideAndDontSave;
+                Collider sphereCollider = sphere.GetComponent<Collider>();
+                if (sphereCollider != null) { DestroyImmediate(sphereCollider); }
+                sphere.GetComponent<Renderer>().sharedMaterial = material;
+                return AssetThumbnailBaker.BakeTexture(sphere, size);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[AssetPackPublisher] material preview failed for '{material.name}': {ex.Message}");
+                return null;
+            }
+            finally
+            {
+                DestroyImmediate(sphere);
+            }
+        }
+
+        // Render a skybox texture as it will actually look in the sky: wrap it in the matching template
+        // shader (editor-time Shader.Find is fine — every variant exists in-editor) and shoot a
+        // cullingMask-0 skybox-clear camera. One path for BOTH shapes (equirect + cubemap).
+        private static Texture2D BakeSkyboxPreview(Texture skyTexture, int size)
+        {
+            Material tempMat = CreateTempSkyboxMaterial(skyTexture);
+            if (tempMat == null) { return null; }
+
+            Material prevSkybox = RenderSettings.skybox;
+            RenderSettings.skybox = tempMat;
+            RenderTexture rt = RenderTexture.GetTemporary(size, size, 16, RenderTextureFormat.ARGB32);
+            RenderTexture prevActive = RenderTexture.active;
+            GameObject camGo = new GameObject("__SkyboxPreviewCam") { hideFlags = HideFlags.HideAndDontSave };
+            Texture2D tex = null;
+            try
+            {
+                Camera cam = camGo.AddComponent<Camera>();
+                cam.enabled = false;
+                cam.cullingMask = 0;
+                cam.clearFlags = CameraClearFlags.Skybox;
+                cam.fieldOfView = 75f;
+                cam.transform.rotation = Quaternion.Euler(-10f, 0f, 0f); // a touch of sky over horizon
+                cam.targetTexture = rt;
+                cam.Render();
+
+                RenderTexture.active = rt;
+                tex = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: false);
+                tex.ReadPixels(new Rect(0, 0, size, size), 0, 0);
+                tex.Apply();
+                return tex;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[AssetPackPublisher] skybox preview render failed: {ex.Message}");
+                if (tex != null) { DestroyImmediate(tex); }
+                return null;
+            }
+            finally
+            {
+                RenderTexture.active = prevActive;
+                RenderTexture.ReleaseTemporary(rt);
+                DestroyImmediate(camGo);
+                RenderSettings.skybox = prevSkybox;
+                DestroyImmediate(tempMat);
+            }
+        }
+
+        // Temp editor-only skybox material for previews/reflection bakes: Skybox/Cubemap for cubemaps,
+        // Skybox/Panoramic (latlong 360) for equirect Texture2Ds. Caller owns + DestroyImmediates it.
+        private static Material CreateTempSkyboxMaterial(Texture skyTexture)
+        {
+            if (skyTexture == null) { return null; }
+            bool isCube = skyTexture is Cubemap;
+            Shader shader = Shader.Find(isCube ? "Skybox/Cubemap" : "Skybox/Panoramic");
+            if (shader == null) { return null; }
+
+            Material mat = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+            if (isCube)
+            {
+                mat.SetTexture("_Tex", skyTexture);
+            }
+            else
+            {
+                mat.SetTexture("_MainTex", skyTexture);
+                mat.SetFloat("_Mapping", 1f); // Latitude Longitude Layout
+                mat.EnableKeyword("_MAPPING_LATITUDE_LONGITUDE_LAYOUT");
+            }
+            return mat;
+        }
+
+        // ---- publish-time skybox reflection bake -------------------------------------------------- //
+
+        // Temp folder for the baked reflection EXRs. Created for the publish, deleted afterwards —
+        // the SDK must not leave tooling litter in the creator's project.
+        private const string SkyboxReflTempFolder = "Assets/VVSDK_Temp";
+
+        /// <summary>
+        /// For every bound skybox row, bake its companion environment-reflection cubemap (a small HDR
+        /// TextureCube, same recipe as the UWE DefaultDaySkyBaker) into <see cref="SkyboxReflTempFolder"/>
+        /// and append it to <paramref name="entries"/> addressed "SkyboxRefl_&lt;Id&gt;" — the key the
+        /// runtime derives from the skybox key. Returns the created asset paths for post-publish cleanup.
+        /// A failed bake warns and skips (players fall back to the default day reflection).
+        /// </summary>
+        private List<string> AppendSkyboxReflectionEntries(List<AssetPackCatalogBuilder.AssetPackEntry> entries)
+        {
+            var created = new List<string>();
+            foreach (Row row in _rows)
+            {
+                if (!IsSkyboxRow(row) || row.texture == null || string.IsNullOrEmpty(row.assetKey)) { continue; }
+                // A remote legacy key without the canonical prefix has no derivable reflection key.
+                if (!row.assetKey.StartsWith("Skybox_", StringComparison.Ordinal)) { continue; }
+
+                string reflKey = "SkyboxRefl_" + row.assetKey.Substring("Skybox_".Length);
+                string path = $"{SkyboxReflTempFolder}/{reflKey}.exr";
+                Texture baked = BakeSkyboxReflectionAsset(row.texture, path);
+                if (baked == null)
+                {
+                    Debug.LogWarning($"[AssetPackPublisher] Reflection bake failed for '{row.assetKey}' — players will use the default day reflection for this sky.");
+                    continue;
+                }
+                created.Add(path);
+                entries.Add(new AssetPackCatalogBuilder.AssetPackEntry { Asset = baked, AssetKey = reflKey });
+            }
+            return created;
+        }
+
+        // Bake one reflection cubemap from a sky texture via a probe that sees ONLY the sky
+        // (cullingMask 0) — position/scene-independent. Imported as a LINEAR HDR TextureCube
+        // (sRGB off: the baked radiance is already linear; a decode would darken the reflection).
+        private static Texture BakeSkyboxReflectionAsset(Texture skyTexture, string outputPath)
+        {
+            if (!AssetDatabase.IsValidFolder(SkyboxReflTempFolder)) { AssetDatabase.CreateFolder("Assets", "VVSDK_Temp"); }
+
+            Material tempMat = CreateTempSkyboxMaterial(skyTexture);
+            if (tempMat == null) { return null; }
+
+            Material previousSkybox = RenderSettings.skybox;
+            RenderSettings.skybox = tempMat;
+
+            GameObject probeGo = new GameObject("__SkyboxReflBakeProbe") { hideFlags = HideFlags.HideAndDontSave };
+            ReflectionProbe probe = probeGo.AddComponent<ReflectionProbe>();
+            probe.resolution = 64;
+            probe.hdr = true;
+            probe.cullingMask = 0;
+            probe.size = Vector3.one;
+
+            bool baked = false;
+            try
+            {
+                baked = Lightmapping.BakeReflectionProbe(probe, outputPath);
+            }
+            finally
+            {
+                RenderSettings.skybox = previousSkybox;
+                DestroyImmediate(probeGo);
+                DestroyImmediate(tempMat);
+            }
+            if (!baked) { return null; }
+
+            AssetDatabase.ImportAsset(outputPath, ImportAssetOptions.ForceUpdate);
+            TextureImporter importer = AssetImporter.GetAtPath(outputPath) as TextureImporter;
+            if (importer != null)
+            {
+                bool changed = false;
+                if (importer.textureShape != TextureImporterShape.TextureCube) { importer.textureShape = TextureImporterShape.TextureCube; changed = true; }
+                if (importer.sRGBTexture) { importer.sRGBTexture = false; changed = true; }
+                if (changed) { importer.SaveAndReimport(); }
+            }
+            return AssetDatabase.LoadAssetAtPath<Texture>(outputPath);
+        }
+
+        // Post-publish cleanup of the baked reflection EXRs (+ the temp folder when it emptied).
+        private static void DeleteTempReflectionAssets(List<string> paths)
+        {
+            if (paths == null || paths.Count == 0) { return; }
+            foreach (string p in paths) { AssetDatabase.DeleteAsset(p); }
+            if (AssetDatabase.IsValidFolder(SkyboxReflTempFolder))
+            {
+                string[] remaining = AssetDatabase.FindAssets(string.Empty, new[] { SkyboxReflTempFolder });
+                if (remaining == null || remaining.Length == 0) { AssetDatabase.DeleteAsset(SkyboxReflTempFolder); }
+            }
+        }
+
         private void ClearRowPreviews()
         {
             foreach (Row r in _rows)
@@ -1444,7 +2438,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             var dict = new Dictionary<string, byte[]>();
             foreach (Row r in _rows)
             {
-                if (r.prefab == null || string.IsNullOrEmpty(r.assetKey)) { continue; }
+                if (RowAsset(r) == null || string.IsNullOrEmpty(r.assetKey)) { continue; }
                 if (r.previewPng == null) { BakeRowPreview(r); }
                 if (r.previewPng != null && !dict.ContainsKey(r.assetKey)) { dict[r.assetKey] = r.previewPng; }
             }

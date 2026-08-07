@@ -12,6 +12,13 @@ namespace VirtualVenues.WorldCreator
         private static InstanceTracker<Interactable> _tracker = new InstanceTracker<Interactable>();
         public static InstanceTracker<Interactable> Tracker => _tracker;
 
+        /// <summary>
+        /// Raised by <see cref="Configure"/>. Anything that COPIED these serialized fields at discovery
+        /// time (the runtime graft in <c>InteractableManager</c>) re-syncs from here — a world layout adds
+        /// this component first and configures it after, so the graft's copies would otherwise be stale.
+        /// </summary>
+        public static event Action<Interactable> OnConfigured;
+
         [Header("Interaction Settings")]
         [SerializeField] private string _interactionDisplayText = "Press {0} to interact";
         [SerializeField] private Transform _contextPopupParent = null;
@@ -55,6 +62,24 @@ namespace VirtualVenues.WorldCreator
             Debug.Log("OnLocalInteract called");
 
             _onLocalInteract?.Invoke();
+        }
+
+        /// <summary>
+        /// Initializes the serialized fields from external data (e.g. a loaded world layout). ADDITIVE and
+        /// safe to call repeatedly after AddComponent: null/empty arguments leave any prefab-AUTHORED value
+        /// in place, and the UnityEvents are lazily created so a runtime AddListener always has an instance.
+        /// Fires <see cref="OnConfigured"/> so discovery-time copies of these fields re-sync.
+        /// </summary>
+        public void Configure(string displayText, Transform contextPopupParent, Collider interactionCollider, Renderer[] highlightRenderers)
+        {
+            if (!string.IsNullOrEmpty(displayText)) { _interactionDisplayText = displayText; }
+            if (contextPopupParent != null) { _contextPopupParent = contextPopupParent; }
+            if (interactionCollider != null) { _interactionCollider = interactionCollider; }
+            if (highlightRenderers != null) { _highlightRenderers = highlightRenderers; }
+            if (_onHighlight == null) { _onHighlight = new UnityEvent(); }
+            if (_onUnhighlight == null) { _onUnhighlight = new UnityEvent(); }
+            if (_onLocalInteract == null) { _onLocalInteract = new UnityEvent(); }
+            OnConfigured?.Invoke(this);
         }
     }
 }

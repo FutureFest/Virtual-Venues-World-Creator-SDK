@@ -172,9 +172,19 @@ namespace VirtualVenues.Editor.Publishing
         /// <summary>Add one prefab to the group with the given Addressables address + optional label.</summary>
         protected void AddEntry(AddressableAssetGroup group, GameObject prefab, string address, string label)
         {
-            if (prefab == null) { return; }
+            AddEntry(group, (UnityEngine.Object)prefab, address, label);
+        }
+
+        /// <summary>
+        /// Add any project asset (prefab, Texture2D, Cubemap, ...) to the group with the given
+        /// Addressables address + optional label. Addressables entries are GUID-based, so the asset
+        /// type only matters to the loader (<c>LoadAssetAsync&lt;T&gt;</c>), not to the group.
+        /// </summary>
+        protected void AddEntry(AddressableAssetGroup group, UnityEngine.Object asset, string address, string label)
+        {
+            if (asset == null) { return; }
             var settings = GetOrCreateSettings();
-            string assetPath = AssetDatabase.GetAssetPath(prefab);
+            string assetPath = AssetDatabase.GetAssetPath(asset);
             string guid = AssetDatabase.AssetPathToGUID(assetPath);
             if (string.IsNullOrEmpty(guid)) { return; }
 

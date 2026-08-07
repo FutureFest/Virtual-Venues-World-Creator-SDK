@@ -54,8 +54,23 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         [Serializable]
         public class Item
         {
-            /// <summary>Direct prefab reference — Unity persists this across sessions (the whole point).</summary>
+            /// <summary>Direct prefab reference — Unity persists this across sessions (the whole point).
+            /// Null for skybox items, which reference <see cref="texture"/> instead.</summary>
             public GameObject prefab;
+
+            /// <summary>
+            /// Skybox items only (kind == "skybox"): the sky TEXTURE — an equirect/panoramic Texture2D
+            /// or a Cubemap. Published as the asset itself (no prefab); the runtime wraps it in a
+            /// shipped skybox template material. Null for every other kind.
+            /// </summary>
+            public Texture texture;
+
+            /// <summary>
+            /// Material items only (kind == "material"): the published Material asset. Offered in the
+            /// World Editor's Materials rail and assignable into a renderer slot; READ-ONLY there, because
+            /// its shader variants froze at publish time. Null for every other kind.
+            /// </summary>
+            public Material material;
 
             /// <summary>"{Type}_{Id}" content key (exactly one underscore).</summary>
             public string assetKey;
