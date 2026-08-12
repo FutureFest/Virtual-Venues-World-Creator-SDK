@@ -87,8 +87,28 @@ The publisher has two modes: **Auto Build** (add prefabs, the SDK builds the Add
 - **Avatar prefabs** must:
   - be a **project prefab** (not a scene object),
   - have the **VirtualVenues Avatar component on the prefab root** (not on a child),
-  - have an **Animator assigned** on that component.
+  - have an **Animator assigned** on that component,
+  - have that Animator's **Controller field EMPTY** (see Animation below — a shipped controller is rejected).
 - **Cosmetic prefabs** must be a **project prefab**.
+
+### Animation
+
+VirtualVenues drives your avatar with the FutureFest character controller, which it **injects at runtime**.
+You never assign it yourself.
+
+- **Leave the Animator's Controller field empty.** Publishing is **blocked** if it isn't. A shipped controller
+  replaces the injected one — your avatar stands frozen in-world — and Addressables packs every clip that
+  controller references into your bundle (megabytes per avatar).
+- **Use a Humanoid rig.** Locomotion, dance, sit and talk are Humanoid clips that retarget onto your skeleton.
+  A Generic rig publishes but won't animate.
+- **To ship your own animations**, fill in the **Custom Animations** list on the Avatar component: pick a slot
+  (Idle, Walk, Run, Jump, FreeFall, Land, Swim, Dance, Sit, Talk, Interact, IdleTwitch0/1) and assign a
+  **Humanoid** clip. Any slot you leave out keeps the FutureFest default. This is the *only* supported way to
+  override animations — a hand-authored controller is not.
+- **To preview animations in the editor**, temporarily assign
+  `Packages/VirtualVenues SDK/Runtime/Animation/VVPreviewCharacterController` to your Animator. It carries the
+  locomotion set (idle/walk/run blend on the `Speed` parameter, plus Jumping/FreeFall/Landing states) so you can
+  check retargeting on your rig. **It is editor-only — clear it before publishing.**
 
 ### Required — Manual mode
 
@@ -109,6 +129,6 @@ The publisher has two modes: **Auto Build** (add prefabs, the SDK builds the Add
 
 **World:** logged in · world name ≤100 · scene selected · WebGL + Linux build support · Project Setup green · (NMKR configured if used) · ≥1 SpawnPoint.
 
-**Avatar:** logged in · catalog name/selection · unique version tag · ≥1 prefab · Avatar component on root + Animator · unique prefab names.
+**Avatar:** logged in · catalog name/selection · unique version tag · ≥1 prefab · Avatar component on root + Animator · **Animator Controller field empty** · unique prefab names.
 
 If a publish is blocked, the tool tells you exactly which item to fix. For rendering issues, start with `VirtualVenues → Project Setup`.

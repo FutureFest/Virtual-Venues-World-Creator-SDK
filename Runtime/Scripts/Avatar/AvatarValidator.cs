@@ -90,6 +90,21 @@ namespace VirtualVenues
                 return;
             }
 
+            // A shipped controller is a hard block, not a warning: it REPLACES the FutureFest character
+            // controller VirtualVenues injects at runtime (so locomotion/dance/talk stop working unless the
+            // creator reimplemented FF's whole state machine), and Addressables packs the controller's entire
+            // animation-clip closure into the avatar bundle — megabytes per avatar. VVPreviewCharacterController
+            // exists only to scrub animations in the editor; clear it before publishing.
+            if (animator.runtimeAnimatorController != null)
+            {
+                results.Add(new AvatarCheck(AvatarCheckSeverity.Error,
+                    $"The Animator has an Animator Controller assigned ('{animator.runtimeAnimatorController.name}'). " +
+                    "Clear it — VirtualVenues injects the FutureFest character controller at runtime, and a shipped " +
+                    "controller replaces it (the avatar will stand frozen) while adding all of its animation clips to " +
+                    "your published bundle. VVPreviewCharacterController is for editor preview only. To ship your own " +
+                    "animations, use the \"Custom Animations\" list on this component instead."));
+            }
+
             UnityEngine.Avatar rig = animator.avatar;
             if (rig == null)
             {
