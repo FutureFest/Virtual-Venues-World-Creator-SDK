@@ -90,18 +90,19 @@ namespace VirtualVenues
                 return;
             }
 
-            // A shipped controller is a hard block, not a warning: it REPLACES the FutureFest character
-            // controller VirtualVenues injects at runtime (so locomotion/dance/talk stop working unless the
-            // creator reimplemented FF's whole state machine), and Addressables packs the controller's entire
-            // animation-clip closure into the avatar bundle — megabytes per avatar. VVPreviewCharacterController
-            // exists only to scrub animations in the editor; clear it before publishing.
+            // Warning, not an error (0.9.15 blocked here; downgraded in 0.9.16). The runtime already handles
+            // this invisibly: UPC probes a shipped controller and injects the FutureFest one whenever it doesn't
+            // implement FF's animation contract, so the avatar animates either way and needs no republish. The
+            // only real cost is that Addressables packs the controller's animation-clip closure into the bundle,
+            // so clearing the field keeps the creator's download smaller.
             if (animator.runtimeAnimatorController != null)
             {
-                results.Add(new AvatarCheck(AvatarCheckSeverity.Error,
+                results.Add(new AvatarCheck(AvatarCheckSeverity.Warning,
                     $"The Animator has an Animator Controller assigned ('{animator.runtimeAnimatorController.name}'). " +
-                    "Clear it — VirtualVenues injects the FutureFest character controller at runtime, and a shipped " +
-                    "controller replaces it (the avatar will stand frozen) while adding all of its animation clips to " +
-                    "your published bundle. VVPreviewCharacterController is for editor preview only. To ship your own " +
+                    "This won't break animation — VirtualVenues replaces it at runtime with the FutureFest character " +
+                    "controller unless yours implements FF's full animation contract. But its animation clips get " +
+                    "packed into your published bundle, making the download bigger for no benefit, so clearing the " +
+                    "field is recommended. VVPreviewCharacterController is for editor preview only. To ship your own " +
                     "animations, use the \"Custom Animations\" list on this component instead."));
             }
 

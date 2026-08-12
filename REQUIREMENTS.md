@@ -87,18 +87,20 @@ The publisher has two modes: **Auto Build** (add prefabs, the SDK builds the Add
 - **Avatar prefabs** must:
   - be a **project prefab** (not a scene object),
   - have the **VirtualVenues Avatar component on the prefab root** (not on a child),
-  - have an **Animator assigned** on that component,
-  - have that Animator's **Controller field EMPTY** (see Animation below — a shipped controller is rejected).
+  - have an **Animator assigned** on that component.
 - **Cosmetic prefabs** must be a **project prefab**.
+
+> Leaving the Animator's **Controller** field empty is *recommended, not required* — see Animation below.
 
 ### Animation
 
 VirtualVenues drives your avatar with the FutureFest character controller, which it **injects at runtime**.
 You never assign it yourself.
 
-- **Leave the Animator's Controller field empty.** Publishing is **blocked** if it isn't. A shipped controller
-  replaces the injected one — your avatar stands frozen in-world — and Addressables packs every clip that
-  controller references into your bundle (megabytes per avatar).
+- **Leave the Animator's Controller field empty** (recommended). Publishing still works if you don't, and your
+  avatar will still animate — VirtualVenues replaces the controller at runtime. The reason to clear it is
+  **download size**: every clip your controller references gets packed into your published bundle, so players
+  download animations that are never used.
 - **Use a Humanoid rig.** Locomotion, dance, sit and talk are Humanoid clips that retarget onto your skeleton.
   A Generic rig publishes but won't animate.
 - **To ship your own animations**, fill in the **Custom Animations** list on the Avatar component: pick a slot
@@ -129,6 +131,6 @@ You never assign it yourself.
 
 **World:** logged in · world name ≤100 · scene selected · WebGL + Linux build support · Project Setup green · (NMKR configured if used) · ≥1 SpawnPoint.
 
-**Avatar:** logged in · catalog name/selection · unique version tag · ≥1 prefab · Avatar component on root + Animator · **Animator Controller field empty** · unique prefab names.
+**Avatar:** logged in · catalog name/selection · unique version tag · ≥1 prefab · Avatar component on root + Animator · unique prefab names. (Clearing the Animator's Controller field is recommended, not required.)
 
 If a publish is blocked, the tool tells you exactly which item to fix. For rendering issues, start with `VirtualVenues → Project Setup`.
