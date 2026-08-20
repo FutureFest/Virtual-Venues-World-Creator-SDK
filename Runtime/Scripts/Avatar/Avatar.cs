@@ -19,8 +19,14 @@ namespace VirtualVenues
         [SerializeField] private Animator _animator;
 
         [Header("Customization Slots")]
-        [SerializeField] private List<RendererSlot> _rendererSlots = new List<RendererSlot>();
-        [SerializeField] private List<ItemSlot> _itemSlots = new List<ItemSlot>();
+        [Tooltip("Creator-named cosmetic slots. The slot name is the wardrobe category and the Addressables prefix: a cosmetic for slot \"Hat\" must be published with the address Hat_<assetId>.")]
+        [SerializeField] private List<AvatarSlot> _slots = new List<AvatarSlot>();
+
+        // LEGACY (pre-0.9.17) slot lists. Kept forever and still read at runtime: avatar bundles ship a
+        // TypeTree, so MonoBehaviour data is matched by FIELD NAME. Deleting these fields drops the slot
+        // data out of every already-published avatar — it would still spawn, just with zero slots.
+        [HideInInspector, SerializeField] private List<RendererSlot> _rendererSlots = new List<RendererSlot>();
+        [HideInInspector, SerializeField] private List<ItemSlot> _itemSlots = new List<ItemSlot>();
 
         [Header("LOD")]
         [SerializeField] private LODGroup _lodGroup;
@@ -41,6 +47,7 @@ namespace VirtualVenues
 
         // Public accessors for runtime swap
         public Animator Animator => _animator;
+        public List<AvatarSlot> Slots => _slots;
         public List<RendererSlot> RendererSlots => _rendererSlots;
         public List<ItemSlot> ItemSlots => _itemSlots;
         public LODGroup LodGroup => _lodGroup;
@@ -51,6 +58,43 @@ namespace VirtualVenues
         public Material LoadingMaterial => _loadingMaterial;
         public GameObject LoadingItem => _loadingItem;
         public IReadOnlyList<AvatarAnimationOverride> AnimationOverrides => _animationOverrides;
+    }
+
+    /// <summary>How a cosmetic equipped into a slot attaches to the avatar.</summary>
+    public enum AvatarSlotKind
+    {
+        /// <summary>Instantiate the cosmetic prefab under <see cref="AvatarSlot.itemPivot"/>. Hats, backpacks.</summary>
+        Attachment,
+        /// <summary>Swap material <see cref="AvatarSlot.materialIndex"/> on <see cref="AvatarSlot.renderers"/>. Skins, faces.</summary>
+        Material,
+        /// <summary>Rebind the cosmetic's SkinnedMeshRenderers onto this avatar's skeleton. Jackets, hoodies.</summary>
+        SkinnedMesh
+    }
+
+    /// <summary>
+    /// One creator-named cosmetic slot. The <see cref="slotId"/> is the wardrobe category AND the
+    /// Addressables address prefix — a cosmetic in slot "Hat" is loaded as "Hat_&lt;assetId&gt;".
+    /// </summary>
+    [Serializable]
+    public class AvatarSlot
+    {
+        [Tooltip("Creator-named, e.g. \"Hat\" or \"Jacket\". Shown as the wardrobe tab label. \"Avatar\" and \"Costume\" are reserved.")]
+        public string slotId;
+        public AvatarSlotKind kind;
+
+        [Tooltip("Attachment / SkinnedMesh: the bone or empty the cosmetic parents under.")]
+        public Transform itemPivot;
+
+        [Tooltip("Material: the renderers whose material is swapped.")]
+        public List<Renderer> renderers = new List<Renderer>();
+        [Tooltip("Material: which material slot on those renderers is swapped.")]
+        public int materialIndex;
+
+        [Tooltip("SkinnedMesh: body renderers hidden while something is equipped here (restored on unequip).")]
+        public List<Renderer> hideWhenEquipped = new List<Renderer>();
+
+        [Tooltip("Shown when the cosmetic fails to load. A Material for Material slots, a GameObject otherwise.")]
+        public UnityEngine.Object fallback;
     }
 
     [Serializable]
@@ -71,8 +115,9 @@ namespace VirtualVenues
     }
 
     /// <summary>
-    /// Slot categories for avatar customization.
-    /// Mirrors FutureFest.Character.Customization.SlotAssetCategory.
+    /// LEGACY (pre-0.9.17) fixed slot categories, superseded by the free-string <see cref="AvatarSlot.slotId"/>.
+    /// Kept permanently: it is the deserialization path for already-published avatar bundles, whose slot
+    /// categories are stored as this enum's underlying int. Do not remove, reorder, or renumber it.
     /// </summary>
     public enum SlotCategory
     {
@@ -170,14 +215,86 @@ namespace VirtualVenues
                 SetupAvatarFromModel(avatar);
             }
 
-            if (GUILayout.Button(new GUIContent("Add Item Slot",
-                "Add an attachment slot (Back, Hat, Hair, Neck, Head).")))
-            {
-                ShowAddItemSlotMenu(avatar);
-            }
+            DrawAddSlot(avatar);
 
             EditorGUILayout.Space();
             DrawValidation(avatar);
+        }
+
+        // Free-text slot name + kind, so a creator can add any slot they like ("Jacket", "Tail").
+        private string _newSlotId = "";
+        private AvatarSlotKind _newSlotKind = AvatarSlotKind.Attachment;
+
+        private void DrawAddSlot(Avatar avatar)
+        {
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                _newSlotId = EditorGUILayout.TextField(new GUIContent("New Slot",
+                    "Name it whatever you like — this is the wardrobe tab label and the Addressables prefix for its cosmetics."), _newSlotId);
+                _newSlotKind = (AvatarSlotKind)EditorGUILayout.EnumPopup(_newSlotKind, GUILayout.Width(110));
+
+                using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(_newSlotId)))
+                {
+                    if (GUILayout.Button("Add Slot", GUILayout.Width(70)))
+                    {
+                        Undo.RecordObject(avatar, "Add slot");
+                        avatar.Slots.Add(new AvatarSlot { slotId = _newSlotId.Trim(), kind = _newSlotKind });
+                        _newSlotId = "";
+                        MarkDirty(avatar);
+                    }
+                }
+            }
+
+            if (avatar.RendererSlots.Count + avatar.ItemSlots.Count == 0) { return; }
+
+            if (GUILayout.Button(new GUIContent($"Convert legacy slots ({avatar.RendererSlots.Count + avatar.ItemSlots.Count})",
+                "Copy this avatar's pre-0.9.17 renderer/item slots into the new slot list, keeping their category names as slot names.")))
+            {
+                ConvertLegacySlots(avatar);
+            }
+        }
+
+        private void ConvertLegacySlots(Avatar avatar)
+        {
+            Undo.RecordObject(avatar, "Convert legacy slots");
+
+            int added = 0;
+            foreach (RendererSlot legacy in avatar.RendererSlots)
+            {
+                if (legacy == null || HasSlot(avatar, legacy.category.ToString())) { continue; }
+                avatar.Slots.Add(new AvatarSlot
+                {
+                    slotId = legacy.category.ToString(),
+                    kind = AvatarSlotKind.Material,
+                    renderers = legacy.renderers != null ? new List<Renderer>(legacy.renderers) : new List<Renderer>(),
+                    materialIndex = legacy.materialIndex,
+                    fallback = legacy.fallbackMaterial
+                });
+                added++;
+            }
+
+            foreach (ItemSlot legacy in avatar.ItemSlots)
+            {
+                if (legacy == null || HasSlot(avatar, legacy.category.ToString())) { continue; }
+                avatar.Slots.Add(new AvatarSlot
+                {
+                    slotId = legacy.category.ToString(),
+                    kind = AvatarSlotKind.Attachment,
+                    itemPivot = legacy.itemPivot,
+                    fallback = legacy.fallbackItem
+                });
+                added++;
+            }
+
+            MarkDirty(avatar);
+            EditorUtility.DisplayDialog("Convert legacy slots",
+                added == 0 ? "Nothing to convert — every legacy slot is already in the new list."
+                           : $"Added {added} slot(s). The legacy lists are kept as-is; they are ignored once this list is non-empty.", "OK");
+        }
+
+        private static bool HasSlot(Avatar avatar, string slotId)
+        {
+            return avatar.Slots.Exists(s => s != null && string.Equals(s.slotId, slotId, System.StringComparison.OrdinalIgnoreCase));
         }
 
         private void DrawValidation(Avatar avatar)
@@ -198,32 +315,6 @@ namespace VirtualVenues
                     c.Severity == AvatarCheckSeverity.Warning ? MessageType.Warning : MessageType.Info;
                 EditorGUILayout.HelpBox(c.Message, type);
             }
-        }
-
-        private void ShowAddItemSlotMenu(Avatar avatar)
-        {
-            var menu = new GenericMenu();
-            foreach (SlotCategory category in AvatarValidator.ItemCategories)
-            {
-                SlotCategory captured = category;
-                bool exists = avatar.ItemSlots.Exists(s => s != null && s.category == captured);
-                if (exists)
-                {
-                    menu.AddDisabledItem(new GUIContent($"{category} (already added)"));
-                }
-                else
-                {
-                    menu.AddItem(new GUIContent(category.ToString()), false, () => AddItemSlot(avatar, captured));
-                }
-            }
-            menu.ShowAsContext();
-        }
-
-        private void AddItemSlot(Avatar avatar, SlotCategory category)
-        {
-            Undo.RecordObject(avatar, "Add item slot");
-            avatar.ItemSlots.Add(new ItemSlot { category = category });
-            MarkDirty(avatar);
         }
 
         // --- Setup Avatar from Model -------------------------------------------------------------

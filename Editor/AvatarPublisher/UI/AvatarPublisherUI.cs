@@ -14,6 +14,7 @@ using Auth0.Api.Credentials;
 using AvatarPublisher;
 using VirtualVenues.Editor.AvatarPublisher;
 using VirtualVenues.Editor.ProjectSetup;
+using VirtualVenues.Editor.Publishing;
 using VirtualVenues.Editor.UI;
 
 public class AvatarPublisherUI : EditorWindow
@@ -116,6 +117,12 @@ public class AvatarPublisherUI : EditorWindow
     private List<GameObject> _avatarPrefabs = new List<GameObject>();
     private List<GameObject> _cosmeticPrefabs = new List<GameObject>();
 
+    // Which avatar slot each cosmetic publishes into. Keyed by prefab rather than kept as a list parallel
+    // to _cosmeticPrefabs, because that list is mutated by three separate paths (add / remove / multi-drop)
+    // and a parallel list silently desyncs. A stale key for a removed prefab is harmless.
+    private readonly Dictionary<GameObject, string> _cosmeticSlotIds = new Dictionary<GameObject, string>();
+    private VisualElement _avatarSlotsSummary;
+
     private const string CATALOG_NAME_KEY = "AvatarPublisher_CatalogName";
     private const string VERSION_TAG_KEY = "AvatarPublisher_VersionTag";
     private const string BUNDLE_FOLDER_KEY = "AvatarPublisher_BundleFolder";
@@ -130,6 +137,7 @@ public class AvatarPublisherUI : EditorWindow
     private const string FOLDOUT_COSMETICS_META_KEY = "AvatarPublisher_FoldoutCosmeticsMeta";
     private const string AVATAR_PREFAB_GUIDS_KEY = "AvatarPublisher_AvatarPrefabGuids";
     private const string COSMETIC_PREFAB_GUIDS_KEY = "AvatarPublisher_CosmeticPrefabGuids";
+    private const string COSMETIC_SLOT_IDS_KEY = "AvatarPublisher_CosmeticSlotIds";
 
     private class BundleFileInfo
     {
@@ -150,6 +158,7 @@ public class AvatarPublisherUI : EditorWindow
     private class CosmeticMetadataEntry
     {
         public string Id = "";
+        public string CategoryId = "";
         public string Name = "";
         public string GameId = "";
         public string Guid = "";
@@ -792,6 +801,8 @@ public class AvatarPublisherUI : EditorWindow
             var row = CreatePrefabRow(_avatarPrefabs[i], true, newValue =>
             {
                 _avatarPrefabs[index] = newValue;
+                // The cosmetic slot dropdowns list the slots THESE avatars declare, so they must rebuild.
+                UpdateCosmeticPrefabsUI();
             }, () =>
             {
                 _avatarPrefabs.RemoveAt(index);
@@ -800,6 +811,7 @@ public class AvatarPublisherUI : EditorWindow
             _avatarPrefabsContainer.Add(row);
         }
 
+        UpdateCosmeticPrefabsUI();
         UpdatePrefabFoldoutLabels();
         SavePrefabGuids();
     }
@@ -814,16 +826,119 @@ public class AvatarPublisherUI : EditorWindow
             var row = CreatePrefabRow(_cosmeticPrefabs[i], false, newValue =>
             {
                 _cosmeticPrefabs[index] = newValue;
+                UpdateCosmeticPrefabsUI();
             }, () =>
             {
                 _cosmeticPrefabs.RemoveAt(index);
                 UpdateCosmeticPrefabsUI();
             });
+            row.Add(CreateSlotControl(_cosmeticPrefabs[i]));
             _cosmeticPrefabsContainer.Add(row);
         }
 
+        UpdateAvatarSlotsSummary();
         UpdatePrefabFoldoutLabels();
         SavePrefabGuids();
+    }
+
+    /// <summary>
+    /// The slot this cosmetic publishes into. A dropdown of the slots declared by the avatars in THIS
+    /// publish when there are any; otherwise a plain text field with a warning, because two of the four
+    /// publish shapes legitimately have no avatar prefab - a cosmetics-only publish adding hats to an
+    /// avatar published last month, and the manual bundle-folder path.
+    /// </summary>
+    private VisualElement CreateSlotControl(GameObject cosmetic)
+    {
+        List<string> options = CollectDeclaredSlotIds();
+        string current = GetCosmeticSlotId(cosmetic);
+
+        if (options.Count == 0)
+        {
+            var field = new TextField { value = current };
+            field.tooltip = "No avatar in this publish declares any slots, so type the slot name exactly as the target avatar spells it (e.g. Hat). It becomes the Addressables prefix: Hat_<cosmetic name>.";
+            field.AddToClassList("prefab-object-field");
+            field.RegisterValueChangedCallback(evt => SetCosmeticSlotId(cosmetic, evt.newValue));
+            return field;
+        }
+
+        // An unknown stored value must stay selectable, or reopening the window would silently retarget it.
+        if (!string.IsNullOrEmpty(current) && !options.Contains(current)) { options.Insert(0, current); }
+
+        var dropdown = new DropdownField(options, Mathf.Max(0, options.IndexOf(current)));
+        if (string.IsNullOrEmpty(current)) { SetCosmeticSlotId(cosmetic, options[0]); }
+        dropdown.tooltip = "Which avatar slot this cosmetic goes in. It becomes the Addressables prefix.";
+        dropdown.AddToClassList("prefab-object-field");
+        dropdown.RegisterValueChangedCallback(evt => SetCosmeticSlotId(cosmetic, evt.newValue));
+        return dropdown;
+    }
+
+    private string GetCosmeticSlotId(GameObject cosmetic)
+    {
+        if (cosmetic == null) { return ""; }
+        return _cosmeticSlotIds.TryGetValue(cosmetic, out string slot) ? slot : "";
+    }
+
+    private void SetCosmeticSlotId(GameObject cosmetic, string slotId)
+    {
+        if (cosmetic == null) { return; }
+        _cosmeticSlotIds[cosmetic] = slotId != null ? slotId.Trim() : "";
+        SavePrefabGuids();
+    }
+
+    /// <summary>Every slot name declared by the avatar prefabs in this publish, new shape and legacy.</summary>
+    private List<string> CollectDeclaredSlotIds()
+    {
+        var seen = new List<string>();
+        foreach (var prefab in _avatarPrefabs)
+        {
+            foreach (string slotId in DeclaredSlotIds(prefab))
+            {
+                if (!seen.Contains(slotId)) { seen.Add(slotId); }
+            }
+        }
+        return seen;
+    }
+
+    private static IEnumerable<string> DeclaredSlotIds(GameObject avatarPrefab)
+    {
+        if (avatarPrefab == null) { yield break; }
+        var avatar = avatarPrefab.GetComponent<VirtualVenues.Avatar>();
+        if (avatar == null) { yield break; }
+
+        foreach (var slot in avatar.Slots)
+        {
+            if (slot != null && !string.IsNullOrWhiteSpace(slot.slotId)) { yield return slot.slotId.Trim(); }
+        }
+        // Pre-0.9.17 avatars: the fixed category name IS the slot name at runtime.
+        foreach (var slot in avatar.RendererSlots) { if (slot != null) { yield return slot.category.ToString(); } }
+        foreach (var slot in avatar.ItemSlots) { if (slot != null) { yield return slot.category.ToString(); } }
+    }
+
+    /// <summary>One sub-foldout per avatar in this publish, listing the slots its cosmetics can target.</summary>
+    private void UpdateAvatarSlotsSummary()
+    {
+        if (_cosmeticPrefabsFoldout == null) { return; }
+        if (_avatarSlotsSummary == null)
+        {
+            _avatarSlotsSummary = new VisualElement();
+            _cosmeticPrefabsFoldout.Insert(0, _avatarSlotsSummary);
+        }
+        _avatarSlotsSummary.Clear();
+
+        foreach (var prefab in _avatarPrefabs)
+        {
+            if (prefab == null) { continue; }
+            var slots = DeclaredSlotIds(prefab).Distinct().ToList();
+            var foldout = new Foldout
+            {
+                text = $"{prefab.name} - {slots.Count} slot(s)",
+                value = false
+            };
+            foldout.Add(new Label(slots.Count > 0
+                ? string.Join(", ", slots)
+                : "No slots declared. Add slots on its Avatar component, or its cosmetics will never load."));
+            _avatarSlotsSummary.Add(foldout);
+        }
     }
 
     private VisualElement CreatePrefabRow(GameObject currentValue, bool isAvatar, Action<GameObject> onValueChanged, Action onRemove)
@@ -991,6 +1106,23 @@ public class AvatarPublisherUI : EditorWindow
     private void LogAvatarSlotWarnings()
     {
         if (_buildModeGroup == null || _buildModeGroup.value != 0) { return; } // auto-build only
+
+        List<string> declared = CollectDeclaredSlotIds();
+        foreach (var cosmetic in _cosmeticPrefabs)
+        {
+            if (cosmetic == null) { continue; }
+            string slotId = GetCosmeticSlotId(cosmetic);
+
+            if (string.IsNullOrEmpty(slotId))
+            {
+                Debug.LogWarning($"[AvatarPublisher] \"{cosmetic.name}\": no slot set. It will publish at the bare address \"{cosmetic.name}\", which the runtime only finds if the target avatar's slot happens to be named that way.");
+            }
+            else if (!declared.Contains(slotId))
+            {
+                Debug.LogWarning($"[AvatarPublisher] \"{cosmetic.name}\": slot \"{slotId}\" is not declared by any avatar in this publish. That is fine when the target avatar was published separately - just confirm it spells the slot exactly this way.");
+            }
+        }
+
         foreach (var p in _avatarPrefabs)
         {
             if (p == null) { continue; }
@@ -1033,6 +1165,9 @@ public class AvatarPublisherUI : EditorWindow
     {
         EditorPrefs.SetString(AVATAR_PREFAB_GUIDS_KEY, SerializePrefabGuids(_avatarPrefabs));
         EditorPrefs.SetString(COSMETIC_PREFAB_GUIDS_KEY, SerializePrefabGuids(_cosmeticPrefabs));
+        EditorPrefs.SetString(COSMETIC_SLOT_IDS_KEY, string.Join(",", _cosmeticPrefabs
+            .Where(p => p != null && !string.IsNullOrEmpty(GetCosmeticSlotId(p)))
+            .Select(p => $"{AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(p))}={GetCosmeticSlotId(p)}")));
     }
 
     private static string SerializePrefabGuids(List<GameObject> prefabs)
@@ -1051,8 +1186,25 @@ public class AvatarPublisherUI : EditorWindow
     {
         RestorePrefabList(_avatarPrefabs, EditorPrefs.GetString(AVATAR_PREFAB_GUIDS_KEY, ""));
         RestorePrefabList(_cosmeticPrefabs, EditorPrefs.GetString(COSMETIC_PREFAB_GUIDS_KEY, ""));
+        RestoreCosmeticSlotIds(EditorPrefs.GetString(COSMETIC_SLOT_IDS_KEY, ""));
+        // UpdateAvatarPrefabsUI rebuilds the cosmetic rows too — their slot options come from the avatars.
         UpdateAvatarPrefabsUI();
-        UpdateCosmeticPrefabsUI();
+    }
+
+    private void RestoreCosmeticSlotIds(string serialized)
+    {
+        _cosmeticSlotIds.Clear();
+        if (string.IsNullOrEmpty(serialized)) { return; }
+
+        foreach (string pair in serialized.Split(','))
+        {
+            string[] parts = pair.Split('=');
+            if (parts.Length != 2) { continue; }
+            string path = AssetDatabase.GUIDToAssetPath(parts[0]);
+            if (string.IsNullOrEmpty(path)) { continue; }
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (prefab != null) { _cosmeticSlotIds[prefab] = parts[1]; }
+        }
     }
 
     private static void RestorePrefabList(List<GameObject> target, string serialized)
@@ -1158,11 +1310,17 @@ public class AvatarPublisherUI : EditorWindow
             string assetPath = AssetDatabase.GetAssetPath(prefab);
             string guid = AssetDatabase.AssetPathToGUID(assetPath);
 
+            string slotId = GetCosmeticSlotId(prefab);
+            // gameId is the UNPREFIXED asset id: the runtime rebuilds the address as {slotId}_{gameId},
+            // so publishing the prefixed name would make it request Hat_Hat_Halo.
+            AvatarCatalogBuilder.ResolveCosmeticAddress(prefab.name, slotId, out _, out string assetId);
+
             entries.Add(new CosmeticMetadataEntry
             {
-                Id = prefab.name,
-                Name = prefab.name,
-                GameId = prefab.name,
+                Id = assetId,
+                CategoryId = slotId,
+                Name = assetId,
+                GameId = assetId,
                 Guid = guid
             });
         }
@@ -1370,7 +1528,9 @@ public class AvatarPublisherUI : EditorWindow
                 {
                     _cosmeticEntries.RemoveAt(index);
                     UpdateCosmeticsUI();
-                });
+                },
+                entry.CategoryId,
+                categoryId => _cosmeticEntries[index].CategoryId = categoryId);
 
             _cosmeticsContainer.Add(entryElement);
         }
@@ -1382,7 +1542,9 @@ public class AvatarPublisherUI : EditorWindow
         string title,
         string id, string name, string gameId, string guid,
         Action<string, string, string, string> onValueChanged,
-        Action onRemove)
+        Action onRemove,
+        string categoryId = null,
+        Action<string> onCategoryChanged = null)
     {
         var entry = new VisualElement();
         entry.AddToClassList("metadata-entry");
@@ -1413,6 +1575,15 @@ public class AvatarPublisherUI : EditorWindow
         bottomPair.Add(CreateMetadataFieldRow("GameId:", gameId, newValue => onValueChanged(id, name, newValue, guid)));
         bottomPair.Add(CreateMetadataFieldRow("GUID:", guid, newValue => onValueChanged(id, name, gameId, newValue)));
         entry.Add(bottomPair);
+
+        // Cosmetics only: the avatar slot this publishes into. It is the Addressables prefix, so on this
+        // manual path the bundle must already contain the asset at "{Slot}_{GameId}".
+        if (onCategoryChanged != null)
+        {
+            var slotRow = CreateMetadataFieldRow("Slot:", categoryId ?? "", onCategoryChanged);
+            slotRow.tooltip = "The avatar slot name, e.g. Hat. Must match the slot the target avatar declares.";
+            entry.Add(slotRow);
+        }
 
         return entry;
     }
@@ -1976,7 +2147,10 @@ public class AvatarPublisherUI : EditorWindow
             AddressablesBuildManager.SetRemoteLoadPath(contentBaseUrl);
 
             // Setup asset group
-            AddressablesBuildManager.SetupAssetGroup(avatarPrefabs, cosmeticPrefabs);
+            AddressablesBuildManager.SetupAssetGroup(avatarPrefabs, cosmeticPrefabs
+                .Where(p => p != null)
+                .Select(p => new AvatarCatalogBuilder.CosmeticEntry(p, GetCosmeticSlotId(p)))
+                .ToList());
 
             UpdateProgress(0.1f, "Building Addressables...");
 
@@ -2060,6 +2234,7 @@ public class AvatarPublisherUI : EditorWindow
                 cosmetics = cosmeticMetadata.Select(e => new CosmeticMetadata
                 {
                     id = e.Id,
+                    categoryId = e.CategoryId,
                     name = e.Name,
                     gameId = e.GameId,
                     guid = e.Guid
@@ -2184,6 +2359,7 @@ public class AvatarPublisherUI : EditorWindow
                 cosmetics = _cosmeticEntries.Select(e => new CosmeticMetadata
                 {
                     id = e.Id,
+                    categoryId = e.CategoryId,
                     name = e.Name,
                     gameId = e.GameId,
                     guid = e.Guid

@@ -29,8 +29,8 @@ namespace VirtualVenues.Editor.AvatarPublisher
 
         public static void SetBuildIdentity(string versionId) => _impl.SetBuildIdentity(versionId);
 
-        public static void SetupAssetGroup(List<GameObject> avatarPrefabs, List<GameObject> cosmeticPrefabs)
-            => _impl.SetupAssetGroup(avatarPrefabs, cosmeticPrefabs);
+        public static void SetupAssetGroup(List<GameObject> avatarPrefabs, List<AvatarCatalogBuilder.CosmeticEntry> cosmetics)
+            => _impl.SetupAssetGroup(avatarPrefabs, cosmetics);
 
         public static AddressablesCatalogBuilder.BuildResult BuildForWebGPU(
             IProgress<(float progress, string message)> progress = null) => _impl.BuildForWebGPU(progress);

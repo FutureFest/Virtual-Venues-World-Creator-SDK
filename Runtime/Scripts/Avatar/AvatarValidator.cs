@@ -24,26 +24,15 @@ namespace VirtualVenues
     /// package-safe and can be reused by both the Avatar custom inspector (AvatarEditor) and the
     /// Avatar Publisher's pre-publish checks.
     ///
-    /// The skin/item category taxonomy below mirrors the runtime handlers in
-    /// FutureFest.Character.Customization.AvatarCustomization (SetAsset / InitializeSkinContentRefs /
-    /// InitializeItemContentRefs). That correspondence is a SOFT coupling: getting it wrong only means a
-    /// slot silently does nothing at runtime — unlike the SlotCategory&lt;-&gt;SlotAssetCategory ordinal
-    /// parity, which is hard-guarded by SlotCategoryParityCheck. Keep these lists in sync if the runtime
-    /// gains or drops a per-slot handler.
+    /// Slot ids are creator-named, so there is no category taxonomy to check them against: the runtime
+    /// routes by whatever the avatar declares. What IS checked is what actually breaks — duplicate slot
+    /// ids (AvatarCustomization.Initialize indexes slots by id with Dictionary.Add, which THROWS) and the
+    /// two reserved ids that mean "swap the whole avatar prefab", not "equip into a slot".
     /// </summary>
     public static class AvatarValidator
     {
-        /// <summary>Categories with a runtime SKIN (material-swap) handler. Use for RendererSlot.category.</summary>
-        public static readonly IReadOnlyList<SlotCategory> SkinCategories = new[]
-        {
-            SlotCategory.BodyPaint, SlotCategory.Face, SlotCategory.FacePlate
-        };
-
-        /// <summary>Categories with a runtime ITEM (attachment) handler. Use for ItemSlot.category.</summary>
-        public static readonly IReadOnlyList<SlotCategory> ItemCategories = new[]
-        {
-            SlotCategory.Back, SlotCategory.Hat, SlotCategory.Hair, SlotCategory.Neck, SlotCategory.Head
-        };
+        /// <summary>Slot ids the runtime handles as whole-prefab swaps (AvatarContainer), never as slots.</summary>
+        public static readonly IReadOnlyList<string> ReservedSlotIds = new[] { "Avatar", "Costume" };
 
         /// <summary>Returns every warning/error for the avatar. An empty list means the avatar is healthy.</summary>
         public static List<AvatarCheck> Validate(Avatar avatar)
@@ -57,6 +46,7 @@ namespace VirtualVenues
 
             ValidatePlacement(avatar, results);
             ValidateAnimator(avatar, results);
+            ValidateSlots(avatar, results);
             ValidateRendererSlots(avatar, results);
             ValidateItemSlots(avatar, results);
             ValidateAnimationOverrides(avatar, results);
@@ -119,6 +109,62 @@ namespace VirtualVenues
             }
         }
 
+        private static void ValidateSlots(Avatar avatar, List<AvatarCheck> results)
+        {
+            List<AvatarSlot> slots = avatar.Slots;
+            if (slots == null) { return; }
+
+            var seen = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < slots.Count; i++)
+            {
+                AvatarSlot slot = slots[i];
+                if (slot == null) { continue; }
+
+                string label = $"Slot {i} ('{slot.slotId}')";
+
+                if (string.IsNullOrWhiteSpace(slot.slotId))
+                {
+                    results.Add(new AvatarCheck(AvatarCheckSeverity.Error,
+                        $"Slot {i} has no name. Give it a name — it is the wardrobe tab label and the Addressables prefix for its cosmetics."));
+                    continue;
+                }
+
+                if (!seen.Add(slot.slotId))
+                {
+                    results.Add(new AvatarCheck(AvatarCheckSeverity.Error,
+                        $"{label}: duplicate slot name (names are case-insensitive). The runtime indexes slots by name and THROWS on a duplicate — rename or remove the extra slot."));
+                }
+
+                if (ContainsIgnoreCase(ReservedSlotIds, slot.slotId))
+                {
+                    results.Add(new AvatarCheck(AvatarCheckSeverity.Error,
+                        $"{label}: '{slot.slotId}' is a reserved name. It swaps the whole avatar prefab, so a slot with that name never receives anything — pick another name."));
+                }
+
+                if (slot.kind != AvatarSlotKind.Material && slot.itemPivot == null)
+                {
+                    results.Add(new AvatarCheck(AvatarCheckSeverity.Warning,
+                        $"{label}: no pivot Transform assigned. Cosmetics for this slot will not attach — assign the bone or empty they should parent under."));
+                }
+
+                if (slot.kind == AvatarSlotKind.Material && (slot.renderers == null || slot.renderers.Count == 0))
+                {
+                    results.Add(new AvatarCheck(AvatarCheckSeverity.Warning,
+                        $"{label}: a Material slot with no renderers does nothing. Add the renderers whose material this slot swaps."));
+                }
+
+                if (slot.kind == AvatarSlotKind.SkinnedMesh)
+                {
+                    results.Add(new AvatarCheck(AvatarCheckSeverity.Info,
+                        $"{label}: SkinnedMesh cosmetics must be authored against THIS avatar's rig (same bone names and bind poses). A garment rigged to a different skeleton will deform incorrectly."));
+                }
+            }
+
+            if (slots.Count > 0 || (avatar.RendererSlots.Count + avatar.ItemSlots.Count) == 0) { return; }
+            results.Add(new AvatarCheck(AvatarCheckSeverity.Warning,
+                "This avatar still uses the old fixed-category slots. They keep working, but new features (creator-named slots, skinned garments) need the new list — use \"Convert legacy slots\" on the Avatar component."));
+        }
+
         // Skin/renderer slots are intentionally not surfaced in the authoring tooling for now, so we keep
         // only the duplicate-category guard here: a duplicate renderer-slot category THROWS at runtime
         // (AvatarCustomization.Initialize indexes slots by category into a dictionary).
@@ -160,12 +206,6 @@ namespace VirtualVenues
                         $"{label}: duplicate item-slot category. The runtime indexes item slots by category and THROWS on a duplicate — remove the extra slot."));
                 }
 
-                if (!Contains(ItemCategories, slot.category))
-                {
-                    results.Add(new AvatarCheck(AvatarCheckSeverity.Warning,
-                        $"{label}: this category has no item handler at runtime. Item slots only do something for Back, Hat, Hair, Neck, or Head."));
-                }
-
                 if (slot.itemPivot == null)
                 {
                     results.Add(new AvatarCheck(AvatarCheckSeverity.Warning,
@@ -204,11 +244,11 @@ namespace VirtualVenues
             }
         }
 
-        private static bool Contains(IReadOnlyList<SlotCategory> list, SlotCategory value)
+        private static bool ContainsIgnoreCase(IReadOnlyList<string> list, string value)
         {
             for (int i = 0; i < list.Count; i++)
             {
-                if (list[i] == value) { return true; }
+                if (string.Equals(list[i], value, System.StringComparison.OrdinalIgnoreCase)) { return true; }
             }
             return false;
         }
