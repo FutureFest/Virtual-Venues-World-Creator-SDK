@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -32,13 +33,21 @@ namespace VirtualVenues
         [SerializeField] private LODGroup _lodGroup;
         [SerializeField] private float _cameraLookAtPointOffset = 0.75f;
 
-        [Header("Fallback Content")]
-        [SerializeField] private Material _fallbackBodyPaint;
-        [SerializeField] private Material _fallbackFace;
-        [SerializeField] private GameObject _fallbackGameObject;
+        [Header("Fallback / Loading Content (optional)")]
+        // The FormerlySerializedAs attributes below are PERMANENT, for the same reason as the legacy slot
+        // lists above: bundles are never re-serialized, so the name remap runs on every load of an
+        // already-published avatar, forever. Deleting an attribute silently blanks that avatar's fallback.
+        [Tooltip("Shown on any Material slot whose cosmetic fails to load and that has no Fallback of its own. Leave empty to keep the avatar's own material.")]
+        [FormerlySerializedAs("_fallbackFace")]
+        [SerializeField] private Material _fallbackMaterial;
 
-        [Header("Loading Content")]
+        [Tooltip("Spawned in any Attachment / SkinnedMesh slot whose cosmetic fails to load and that has no Fallback of its own. Leave empty to show nothing.")]
+        [FormerlySerializedAs("_fallbackGameObject")]
+        [SerializeField] private GameObject _fallbackItem;
+
+        [Tooltip("Shown on Material slots while a cosmetic downloads. Empty falls back to the Fallback Material.")]
         [SerializeField] private Material _loadingMaterial;
+        [Tooltip("Spawned in item slots while a cosmetic downloads. Empty falls back to the Fallback Item.")]
         [SerializeField] private GameObject _loadingItem;
 
         [Header("Custom Animations (optional)")]
@@ -52,9 +61,8 @@ namespace VirtualVenues
         public List<ItemSlot> ItemSlots => _itemSlots;
         public LODGroup LodGroup => _lodGroup;
         public float CameraLookAtPointOffset => _cameraLookAtPointOffset;
-        public Material FallbackBodyPaint => _fallbackBodyPaint;
-        public Material FallbackFace => _fallbackFace;
-        public GameObject FallbackGameObject => _fallbackGameObject;
+        public Material FallbackMaterial => _fallbackMaterial;
+        public GameObject FallbackItem => _fallbackItem;
         public Material LoadingMaterial => _loadingMaterial;
         public GameObject LoadingItem => _loadingItem;
         public IReadOnlyList<AvatarAnimationOverride> AnimationOverrides => _animationOverrides;
@@ -80,6 +88,11 @@ namespace VirtualVenues
     {
         [Tooltip("Creator-named, e.g. \"Hat\" or \"Jacket\". Shown as the wardrobe tab label. \"Avatar\" and \"Costume\" are reserved.")]
         public string slotId;
+
+        [Tooltip("Attachment: parent the cosmetic prefab under the pivot (hats, backpacks).\n" +
+                 "Material: swap a material on the listed renderers (skins, faces).\n" +
+                 "SkinnedMesh: rebind the cosmetic onto this avatar's skeleton (jackets, hoodies). The garment " +
+                 "MUST be authored against THIS rig — same bone names and bind poses — or it will deform incorrectly.")]
         public AvatarSlotKind kind;
 
         [Tooltip("Attachment / SkinnedMesh: the bone or empty the cosmetic parents under.")]
@@ -174,7 +187,7 @@ namespace VirtualVenues
 #if UNITY_EDITOR
     /// <summary>
     /// Custom inspector for the VirtualVenues.Avatar authoring component: a "New Avatar" create-menu,
-    /// guided item-slot creation (only valid, not-yet-used categories), and live validation. Lives here
+    /// model setup, legacy-slot conversion, and live validation. Lives here
     /// (runtime asmdef, editor-only) to match the Stage/SpawnPoint editor pattern; the package-safe
     /// AvatarValidator is shared with the Avatar Publisher.
     /// </summary>
@@ -202,49 +215,28 @@ namespace VirtualVenues
 
         public override void OnInspectorGUI()
         {
-            DrawDefaultInspector();
-
             Avatar avatar = (Avatar)target;
 
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Authoring Tools", EditorStyles.boldLabel);
-
+            // First thing you press on a fresh avatar, so it goes above the fields it fills in.
             if (GUILayout.Button(new GUIContent("Setup Avatar from Model",
                 "Convert the rig to Humanoid (if needed), add/link an Animator and a 3-tier LODGroup, and wire them into this Avatar.")))
             {
                 SetupAvatarFromModel(avatar);
             }
 
-            DrawAddSlot(avatar);
+            EditorGUILayout.Space();
+            DrawDefaultInspector();
+
+            EditorGUILayout.Space();
+            DrawLegacyConversion(avatar);
 
             EditorGUILayout.Space();
             DrawValidation(avatar);
         }
 
-        // Free-text slot name + kind, so a creator can add any slot they like ("Jacket", "Tail").
-        private string _newSlotId = "";
-        private AvatarSlotKind _newSlotKind = AvatarSlotKind.Attachment;
-
-        private void DrawAddSlot(Avatar avatar)
+        // Slots are added with the Slots list's own "+" button; this is only the pre-0.9.17 migration path.
+        private void DrawLegacyConversion(Avatar avatar)
         {
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                _newSlotId = EditorGUILayout.TextField(new GUIContent("New Slot",
-                    "Name it whatever you like — this is the wardrobe tab label and the Addressables prefix for its cosmetics."), _newSlotId);
-                _newSlotKind = (AvatarSlotKind)EditorGUILayout.EnumPopup(_newSlotKind, GUILayout.Width(110));
-
-                using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(_newSlotId)))
-                {
-                    if (GUILayout.Button("Add Slot", GUILayout.Width(70)))
-                    {
-                        Undo.RecordObject(avatar, "Add slot");
-                        avatar.Slots.Add(new AvatarSlot { slotId = _newSlotId.Trim(), kind = _newSlotKind });
-                        _newSlotId = "";
-                        MarkDirty(avatar);
-                    }
-                }
-            }
-
             if (avatar.RendererSlots.Count + avatar.ItemSlots.Count == 0) { return; }
 
             if (GUILayout.Button(new GUIContent($"Convert legacy slots ({avatar.RendererSlots.Count + avatar.ItemSlots.Count})",

@@ -152,12 +152,6 @@ namespace VirtualVenues
                     results.Add(new AvatarCheck(AvatarCheckSeverity.Warning,
                         $"{label}: a Material slot with no renderers does nothing. Add the renderers whose material this slot swaps."));
                 }
-
-                if (slot.kind == AvatarSlotKind.SkinnedMesh)
-                {
-                    results.Add(new AvatarCheck(AvatarCheckSeverity.Info,
-                        $"{label}: SkinnedMesh cosmetics must be authored against THIS avatar's rig (same bone names and bind poses). A garment rigged to a different skeleton will deform incorrectly."));
-                }
             }
 
             if (slots.Count > 0 || (avatar.RendererSlots.Count + avatar.ItemSlots.Count) == 0) { return; }
