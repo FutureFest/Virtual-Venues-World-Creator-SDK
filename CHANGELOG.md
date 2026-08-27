@@ -2,6 +2,52 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.9.19] - 2026-08-26
+
+### Changed — BREAKING (`VirtualVenues.AvatarSlotKind`)
+
+The slot kinds are renamed to describe what a creator is choosing between — does this piece bend
+with the body, or just sit on it — rather than the mechanism used to attach it.
+
+| Old | New | Inspector label |
+|---|---|---|
+| `AvatarSlotKind.Attachment` | `AvatarSlotKind.Mesh` | **Mesh** |
+| `AvatarSlotKind.Material` | *(unchanged)* | **Material** |
+| `AvatarSlotKind.SkinnedMesh` | `AvatarSlotKind.RiggedMesh` | **Rigged Mesh** |
+
+Behaviour is unchanged. This is a rename only.
+
+**No data migration needed.** The enum's underlying values are unchanged — and are now pinned
+explicitly (`Mesh = 0`, `Material = 1`, `RiggedMesh = 2`) so they cannot drift in a future
+reorder — so **existing avatar prefabs and already-published avatar bundles keep their slot
+kinds**. Nothing serializes the member *name*, on disk or on the wire.
+
+Only **source** breaks: an editor script referencing `AvatarSlotKind.Attachment` or
+`AvatarSlotKind.SkinnedMesh` no longer compiles. Rename the reference. If you configure slots in
+the Inspector, there is nothing to do.
+
+### Changed (`Avatar` inspector)
+
+- A slot now shows **only the fields that slot type actually uses**. Previously every slot showed
+  every field, and the ones the runtime ignores were silently discarded on load — a SkinnedMesh
+  slot offered `Renderers` and `Material Index`, a Material slot offered `Item Pivot`.
+
+  | Slot Type | Fields shown |
+  |---|---|
+  | Mesh | Item Pivot, Fallback |
+  | Material | Renderers, Material Index, Fallback |
+  | Rigged Mesh | Item Pivot, Hide When Equipped, Fallback |
+
+- The `Kind` field is labelled **Slot Type**. The serialized field name is unchanged.
+- **`Fallback`** is now typed to the slot: a Material slot offers only Materials, the other two only
+  prefabs. It previously accepted any Object, and a wrong pick became a silent `null` at runtime.
+
+### Added
+
+- **Camera Look At Point Offset** is drawn in the Scene view while the Avatar is selected — a dotted
+  line from the root to a labelled marker at the point the player camera frames. It updates live, so
+  the offset can be dialled in by eye instead of by trial build.
+
 ## [0.9.18] - 2026-08-21
 
 ### Changed — BREAKING (`VirtualVenues.Avatar`)
