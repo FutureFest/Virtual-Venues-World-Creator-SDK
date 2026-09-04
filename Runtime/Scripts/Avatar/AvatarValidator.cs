@@ -144,7 +144,7 @@ namespace VirtualVenues
                 if (slot.kind != AvatarSlotKind.Material && slot.itemPivot == null)
                 {
                     results.Add(new AvatarCheck(AvatarCheckSeverity.Warning,
-                        $"{label}: no pivot Transform assigned. Cosmetics for this slot will not attach — assign the bone or empty they should parent under."));
+                        $"{label}: no pivot Transform assigned. Cosmetics for this slot attach at the avatar's origin (its feet) — assign the bone or empty they should parent under to place them."));
                 }
 
                 if (slot.kind == AvatarSlotKind.Material && (slot.renderers == null || slot.renderers.Count == 0))

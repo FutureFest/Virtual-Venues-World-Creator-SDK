@@ -2,6 +2,36 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.9.20] - 2026-08-31
+
+### Fixed — a slot pivot can no longer delete the avatar
+
+Equipping a cosmetic starts by destroying **every child of the slot's pivot**. A pivot pointed at the
+avatar root — or at a bone inside the rig — therefore wiped the skeleton and the body on the first
+equip. There was no exception and no log: the character simply vanished, and the same scripts worked
+fine in a project where the pivots happened to be authored correctly. Diagnosing one case took a day.
+
+The runtime now gives such a slot a container transform of its own (`__slot_<slotId>`, created under
+the authored pivot) and equips into that, so clearing only ever destroys that one slot's garment. A
+slot gets a container when its pivot:
+
+- **is the avatar itself**, or
+- is a **rig node** — clearing it would destroy bones a SkinnedMeshRenderer is using. The body mesh is
+  usually a *sibling* of the armature, so nothing renderable lives under the pivot and the mistake is
+  invisible by eye, or
+- is **shared with another slot**, so equipping into either would evict the other, or
+- is **missing entirely** — the cosmetic used to load and then silently attach to nothing. It now
+  attaches at the avatar's origin. For a Rigged Mesh slot that is a complete fix (the garment is rebound
+  onto the skeleton); for a Mesh slot the item sits at the avatar's feet until a pivot is assigned.
+
+A healthy dedicated pivot is left exactly as authored, so an avatar published wearing something still
+has that item replaced rather than doubled. Material slots are untouched — they ignore `itemPivot`.
+
+**This heals every already-published avatar with no republish.** The authoring rule is unchanged and
+still worth following: give every Mesh / Rigged Mesh slot its **own empty transform**, placed **outside
+the rig** (a `Slots` object beside the armature, one empty child per slot).
+
+
 ## [0.9.19] - 2026-08-26
 
 ### Changed — BREAKING (`VirtualVenues.AvatarSlotKind`)
