@@ -51,20 +51,6 @@
     border-radius: 10px;
 }
 
-.subsection {
-    margin: 8px 0;
-    padding: 8px;
-    background-color: var(--vv-surface-strong);
-    border-radius: 6px;
-}
-
-.section-title {
-    font-size: 15px;
-    -unity-font-style: bold;
-    margin-bottom: 10px;
-    color: var(--vv-text);
-}
-
 .subsection-title {
     font-size: 13px;
     -unity-font-style: bold;
@@ -73,17 +59,27 @@
 }
 
 /* Authentication */
+#auth-section {
+    padding: 8px;
+}
+
+.auth-row {
+    flex-direction: row;
+    align-items: center;
+}
+
 .user-greeting {
+    flex-grow: 1;
     font-size: 14px;
     -unity-font-style: bold;
-    margin-bottom: 8px;
+    margin: 0;
     color: var(--vv-success);
 }
 
 .auth-button {
     width: 100px;
     height: 26px;
-    margin: 5px 0;
+    margin: 0;
     background-color: rgba(0, 0, 0, 0);
     color: var(--vv-accent);
     -unity-font-style: bold;
@@ -148,13 +144,13 @@
     margin: 5px 0;
 }
 
-.info-box {
-    padding: 10px;
-    background-color: var(--vv-warning-soft);
-    border-radius: 8px;
-    border-width: 1px;
-    border-color: var(--vv-warning);
+/* Empty-state label (world list) */
+.empty-label {
+    font-size: 11px;
     color: var(--vv-text-muted);
+    -unity-font-style: italic;
+    padding: 6px 0;
+    white-space: normal;
 }
 
 .url-row {
@@ -188,10 +184,32 @@ ObjectField {
 
 .use-active-scene-button {
     height: 22px;
-    margin: 4px 0 0 0;
+    margin: 0 0 0 4px;
     padding: 0 10px;
-    align-self: flex-start;
+    flex-shrink: 0;
     font-size: 11px;
+}
+
+/* Inline label + control row */
+.field-row {
+    flex-direction: row;
+    align-items: center;
+    margin: 4px 0;
+}
+
+.field-row-label {
+    width: 90px;
+    flex-shrink: 0;
+    -unity-font-style: bold;
+    color: var(--vv-text-muted);
+}
+
+.field-row > .world-name-input,
+.field-row > ObjectField {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    margin: 0;
 }
 
 /* Buttons */
@@ -283,34 +301,24 @@ Button {
     margin: 2px 0;
 }
 
-/* Version label */
+/* Version label — re-parented into the brand header row from C# (CreateGUI). */
 .version-label {
-    position: absolute;
-    bottom: 4px;
-    right: 8px;
+    margin-left: auto;
+    align-self: flex-start;
     font-size: 10px;
     color: var(--vv-text-faint);
     -unity-text-align: middle-right;
 }
 
 /* World list */
-.world-list-scroll {
-    flex-grow: 1;
-    min-height: 100px;
-    /* Bound the height so the list scrolls on its own instead of growing unbounded
-       inside the window's outer ScrollView (where flex-grow can't constrain it). */
-    max-height: 320px;
-    margin: 5px 0;
-}
-
 .world-list-container {
-    padding: 5px;
+    padding: 5px 0;
 }
 
 /* World cards */
 .world-card {
-    padding: 10px;
-    margin: 6px 0;
+    padding: 8px;
+    margin: 4px 0;
     background-color: var(--vv-surface);
     border-radius: 10px;
     border-width: 1px;
@@ -335,18 +343,26 @@ Button {
 
 .world-card-info {
     flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .world-name {
     font-size: 13px;
     -unity-font-style: bold;
     color: var(--vv-text);
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .world-id {
     font-size: 9px;
     color: var(--vv-text-faint);
     margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .world-name-edit {
@@ -363,6 +379,7 @@ Button {
 .world-card-buttons {
     flex-direction: row;
     align-items: center;
+    flex-shrink: 0;
 }
 
 .action-button {
@@ -386,6 +403,7 @@ Button {
     color: var(--vv-danger);
     font-size: 11px;
     margin-top: 4px;
+    white-space: normal;
 }
 
 /* World name input */

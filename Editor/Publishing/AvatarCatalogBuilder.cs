@@ -22,15 +22,15 @@ namespace VirtualVenues.Editor.Publishing
         protected override string GroupName => "VVSDKAvatars";
         protected override string ProfileName => "VVSDKProfile";
 
-        /// <summary>A cosmetic prefab and the avatar slot it is published into.</summary>
+        /// <summary>A cosmetic asset (prefab, Material or Texture2D) and the avatar slot it is published into.</summary>
         public readonly struct CosmeticEntry
         {
-            public readonly GameObject Prefab;
+            public readonly UnityEngine.Object Asset;
             public readonly string SlotId;
 
-            public CosmeticEntry(GameObject prefab, string slotId)
+            public CosmeticEntry(UnityEngine.Object asset, string slotId)
             {
-                Prefab = prefab;
+                Asset = asset;
                 SlotId = slotId;
             }
         }
@@ -61,7 +61,7 @@ namespace VirtualVenues.Editor.Publishing
             address = alreadyPrefixed ? prefabName : prefix + prefabName;
         }
 
-        /// <summary>Sets up the avatar group with the provided avatar + cosmetic prefabs.</summary>
+        /// <summary>Sets up the avatar group with the provided avatar prefabs + cosmetic assets.</summary>
         public void SetupAssetGroup(List<GameObject> avatarPrefabs, List<CosmeticEntry> cosmetics)
         {
             AddressableAssetGroup group = GetOrCreateClearedGroup();
@@ -79,9 +79,9 @@ namespace VirtualVenues.Editor.Publishing
             {
                 foreach (var cosmetic in cosmetics)
                 {
-                    if (cosmetic.Prefab == null) { continue; }
-                    ResolveCosmeticAddress(cosmetic.Prefab.name, cosmetic.SlotId, out string address, out _);
-                    AddEntry(group, cosmetic.Prefab, address, "Cosmetic_" + cosmetic.Prefab.name);
+                    if (cosmetic.Asset == null) { continue; }
+                    ResolveCosmeticAddress(cosmetic.Asset.name, cosmetic.SlotId, out string address, out _);
+                    AddEntry(group, cosmetic.Asset, address, "Cosmetic_" + cosmetic.Asset.name);
                 }
             }
 

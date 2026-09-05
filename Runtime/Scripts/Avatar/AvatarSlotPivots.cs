@@ -27,7 +27,7 @@ namespace VirtualVenues
         /// <summary>
         /// Returns an array parallel to <paramref name="slots"/>: the authored pivot where it is already
         /// safe to clear, otherwise a container transform created for that slot alone. Every named
-        /// non-Material slot comes back with a usable pivot; Material slots (which ignore itemPivot),
+        /// item slot comes back with a usable pivot; Material / Texture slots (which ignore itemPivot),
         /// null slots and unnamed slots come back null.
         ///
         /// A healthy dedicated pivot is returned UNCHANGED. That matters: the Avatar Publisher does not
@@ -79,7 +79,7 @@ namespace VirtualVenues
         private static bool TakesAnItem(AvatarSlot slot)
         {
             return slot != null
-                && slot.kind != AvatarSlotKind.Material
+                && !slot.kind.TargetsRenderers()
                 && !string.IsNullOrWhiteSpace(slot.slotId);
         }
 

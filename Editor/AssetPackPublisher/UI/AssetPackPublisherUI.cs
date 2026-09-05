@@ -140,6 +140,8 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         private ProgressBar _progressBar;
         private Label _statusBox;
         private Label _versionLabel;
+        private VisualElement _packsSection;
+        private Label _packsTitle;
 
         // State
         private readonly List<Row> _rows = new List<Row>();
@@ -241,6 +243,8 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             VVEditorUI.ApplyTheme(rootVisualElement, "Asset Pack Publisher", "Publish asset packs to the Marketplace");
 
             BindUIElements();
+            // The version belongs at the right edge of the brand header, not floating over the list.
+            if (_versionLabel != null) { rootVisualElement.Q(className: "vv-header")?.Add(_versionLabel); }
             SetupEventHandlers();
             // Build the code-authored sections BEFORE InitializeUI so that InitializeUI's CheckAuth() can trigger
             // the first RefreshPackList() against an already-built _packListContainer (both sections Insert/Add at
@@ -421,16 +425,18 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         {
             if (isLoggedIn)
             {
-                _userGreeting.text = _userInfo != null ? $"Hello {_userInfo.FullName}!" : "Logged in";
+                _userGreeting.text = _userInfo != null ? $"Signed in as {_userInfo.FullName}" : "Signed in";
                 _userGreeting.style.display = DisplayStyle.Flex;
                 _authButton.text = "Sign Out";
                 _publisherSection.style.display = DisplayStyle.Flex;
+                if (_packsSection != null) { _packsSection.style.display = DisplayStyle.Flex; }
             }
             else
             {
                 _userGreeting.style.display = DisplayStyle.None;
                 _authButton.text = "Login";
                 _publisherSection.style.display = DisplayStyle.None;
+                if (_packsSection != null) { _packsSection.style.display = DisplayStyle.None; }
             }
             UpdatePublishButtonState();
         }
@@ -1524,6 +1530,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 tooltip = "The saved pack you're editing. Pick one to reopen it, or create one with New Pack.",
             };
             _packDefField.RegisterValueChangedCallback(evt => LoadPack(evt.newValue as AssetPackDefinition));
+            _packDefField.AddToClassList("pack-def-field"); // label column matches the .field-row rows below
             _draftControls.Add(_packDefField);
 
             var buttonRow = new VisualElement();
@@ -1533,8 +1540,8 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             _draftControls.Add(buttonRow);
             packSection.Add(_draftControls);
 
-            // Insert right under the "Asset Pack Publisher" title (index 0), above the metadata fields.
-            _publisherSection.Insert(1, packSection);
+            // Top of the publisher card, above the divider + metadata fields authored in the UXML.
+            _publisherSection.Insert(0, packSection);
         }
 
         // ---- published packs (read-only backend list) ------------------------------------------- //
@@ -1548,16 +1555,18 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         {
             if (_publisherSection == null) { return; }
 
-            var section = new VisualElement();
-            section.AddToClassList("subsection");
+            // Its own card, a sibling of the publisher card (shown/hidden with it in UpdateAuthUI).
+            var section = new VisualElement { name = "packs-section" };
+            section.AddToClassList("section");
+            _packsSection = section;
 
             var header = new VisualElement();
             header.AddToClassList("row");
             header.style.justifyContent = Justify.SpaceBetween;
 
-            var titleLabel = new Label("Published Packs");
-            titleLabel.AddToClassList("subsection-title");
-            header.Add(titleLabel);
+            _packsTitle = new Label("Published Packs");
+            _packsTitle.AddToClassList("subsection-title");
+            header.Add(_packsTitle);
 
             _refreshPacksButton = new Button(() => _ = RefreshPackList()) { text = "Refresh" };
             _refreshPacksButton.AddToClassList("action-button");
@@ -1572,7 +1581,8 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             _packListContainer.AddToClassList("pack-list-container");
             section.Add(_packListContainer);
 
-            _publisherSection.Add(section);
+            var parent = _publisherSection.parent;
+            parent.Insert(parent.IndexOf(_publisherSection) + 1, section);
         }
 
         // Fetches this account's published packs and repaints the list. Guards on auth (GetAllPacksAsync throws
@@ -1610,6 +1620,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             if (_packListContainer == null) { return; }
 
             _packListContainer.Clear();
+            if (_packsTitle != null) { _packsTitle.text = $"Published Packs ({_publishedPacks?.Length ?? 0})"; }
 
             if (_publishedPacks == null || _publishedPacks.Length == 0)
             {
@@ -1646,10 +1657,23 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             var info = new VisualElement();
             info.AddToClassList("pack-card-info");
 
+            // Name + version pill on one line.
+            var nameRow = new VisualElement();
+            nameRow.AddToClassList("pack-name-row");
+
             var nameLabel = new Label(string.IsNullOrEmpty(pack.name) ? "Unnamed Pack" : pack.name);
             nameLabel.AddToClassList("pack-name");
-            info.Add(nameLabel);
+            nameRow.Add(nameLabel);
 
+            if (!string.IsNullOrEmpty(pack.version))
+            {
+                var versionLabel = new Label($"v{pack.version}");
+                versionLabel.AddToClassList("pack-version");
+                nameRow.Add(versionLabel);
+            }
+            info.Add(nameRow);
+
+            // .pack-id ellipsizes; the elided label shows the full id as its hover tooltip on its own.
             var idLabel = new Label(pack.id);
             idLabel.AddToClassList("pack-id");
             info.Add(idLabel);
@@ -1658,13 +1682,6 @@ namespace VirtualVenues.Editor.AssetPackPublisher
 
             var buttons = new VisualElement();
             buttons.AddToClassList("pack-card-buttons");
-
-            if (!string.IsNullOrEmpty(pack.version))
-            {
-                var versionLabel = new Label($"v{pack.version}");
-                versionLabel.AddToClassList("pack-version");
-                buttons.Add(versionLabel);
-            }
 
             // Remote editing: load THIS pack's server state into the window (metadata + asset roster +
             // thumbnails; prefabs re-bound from the local project). Canonical post-publish edit path.

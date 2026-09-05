@@ -83,7 +83,18 @@ namespace VirtualVenues
         /// <summary>Swap material <see cref="AvatarSlot.materialIndex"/> on <see cref="AvatarSlot.renderers"/>. Skins, faces.</summary>
         Material = 1,
         /// <summary>Rebind the cosmetic's SkinnedMeshRenderers onto this avatar's skeleton. Jackets, hoodies. (Named "SkinnedMesh" before 0.9.19.)</summary>
-        RiggedMesh = 2
+        RiggedMesh = 2,
+        /// <summary>Set a texture property on material <see cref="AvatarSlot.materialIndex"/> of <see cref="AvatarSlot.renderers"/>. Skin tones, decals.</summary>
+        Texture = 3
+    }
+
+    public static class AvatarSlotKindExtensions
+    {
+        /// <summary>Material and Texture slots act on <see cref="AvatarSlot.renderers"/>; the rest attach under a pivot.</summary>
+        public static bool TargetsRenderers(this AvatarSlotKind kind)
+        {
+            return kind == AvatarSlotKind.Material || kind == AvatarSlotKind.Texture;
+        }
     }
 
     /// <summary>
@@ -98,6 +109,7 @@ namespace VirtualVenues
 
         [Tooltip("Mesh: parent the cosmetic prefab under the pivot (hats, backpacks).\n" +
                  "Material: swap a material on the listed renderers (skins, faces).\n" +
+                 "Texture: set a texture property on a material of the listed renderers (skin tones, decals).\n" +
                  "Rigged Mesh: rebind the cosmetic onto this avatar's skeleton (jackets, hoodies). The garment " +
                  "MUST be authored against THIS rig — same bone names and bind poses — or it will deform incorrectly.")]
         public AvatarSlotKind kind;
@@ -105,15 +117,17 @@ namespace VirtualVenues
         [Tooltip("Mesh / Rigged Mesh: the bone or empty the cosmetic parents under.")]
         public Transform itemPivot;
 
-        [Tooltip("Material: the renderers whose material is swapped.")]
+        [Tooltip("Material / Texture: the renderers whose material is swapped or textured.")]
         public List<Renderer> renderers = new List<Renderer>();
-        [Tooltip("Material: which material slot on those renderers is swapped.")]
+        [Tooltip("Material / Texture: which material slot on those renderers is targeted.")]
         public int materialIndex;
+        [Tooltip("Texture: shader property the texture is assigned to.")]
+        public string textureProperty = "_BaseMap";
 
         [Tooltip("Rigged Mesh: body renderers hidden while something is equipped here (restored on unequip).")]
         public List<Renderer> hideWhenEquipped = new List<Renderer>();
 
-        [Tooltip("Shown when the cosmetic fails to load. A Material for Material slots, a GameObject otherwise.")]
+        [Tooltip("Shown when the cosmetic fails to load. A Material for Material slots, a Texture2D for Texture slots, a GameObject otherwise.")]
         public UnityEngine.Object fallback;
     }
 
@@ -390,19 +404,21 @@ namespace VirtualVenues
         // "fallback" is drawn separately (it needs a per-kind type filter) and is always last.
         private static readonly string[] MeshRows = { "slotId", "kind", "itemPivot" };
         private static readonly string[] MaterialRows = { "slotId", "kind", "renderers", "materialIndex" };
+        private static readonly string[] TextureRows = { "slotId", "kind", "renderers", "materialIndex", "textureProperty" };
         private static readonly string[] RiggedMeshRows = { "slotId", "kind", "itemPivot", "hideWhenEquipped" };
+
+        private static AvatarSlotKind KindOf(SerializedProperty property)
+        {
+            return (AvatarSlotKind)property.FindPropertyRelative("kind").intValue;
+        }
 
         private static string[] RowsFor(SerializedProperty property)
         {
-            AvatarSlotKind kind = (AvatarSlotKind)property.FindPropertyRelative("kind").enumValueIndex;
+            AvatarSlotKind kind = KindOf(property);
             if (kind == AvatarSlotKind.Material) { return MaterialRows; }
+            if (kind == AvatarSlotKind.Texture) { return TextureRows; }
             if (kind == AvatarSlotKind.RiggedMesh) { return RiggedMeshRows; }
             return MeshRows;
-        }
-
-        private static bool IsMaterialSlot(SerializedProperty property)
-        {
-            return (AvatarSlotKind)property.FindPropertyRelative("kind").enumValueIndex == AvatarSlotKind.Material;
         }
 
         public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
@@ -428,16 +444,18 @@ namespace VirtualVenues
                 else { EditorGUI.PropertyField(row, prop, true); }
             }
 
-            // Typed picker: the runtime does `slot.fallback as GameObject` / `as Material`, so a wrong
-            // pick becomes a silent null. Existing mismatched values are left alone, never coerced.
-            bool isMaterial = IsMaterialSlot(property);
+            // Typed picker: the runtime does `slot.fallback as GameObject` / `as Material` / `as Texture2D`,
+            // so a wrong pick becomes a silent null. Existing mismatched values are left alone, never coerced.
+            AvatarSlotKind kind = KindOf(property);
+            Type fallbackType = kind == AvatarSlotKind.Material ? typeof(Material)
+                              : kind == AvatarSlotKind.Texture ? typeof(Texture2D)
+                              : typeof(GameObject);
+            string fallbackTip = kind == AvatarSlotKind.Material ? "Material shown when this slot's cosmetic fails to load."
+                               : kind == AvatarSlotKind.Texture ? "Texture shown when this slot's cosmetic fails to load."
+                               : "Prefab spawned when this slot's cosmetic fails to load.";
             row.y += row.height + spacing;
             row.height = EditorGUIUtility.singleLineHeight;
-            EditorGUI.ObjectField(row, property.FindPropertyRelative("fallback"),
-                isMaterial ? typeof(Material) : typeof(GameObject),
-                new GUIContent("Fallback", isMaterial
-                    ? "Material shown when this slot's cosmetic fails to load."
-                    : "Prefab spawned when this slot's cosmetic fails to load."));
+            EditorGUI.ObjectField(row, property.FindPropertyRelative("fallback"), fallbackType, new GUIContent("Fallback", fallbackTip));
 
             EditorGUI.indentLevel--;
         }

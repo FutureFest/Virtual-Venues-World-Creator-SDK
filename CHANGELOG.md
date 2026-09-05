@@ -2,6 +2,36 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.9.21] - 2026-09-04
+
+### Added — Material and Texture cosmetics
+
+The Avatar Publisher's **Cosmetics** list now takes a **Material** or a **Texture2D** as well as a
+prefab. Drop them in like prefabs (multi-select works); each row's asset field is typed to whatever the
+chosen slot expects, and a row auto-picks the first slot on the avatar that can take that asset.
+
+- A **Material** publishes into a **Material** slot — the existing kind, which swaps
+  `materialIndex` on the slot's renderers. Nothing on the avatar side changes for this.
+- A **Texture2D** publishes into the new **Texture** slot kind (`AvatarSlotKind.Texture`), which sets a
+  shader property (`Texture Property`, default `_BaseMap`) on `materialIndex` of the slot's renderers.
+  Skin tones, decals, face paint. The texture is applied to the renderer's own material instance, so
+  avatars that share a material do not retexture each other.
+- Publishing is **blocked** with a reason when a cosmetic's type does not fit its slot's kind (a prefab
+  into a Material slot, a Material into a Texture slot, and so on). A slot no avatar in the publish
+  declares is still only a warning, as before.
+- A material or texture that lives **inside a model file** is rejected — extract it to its own asset
+  first. It shares the model's GUID, so it could neither be restored nor addressed on its own.
+
+The slot inspector shows `Texture Property` and a Texture2D `Fallback` picker for Texture slots, and the
+validator treats Material and Texture slots alike (no pivot warning; "no renderers" warning).
+
+### Changed — publisher windows
+
+Layout pass across the Avatar, World and Asset Pack Publisher windows: the SDK version sits in the brand
+header, the published Avatars / Worlds / Packs list is its own card with a count in its title, the
+publisher form reads as one flat surface with dividers instead of nested cards, and "Signed in as …"
+replaces the greeting.
+
 ## [0.9.20] - 2026-08-31
 
 ### Fixed — a slot pivot can no longer delete the avatar

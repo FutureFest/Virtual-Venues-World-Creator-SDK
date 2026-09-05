@@ -1,5 +1,5 @@
 <ui:UXML xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
-    <Style src="project://database/Assets/WorldCreatorSDK/Editor/WorldPublisher/UI/WorldPublisherUI.uss?fileID=7433441132597879392&amp;guid=8aeebe1b2c89fea408bd7d062514200d&amp;type=3#WorldPublisherUI" />
+    <Style src="project://database/Assets/VirtualVenuesSDK/Editor/WorldPublisher/UI/WorldPublisherUI.uss?fileID=7433441132597879392&amp;guid=8aeebe1b2c89fea408bd7d062514200d&amp;type=3#WorldPublisherUI" />
     <ui:ScrollView>
         <ui:VisualElement class="main-container">
             <ui:VisualElement name="setup-banner" class="setup-banner">
@@ -7,8 +7,10 @@
                 <ui:Button name="setup-fix-button" text="Fix now" class="setup-banner-button" />
             </ui:VisualElement>
             <ui:VisualElement name="auth-section" class="section">
-                <ui:Label name="user-greeting" class="user-greeting" />
-                <ui:Button name="auth-button" text="Login" class="auth-button" />
+                <ui:VisualElement class="auth-row">
+                    <ui:Label name="user-greeting" class="user-greeting" />
+                    <ui:Button name="auth-button" text="Login" class="auth-button" />
+                </ui:VisualElement>
                 <ui:VisualElement name="device-flow-container" class="device-flow-container">
                     <ui:Label text="1. On to browser on your computer or mobile device, go to url:" />
                     <ui:VisualElement class="row">
@@ -24,14 +26,13 @@
                 <ui:Label name="auth-result" class="auth-result" />
             </ui:VisualElement>
             <ui:VisualElement name="publisher-section" class="section">
-                <ui:Label text="World Map Publisher" class="section-title" />
-                <ui:VisualElement class="subsection">
-                    <ui:Label text="World Name:" />
+                <ui:VisualElement class="field-row">
+                    <ui:Label text="World Name:" class="field-row-label" />
                     <ui:TextField name="world-name-field" max-length="100" class="world-name-input" />
-                    <ui:Label name="world-name-error" class="error-label" />
                 </ui:VisualElement>
-                <ui:VisualElement class="subsection">
-                    <ui:Label text="Select Scene to Publish:" />
+                <ui:Label name="world-name-error" class="error-label" />
+                <ui:VisualElement class="field-row">
+                    <ui:Label text="Scene:" class="field-row-label" />
                     <uie:ObjectField name="scene-selector" type="UnityEditor.SceneAsset, UnityEditor" allow-scene-objects="false" />
                     <ui:Button name="use-active-scene-button" text="Use Active Scene" class="use-active-scene-button" />
                 </ui:VisualElement>
@@ -42,13 +43,11 @@
                     <ui:Label name="progress-message" />
                     <ui:ProgressBar name="progress-bar" class="progress-bar" />
                 </ui:VisualElement>
-                <ui:VisualElement name="worlds-section" class="subsection" style="flex-grow: 1;">
-                    <ui:Label text="Your Published Worlds:" class="subsection-title" />
-                    <ui:ScrollView name="world-list-scroll" class="world-list-scroll">
-                        <ui:VisualElement name="world-list-container" class="world-list-container" />
-                    </ui:ScrollView>
-                    <ui:Label name="world-list-empty" text="No worlds published yet." class="info-box" />
-                </ui:VisualElement>
+            </ui:VisualElement>
+            <ui:VisualElement name="worlds-section" class="section">
+                <ui:Label name="worlds-title" text="Published Worlds" class="subsection-title" />
+                <ui:VisualElement name="world-list-container" class="world-list-container" />
+                <ui:Label name="world-list-empty" text="No worlds published yet." class="empty-label" />
             </ui:VisualElement>
         </ui:VisualElement>
     </ui:ScrollView>

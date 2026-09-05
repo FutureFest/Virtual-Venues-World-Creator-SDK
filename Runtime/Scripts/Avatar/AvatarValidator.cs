@@ -141,16 +141,16 @@ namespace VirtualVenues
                         $"{label}: '{slot.slotId}' is a reserved name. It swaps the whole avatar prefab, so a slot with that name never receives anything — pick another name."));
                 }
 
-                if (slot.kind != AvatarSlotKind.Material && slot.itemPivot == null)
+                if (!slot.kind.TargetsRenderers() && slot.itemPivot == null)
                 {
                     results.Add(new AvatarCheck(AvatarCheckSeverity.Warning,
                         $"{label}: no pivot Transform assigned. Cosmetics for this slot attach at the avatar's origin (its feet) — assign the bone or empty they should parent under to place them."));
                 }
 
-                if (slot.kind == AvatarSlotKind.Material && (slot.renderers == null || slot.renderers.Count == 0))
+                if (slot.kind.TargetsRenderers() && (slot.renderers == null || slot.renderers.Count == 0))
                 {
                     results.Add(new AvatarCheck(AvatarCheckSeverity.Warning,
-                        $"{label}: a Material slot with no renderers does nothing. Add the renderers whose material this slot swaps."));
+                        $"{label}: a Material/Texture slot with no renderers does nothing. Add the renderers this slot targets."));
                 }
             }
 

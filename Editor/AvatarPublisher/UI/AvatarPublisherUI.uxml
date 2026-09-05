@@ -3,8 +3,10 @@
         <ui:VisualElement class="main-container">
             <!-- Authentication Section -->
             <ui:VisualElement name="auth-section" class="section">
-                <ui:Label name="user-greeting" class="user-greeting" />
-                <ui:Button name="auth-button" text="Login" class="auth-button" />
+                <ui:VisualElement class="auth-row">
+                    <ui:Label name="user-greeting" class="user-greeting" />
+                    <ui:Button name="auth-button" text="Login" class="auth-button" />
+                </ui:VisualElement>
                 <ui:VisualElement name="device-flow-container" class="device-flow-container">
                     <ui:Label text="1. On to browser on your computer or mobile device, go to url:" />
                     <ui:VisualElement class="row">
@@ -22,21 +24,17 @@
 
             <!-- Publisher Section -->
             <ui:VisualElement name="publisher-section" class="section">
-                <ui:Label text="Avatar &amp; Cosmetics Publisher" class="section-title" />
-
                 <!-- Catalog Mode Selection -->
-                <ui:VisualElement class="subsection">
-                    <ui:VisualElement class="field-row">
-                        <ui:Label text="Catalog Mode:" class="field-row-label" />
-                        <ui:RadioButtonGroup name="catalog-mode" value="0" class="catalog-mode-group">
-                            <ui:RadioButton name="mode-new" text="New" value="true" />
-                            <ui:RadioButton name="mode-existing" text="Existing" />
-                        </ui:RadioButtonGroup>
-                    </ui:VisualElement>
+                <ui:VisualElement class="field-row">
+                    <ui:Label text="Catalog Mode:" class="field-row-label" />
+                    <ui:RadioButtonGroup name="catalog-mode" value="0" class="catalog-mode-group">
+                        <ui:RadioButton name="mode-new" text="New" value="true" />
+                        <ui:RadioButton name="mode-existing" text="Existing" />
+                    </ui:RadioButtonGroup>
                 </ui:VisualElement>
 
                 <!-- New Catalog Container -->
-                <ui:VisualElement name="new-catalog-container" class="subsection">
+                <ui:VisualElement name="new-catalog-container">
                     <ui:VisualElement class="field-row">
                         <ui:Label text="Catalog Name:" class="field-row-label" />
                         <ui:TextField name="catalog-name-field" max-length="100" class="catalog-name-input" />
@@ -45,7 +43,7 @@
                 </ui:VisualElement>
 
                 <!-- Existing Catalog Container -->
-                <ui:VisualElement name="existing-catalog-container" class="subsection">
+                <ui:VisualElement name="existing-catalog-container">
                     <ui:VisualElement class="field-row">
                         <ui:Label text="Select Catalog:" class="field-row-label" />
                         <ui:DropdownField name="catalog-dropdown" class="catalog-dropdown" />
@@ -54,23 +52,21 @@
                 </ui:VisualElement>
 
                 <!-- Version Tag -->
-                <ui:VisualElement class="subsection">
-                    <ui:VisualElement class="field-row">
-                        <ui:Label text="Version Tag:" class="field-row-label" />
-                        <ui:TextField name="version-tag-field" max-length="50" class="version-tag-input" />
-                    </ui:VisualElement>
-                    <ui:Label name="version-tag-error" class="error-label" />
+                <ui:VisualElement class="field-row">
+                    <ui:Label text="Version Tag:" class="field-row-label" />
+                    <ui:TextField name="version-tag-field" max-length="50" class="version-tag-input" />
                 </ui:VisualElement>
+                <ui:Label name="version-tag-error" class="error-label" />
+
+                <ui:VisualElement class="divider" />
 
                 <!-- Build Mode Selection -->
-                <ui:VisualElement class="subsection">
-                    <ui:VisualElement class="field-row">
-                        <ui:Label text="Build Mode:" class="field-row-label" />
-                        <ui:RadioButtonGroup name="build-mode" value="0" class="build-mode-group">
-                            <ui:RadioButton name="build-mode-auto" text="Auto Build" value="true" />
-                            <ui:RadioButton name="build-mode-manual" text="Manual" />
-                        </ui:RadioButtonGroup>
-                    </ui:VisualElement>
+                <ui:VisualElement class="field-row">
+                    <ui:Label text="Build Mode:" class="field-row-label" />
+                    <ui:RadioButtonGroup name="build-mode" value="0" class="build-mode-group">
+                        <ui:RadioButton name="build-mode-auto" text="Auto Build" value="true" />
+                        <ui:RadioButton name="build-mode-manual" text="Manual" />
+                    </ui:RadioButtonGroup>
                 </ui:VisualElement>
 
                 <!-- Auto Build Section -->
@@ -79,15 +75,14 @@
                     <ui:Foldout name="avatar-prefabs-foldout" text="Avatar Prefabs (0)" class="prefab-foldout">
                         <ui:VisualElement name="avatar-prefabs-container" class="prefab-container" />
                         <ui:Button name="add-avatar-prefab-button" text="+ Add Avatar Prefab" class="add-prefab-button" />
-                        <ui:Label text="Drag prefabs here (multi-select supported)" class="drag-hint" />
-                        <ui:Label text="The VirtualVenues Avatar component must be on the prefab root, with an Animator assigned." class="drag-hint" />
+                        <ui:Label text="Drag avatar prefabs here (multi-select). The prefab root needs a VirtualVenues Avatar component with an Animator assigned." class="drag-hint" />
                     </ui:Foldout>
 
-                    <!-- Cosmetic Prefabs -->
-                    <ui:Foldout name="cosmetic-prefabs-foldout" text="Cosmetic Prefabs (0)" class="prefab-foldout">
+                    <!-- Cosmetics: prefabs, Materials or Texture2Ds -->
+                    <ui:Foldout name="cosmetic-prefabs-foldout" text="Cosmetics (0)" class="prefab-foldout">
                         <ui:VisualElement name="cosmetic-prefabs-container" class="prefab-container" />
-                        <ui:Button name="add-cosmetic-prefab-button" text="+ Add Cosmetic Prefab" class="add-prefab-button" />
-                        <ui:Label text="Drag prefabs here (multi-select supported)" class="drag-hint" />
+                        <ui:Button name="add-cosmetic-prefab-button" text="+ Add Cosmetic" class="add-prefab-button" />
+                        <ui:Label text="Drag prefabs, materials or textures here (multi-select supported)." class="drag-hint" />
                     </ui:Foldout>
                     <ui:Label name="prefabs-error" class="error-label" />
                 </ui:VisualElement>
@@ -129,15 +124,13 @@
                     <ui:Label name="progress-message" />
                     <ui:ProgressBar name="progress-bar" class="progress-bar" />
                 </ui:VisualElement>
+            </ui:VisualElement>
 
-                <!-- Published Catalogs List -->
-                <ui:VisualElement name="catalogs-section" class="subsection" style="flex-grow: 1;">
-                    <ui:Label text="Your Published Catalogs:" class="subsection-title" />
-                    <ui:ScrollView name="catalog-list-scroll" class="catalog-list-scroll">
-                        <ui:VisualElement name="catalog-list-container" class="catalog-list-container" />
-                    </ui:ScrollView>
-                    <ui:Label name="catalog-list-empty" text="No catalogs published yet." class="info-box" />
-                </ui:VisualElement>
+            <!-- Published Catalogs List -->
+            <ui:VisualElement name="catalogs-section" class="section">
+                <ui:Label name="catalogs-title" text="Published Catalogs" class="subsection-title" />
+                <ui:VisualElement name="catalog-list-container" class="catalog-list-container" />
+                <ui:Label name="catalog-list-empty" text="No catalogs published yet." class="empty-label" />
             </ui:VisualElement>
         </ui:VisualElement>
     </ui:ScrollView>

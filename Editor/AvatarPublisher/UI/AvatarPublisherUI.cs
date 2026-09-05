@@ -81,6 +81,8 @@ public class AvatarPublisherUI : EditorWindow
     private Label _versionLabel;
 
     // UI Elements - Catalog List
+    private VisualElement _catalogsSection;
+    private Label _catalogsTitle;
     private VisualElement _catalogListContainer;
     private Label _catalogListEmptyLabel;
 
@@ -115,12 +117,13 @@ public class AvatarPublisherUI : EditorWindow
 
     // Auto build prefab state
     private List<GameObject> _avatarPrefabs = new List<GameObject>();
-    private List<GameObject> _cosmeticPrefabs = new List<GameObject>();
+    // Cosmetics are prefabs, Materials or Texture2Ds; the target slot's kind decides which is valid.
+    private List<UnityEngine.Object> _cosmeticAssets = new List<UnityEngine.Object>();
 
-    // Which avatar slot each cosmetic publishes into. Keyed by prefab rather than kept as a list parallel
-    // to _cosmeticPrefabs, because that list is mutated by three separate paths (add / remove / multi-drop)
-    // and a parallel list silently desyncs. A stale key for a removed prefab is harmless.
-    private readonly Dictionary<GameObject, string> _cosmeticSlotIds = new Dictionary<GameObject, string>();
+    // Which avatar slot each cosmetic publishes into. Keyed by asset rather than kept as a list parallel
+    // to _cosmeticAssets, because that list is mutated by three separate paths (add / remove / multi-drop)
+    // and a parallel list silently desyncs. A stale key for a removed asset is harmless.
+    private readonly Dictionary<UnityEngine.Object, string> _cosmeticSlotIds = new Dictionary<UnityEngine.Object, string>();
     private VisualElement _avatarSlotsSummary;
 
     private const string CATALOG_NAME_KEY = "AvatarPublisher_CatalogName";
@@ -226,6 +229,8 @@ public class AvatarPublisherUI : EditorWindow
         VVEditorUI.ApplyTheme(rootVisualElement, "Avatar Publisher", "Publish avatars & cosmetics");
 
         BindUIElements();
+        // The version belongs at the right edge of the brand header, not floating over the list.
+        if (_versionLabel != null) { rootVisualElement.Q(className: "vv-header")?.Add(_versionLabel); }
         SetupEventHandlers();
         InitializeUI();
         SetVersionLabel();
@@ -299,6 +304,8 @@ public class AvatarPublisherUI : EditorWindow
         _versionLabel = root.Q<Label>("version-label");
 
         // Catalog list
+        _catalogsSection = root.Q<VisualElement>("catalogs-section");
+        _catalogsTitle = root.Q<Label>("catalogs-title");
         _catalogListContainer = root.Q<VisualElement>("catalog-list-container");
         _catalogListEmptyLabel = root.Q<Label>("catalog-list-empty");
     }
@@ -565,16 +572,18 @@ public class AvatarPublisherUI : EditorWindow
     {
         if (isLoggedIn)
         {
-            _userGreeting.text = _userInfo != null ? $"Hello {_userInfo.FullName}!" : "Logged in";
+            _userGreeting.text = _userInfo != null ? $"Signed in as {_userInfo.FullName}" : "Signed in";
             _userGreeting.style.display = DisplayStyle.Flex;
             _authButton.text = "Sign Out";
             _publisherSection.style.display = DisplayStyle.Flex;
+            if (_catalogsSection != null) { _catalogsSection.style.display = DisplayStyle.Flex; }
         }
         else
         {
             _userGreeting.style.display = DisplayStyle.None;
             _authButton.text = "Login";
             _publisherSection.style.display = DisplayStyle.None;
+            if (_catalogsSection != null) { _catalogsSection.style.display = DisplayStyle.None; }
         }
     }
 
@@ -787,7 +796,7 @@ public class AvatarPublisherUI : EditorWindow
 
     private void OnAddCosmeticPrefabClicked()
     {
-        _cosmeticPrefabs.Add(null);
+        _cosmeticAssets.Add(null);
         UpdateCosmeticPrefabsUI();
     }
 
@@ -798,9 +807,9 @@ public class AvatarPublisherUI : EditorWindow
         for (int i = 0; i < _avatarPrefabs.Count; i++)
         {
             int index = i;
-            var row = CreatePrefabRow(_avatarPrefabs[i], true, newValue =>
+            var row = CreatePrefabRow(_avatarPrefabs[i], true, typeof(GameObject), newValue =>
             {
-                _avatarPrefabs[index] = newValue;
+                _avatarPrefabs[index] = (GameObject)newValue;
                 // The cosmetic slot dropdowns list the slots THESE avatars declare, so they must rebuild.
                 UpdateCosmeticPrefabsUI();
             }, () =>
@@ -820,19 +829,38 @@ public class AvatarPublisherUI : EditorWindow
     {
         _cosmeticPrefabsContainer.Clear();
 
-        for (int i = 0; i < _cosmeticPrefabs.Count; i++)
+        for (int i = 0; i < _cosmeticAssets.Count; i++)
         {
             int index = i;
-            var row = CreatePrefabRow(_cosmeticPrefabs[i], false, newValue =>
+            UnityEngine.Object asset = _cosmeticAssets[i];
+            BaseField<string> slotControl = CreateSlotControl(asset);
+            var row = CreatePrefabRow(asset, false, CosmeticFieldType(asset, slotControl.value), newValue =>
             {
-                _cosmeticPrefabs[index] = newValue;
+                // A slot picked before the asset was assigned sticks, as long as it can take this asset;
+                // otherwise the rebuilt slot control auto-picks a compatible one.
+                if (newValue != null && string.IsNullOrEmpty(GetCosmeticSlotId(newValue))
+                    && CosmeticKindMismatch(newValue, slotControl.value) == null)
+                {
+                    SetCosmeticSlotId(newValue, slotControl.value);
+                }
+                _cosmeticAssets[index] = newValue;
                 UpdateCosmeticPrefabsUI();
             }, () =>
             {
-                _cosmeticPrefabs.RemoveAt(index);
+                _cosmeticAssets.RemoveAt(index);
                 UpdateCosmeticPrefabsUI();
             });
-            row.Add(CreateSlotControl(_cosmeticPrefabs[i]));
+            // The asset field's type follows the chosen slot until an asset is assigned; after that a
+            // kind/type mismatch is shown immediately and blocks publish.
+            var objectField = row.Q<ObjectField>();
+            slotControl.RegisterValueChangedCallback(evt =>
+            {
+                if (asset == null) { objectField.objectType = CosmeticFieldType(null, evt.newValue); return; }
+                string mismatch = CosmeticKindMismatch(asset, evt.newValue);
+                if (mismatch != null) { ShowPrefabsError(mismatch); } else { ClearPrefabsError(); }
+            });
+            // Row reads [asset][slot][X]; CreatePrefabRow builds [asset][X].
+            row.Insert(1, slotControl);
             _cosmeticPrefabsContainer.Add(row);
         }
 
@@ -847,7 +875,7 @@ public class AvatarPublisherUI : EditorWindow
     /// publish shapes legitimately have no avatar prefab - a cosmetics-only publish adding hats to an
     /// avatar published last month, and the manual bundle-folder path.
     /// </summary>
-    private VisualElement CreateSlotControl(GameObject cosmetic)
+    private BaseField<string> CreateSlotControl(UnityEngine.Object cosmetic)
     {
         List<string> options = CollectDeclaredSlotIds();
         string current = GetCosmeticSlotId(cosmetic);
@@ -856,7 +884,7 @@ public class AvatarPublisherUI : EditorWindow
         {
             var field = new TextField { value = current };
             field.tooltip = "No avatar in this publish declares any slots, so type the slot name exactly as the target avatar spells it (e.g. Hat). It becomes the Addressables prefix: Hat_<cosmetic name>.";
-            field.AddToClassList("prefab-object-field");
+            field.AddToClassList("slot-field");
             field.RegisterValueChangedCallback(evt => SetCosmeticSlotId(cosmetic, evt.newValue));
             return field;
         }
@@ -864,21 +892,28 @@ public class AvatarPublisherUI : EditorWindow
         // An unknown stored value must stay selectable, or reopening the window would silently retarget it.
         if (!string.IsNullOrEmpty(current) && !options.Contains(current)) { options.Insert(0, current); }
 
+        // Auto-pick: the first slot that can take this asset, so a multi-drop of materials lands on a
+        // Material slot instead of the first hat slot.
+        if (string.IsNullOrEmpty(current) && cosmetic != null)
+        {
+            current = options.FirstOrDefault(o => CosmeticKindMismatch(cosmetic, o) == null) ?? options[0];
+            SetCosmeticSlotId(cosmetic, current);
+        }
+
         var dropdown = new DropdownField(options, Mathf.Max(0, options.IndexOf(current)));
-        if (string.IsNullOrEmpty(current)) { SetCosmeticSlotId(cosmetic, options[0]); }
         dropdown.tooltip = "Which avatar slot this cosmetic goes in. It becomes the Addressables prefix.";
-        dropdown.AddToClassList("prefab-object-field");
+        dropdown.AddToClassList("slot-field");
         dropdown.RegisterValueChangedCallback(evt => SetCosmeticSlotId(cosmetic, evt.newValue));
         return dropdown;
     }
 
-    private string GetCosmeticSlotId(GameObject cosmetic)
+    private string GetCosmeticSlotId(UnityEngine.Object cosmetic)
     {
         if (cosmetic == null) { return ""; }
         return _cosmeticSlotIds.TryGetValue(cosmetic, out string slot) ? slot : "";
     }
 
-    private void SetCosmeticSlotId(GameObject cosmetic, string slotId)
+    private void SetCosmeticSlotId(UnityEngine.Object cosmetic, string slotId)
     {
         if (cosmetic == null) { return; }
         _cosmeticSlotIds[cosmetic] = slotId != null ? slotId.Trim() : "";
@@ -901,17 +936,61 @@ public class AvatarPublisherUI : EditorWindow
 
     private static IEnumerable<string> DeclaredSlotIds(GameObject avatarPrefab)
     {
+        return DeclaredSlots(avatarPrefab).Select(s => s.slotId);
+    }
+
+    private static IEnumerable<(string slotId, VirtualVenues.AvatarSlotKind kind)> DeclaredSlots(GameObject avatarPrefab)
+    {
         if (avatarPrefab == null) { yield break; }
         var avatar = avatarPrefab.GetComponent<VirtualVenues.Avatar>();
         if (avatar == null) { yield break; }
 
         foreach (var slot in avatar.Slots)
         {
-            if (slot != null && !string.IsNullOrWhiteSpace(slot.slotId)) { yield return slot.slotId.Trim(); }
+            if (slot != null && !string.IsNullOrWhiteSpace(slot.slotId)) { yield return (slot.slotId.Trim(), slot.kind); }
         }
         // Pre-0.9.17 avatars: the fixed category name IS the slot name at runtime.
-        foreach (var slot in avatar.RendererSlots) { if (slot != null) { yield return slot.category.ToString(); } }
-        foreach (var slot in avatar.ItemSlots) { if (slot != null) { yield return slot.category.ToString(); } }
+        foreach (var slot in avatar.RendererSlots) { if (slot != null) { yield return (slot.category.ToString(), VirtualVenues.AvatarSlotKind.Material); } }
+        foreach (var slot in avatar.ItemSlots) { if (slot != null) { yield return (slot.category.ToString(), VirtualVenues.AvatarSlotKind.Mesh); } }
+    }
+
+    /// <summary>The kinds every avatar in this publish declares for <paramref name="slotId"/>; empty when undeclared.</summary>
+    private IEnumerable<VirtualVenues.AvatarSlotKind> DeclaredKindsOf(string slotId)
+    {
+        return _avatarPrefabs.SelectMany(DeclaredSlots)
+            .Where(s => string.Equals(s.slotId, slotId, StringComparison.OrdinalIgnoreCase))
+            .Select(s => s.kind);
+    }
+
+    private static Type AssetTypeFor(VirtualVenues.AvatarSlotKind kind)
+    {
+        if (kind == VirtualVenues.AvatarSlotKind.Material) { return typeof(Material); }
+        if (kind == VirtualVenues.AvatarSlotKind.Texture) { return typeof(Texture2D); }
+        return typeof(GameObject);
+    }
+
+    // Asset assigned: its own type. Otherwise the picked slot's kind; UnityEngine.Object when the slot is
+    // undeclared (cosmetics-only publish), same precedent as the typed fallback picker in AvatarSlotDrawer.
+    private Type CosmeticFieldType(UnityEngine.Object asset, string slotId)
+    {
+        if (asset != null) { return asset.GetType(); }
+        var kinds = DeclaredKindsOf(slotId).ToList();
+        return kinds.Count > 0 ? AssetTypeFor(kinds[0]) : typeof(UnityEngine.Object);
+    }
+
+    /// <summary>
+    /// A reason when the slot IS declared by an avatar in this publish and none of its declared kinds can
+    /// take this asset (Material slot ↔ Material, Texture slot ↔ Texture2D, Mesh / Rigged Mesh ↔ prefab).
+    /// Null for an undeclared slot: that is the cosmetics-only case, warned about at publish, not blocked.
+    /// </summary>
+    private string CosmeticKindMismatch(UnityEngine.Object asset, string slotId)
+    {
+        if (asset == null || string.IsNullOrEmpty(slotId)) { return null; }
+        var kinds = DeclaredKindsOf(slotId).ToList();
+        if (kinds.Count == 0 || kinds.Any(k => AssetTypeFor(k).IsInstanceOfType(asset))) { return null; }
+
+        string expected = VirtualVenues.AvatarSlotKindExtensions.TargetsRenderers(kinds[0]) ? AssetTypeFor(kinds[0]).Name : "prefab";
+        return $"\"{asset.name}\" is a {asset.GetType().Name}, but slot \"{slotId}\" is a {kinds[0]} slot and takes a {expected}.";
     }
 
     /// <summary>One sub-foldout per avatar in this publish, listing the slots its cosmetics can target.</summary>
@@ -934,29 +1013,31 @@ public class AvatarPublisherUI : EditorWindow
                 text = $"{prefab.name} - {slots.Count} slot(s)",
                 value = false
             };
-            foldout.Add(new Label(slots.Count > 0
+            var summary = new Label(slots.Count > 0
                 ? string.Join(", ", slots)
-                : "No slots declared. Add slots on its Avatar component, or its cosmetics will never load."));
+                : "No slots declared. Add slots on its Avatar component, or its cosmetics will never load.");
+            summary.AddToClassList("slot-summary");
+            foldout.Add(summary);
             _avatarSlotsSummary.Add(foldout);
         }
     }
 
-    private VisualElement CreatePrefabRow(GameObject currentValue, bool isAvatar, Action<GameObject> onValueChanged, Action onRemove)
+    private VisualElement CreatePrefabRow(UnityEngine.Object currentValue, bool isAvatar, Type objectType, Action<UnityEngine.Object> onValueChanged, Action onRemove)
     {
         var row = new VisualElement();
         row.AddToClassList("prefab-row");
 
         var objectField = new ObjectField();
-        objectField.objectType = typeof(GameObject);
-        // Only project prefabs are valid catalog content — never scene objects.
+        objectField.objectType = objectType;
+        // Only project assets are valid catalog content — never scene objects.
         objectField.allowSceneObjects = false;
         // Set the initial value BEFORE registering the callback so rebuilds don't re-fire it.
         objectField.value = currentValue;
         objectField.AddToClassList("prefab-object-field");
         objectField.RegisterValueChangedCallback(evt =>
         {
-            var go = evt.newValue as GameObject;
-            if (go != null && !ValidatePrefab(go, isAvatar, out string reason))
+            UnityEngine.Object asset = evt.newValue;
+            if (asset != null && !ValidateAsset(asset, isAvatar, out string reason))
             {
                 ShowPrefabsError(reason);
                 // Revert without re-triggering this callback.
@@ -966,7 +1047,7 @@ public class AvatarPublisherUI : EditorWindow
             else
             {
                 ClearPrefabsError();
-                onValueChanged(go);
+                onValueChanged(asset);
             }
             UpdatePrefabFoldoutLabels();
             SavePrefabGuids();
@@ -983,7 +1064,7 @@ public class AvatarPublisherUI : EditorWindow
     private void UpdatePrefabFoldoutLabels()
     {
         int avatarCount = _avatarPrefabs.Count(p => p != null);
-        int cosmeticCount = _cosmeticPrefabs.Count(p => p != null);
+        int cosmeticCount = _cosmeticAssets.Count(p => p != null);
 
         if (_avatarPrefabsFoldout != null)
         {
@@ -991,7 +1072,7 @@ public class AvatarPublisherUI : EditorWindow
         }
         if (_cosmeticPrefabsFoldout != null)
         {
-            _cosmeticPrefabsFoldout.text = $"Cosmetic Prefabs ({cosmeticCount})";
+            _cosmeticPrefabsFoldout.text = $"Cosmetics ({cosmeticCount})";
         }
     }
 
@@ -1000,11 +1081,15 @@ public class AvatarPublisherUI : EditorWindow
         if (_prefabsError != null) { _prefabsError.style.display = DisplayStyle.None; }
     }
 
-    // --- Prefab validation (only project prefabs; avatars need the VirtualVenues.Avatar component) ---
+    // --- Asset validation (avatars: project prefabs with a VirtualVenues.Avatar; cosmetics: project
+    //     prefabs, Materials or Texture2Ds that fit their slot's kind) ---
 
-    private bool ValidatePrefab(GameObject go, bool isAvatar, out string reason)
+    private bool ValidateAsset(UnityEngine.Object asset, bool isAvatar, out string reason)
     {
-        return isAvatar ? IsValidAvatarPrefab(go, out reason) : IsValidCosmeticPrefab(go, out reason);
+        if (isAvatar) { return IsValidAvatarPrefab(asset as GameObject, out reason); }
+        if (!IsValidCosmeticAsset(asset, out reason)) { return false; }
+        reason = CosmeticKindMismatch(asset, GetCosmeticSlotId(asset));
+        return reason == null;
     }
 
     private static bool IsProjectPrefab(GameObject go)
@@ -1055,15 +1140,23 @@ public class AvatarPublisherUI : EditorWindow
         return true;
     }
 
-    private static bool IsValidCosmeticPrefab(GameObject go, out string reason)
+    private static bool IsValidCosmeticAsset(UnityEngine.Object asset, out string reason)
     {
-        if (!IsProjectPrefab(go))
+        if (asset is GameObject go)
         {
-            reason = "Only project prefabs can be added (not scene objects).";
-            return false;
+            reason = IsProjectPrefab(go) ? null : "Only project prefabs can be added (not scene objects).";
+            return reason == null;
         }
-        reason = null;
-        return true;
+        if (asset is Material || asset is Texture2D)
+        {
+            // A material or texture embedded in a model shares the model's GUID: persistence would restore
+            // the wrong object and the Addressables entry would point at the whole model.
+            reason = AssetDatabase.IsMainAsset(asset) ? null
+                : $"\"{asset.name}\" is embedded in another asset. Extract the {asset.GetType().Name} from the model into its own file first.";
+            return reason == null;
+        }
+        reason = "Cosmetics must be a project prefab, a Material, or a Texture2D.";
+        return false;
     }
 
     private string FirstInvalidPrefabReason()
@@ -1073,16 +1166,16 @@ public class AvatarPublisherUI : EditorWindow
             if (p == null) { continue; }
             if (!IsValidAvatarPrefab(p, out string reason)) { return reason; }
         }
-        foreach (var p in _cosmeticPrefabs)
+        foreach (var p in _cosmeticAssets)
         {
             if (p == null) { continue; }
-            if (!IsValidCosmeticPrefab(p, out string reason)) { return reason; }
+            if (!ValidateAsset(p, false, out string reason)) { return reason; }
         }
         return null;
     }
 
-    // Catalog content (bundles + metadata) is keyed by prefab.name, shared across avatars AND cosmetics,
-    // so two prefabs with the same name silently overwrite each other in the published catalog. Returns
+    // Catalog content (bundles + metadata) is keyed by asset name, shared across avatars AND cosmetics,
+    // so two assets with the same name silently overwrite each other in the published catalog. Returns
     // the first colliding name (case-insensitive), or null if all names are unique.
     private string FirstDuplicatePrefabName()
     {
@@ -1092,7 +1185,7 @@ public class AvatarPublisherUI : EditorWindow
             if (p == null) { continue; }
             if (!seen.Add(p.name)) { return p.name; }
         }
-        foreach (var p in _cosmeticPrefabs)
+        foreach (var p in _cosmeticAssets)
         {
             if (p == null) { continue; }
             if (!seen.Add(p.name)) { return p.name; }
@@ -1108,7 +1201,7 @@ public class AvatarPublisherUI : EditorWindow
         if (_buildModeGroup == null || _buildModeGroup.value != 0) { return; } // auto-build only
 
         List<string> declared = CollectDeclaredSlotIds();
-        foreach (var cosmetic in _cosmeticPrefabs)
+        foreach (var cosmetic in _cosmeticAssets)
         {
             if (cosmetic == null) { continue; }
             string slotId = GetCosmeticSlotId(cosmetic);
@@ -1164,19 +1257,19 @@ public class AvatarPublisherUI : EditorWindow
     private void SavePrefabGuids()
     {
         EditorPrefs.SetString(AVATAR_PREFAB_GUIDS_KEY, SerializePrefabGuids(_avatarPrefabs));
-        EditorPrefs.SetString(COSMETIC_PREFAB_GUIDS_KEY, SerializePrefabGuids(_cosmeticPrefabs));
-        EditorPrefs.SetString(COSMETIC_SLOT_IDS_KEY, string.Join(",", _cosmeticPrefabs
+        EditorPrefs.SetString(COSMETIC_PREFAB_GUIDS_KEY, SerializePrefabGuids(_cosmeticAssets));
+        EditorPrefs.SetString(COSMETIC_SLOT_IDS_KEY, string.Join(",", _cosmeticAssets
             .Where(p => p != null && !string.IsNullOrEmpty(GetCosmeticSlotId(p)))
             .Select(p => $"{AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(p))}={GetCosmeticSlotId(p)}")));
     }
 
-    private static string SerializePrefabGuids(List<GameObject> prefabs)
+    private static string SerializePrefabGuids(IEnumerable<UnityEngine.Object> assets)
     {
         var guids = new List<string>();
-        foreach (var prefab in prefabs)
+        foreach (var asset in assets)
         {
-            if (prefab == null) { continue; }
-            string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(prefab));
+            if (asset == null) { continue; }
+            string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(asset));
             if (!string.IsNullOrEmpty(guid)) { guids.Add(guid); }
         }
         return string.Join(",", guids);
@@ -1185,7 +1278,7 @@ public class AvatarPublisherUI : EditorWindow
     private void RestorePrefabsFromGuids()
     {
         RestorePrefabList(_avatarPrefabs, EditorPrefs.GetString(AVATAR_PREFAB_GUIDS_KEY, ""));
-        RestorePrefabList(_cosmeticPrefabs, EditorPrefs.GetString(COSMETIC_PREFAB_GUIDS_KEY, ""));
+        RestorePrefabList(_cosmeticAssets, EditorPrefs.GetString(COSMETIC_PREFAB_GUIDS_KEY, ""));
         RestoreCosmeticSlotIds(EditorPrefs.GetString(COSMETIC_SLOT_IDS_KEY, ""));
         // UpdateAvatarPrefabsUI rebuilds the cosmetic rows too — their slot options come from the avatars.
         UpdateAvatarPrefabsUI();
@@ -1202,12 +1295,12 @@ public class AvatarPublisherUI : EditorWindow
             if (parts.Length != 2) { continue; }
             string path = AssetDatabase.GUIDToAssetPath(parts[0]);
             if (string.IsNullOrEmpty(path)) { continue; }
-            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
-            if (prefab != null) { _cosmeticSlotIds[prefab] = parts[1]; }
+            var asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
+            if (asset != null) { _cosmeticSlotIds[asset] = parts[1]; }
         }
     }
 
-    private static void RestorePrefabList(List<GameObject> target, string serialized)
+    private static void RestorePrefabList<T>(List<T> target, string serialized) where T : UnityEngine.Object
     {
         target.Clear();
         if (string.IsNullOrEmpty(serialized)) { return; }
@@ -1217,8 +1310,8 @@ public class AvatarPublisherUI : EditorWindow
             if (string.IsNullOrEmpty(guid)) { continue; }
             string path = AssetDatabase.GUIDToAssetPath(guid);
             if (string.IsNullOrEmpty(path)) { continue; }
-            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
-            if (prefab != null) { target.Add(prefab); }
+            var asset = AssetDatabase.LoadAssetAtPath<T>(path);
+            if (asset != null) { target.Add(asset); }
         }
     }
 
@@ -1230,8 +1323,7 @@ public class AvatarPublisherUI : EditorWindow
 
         foldout.RegisterCallback<DragUpdatedEvent>(evt =>
         {
-            bool anyValid = DragAndDrop.objectReferences.Any(obj =>
-                obj is GameObject go && ValidatePrefab(go, isAvatar, out _));
+            bool anyValid = DragAndDrop.objectReferences.Any(obj => ValidateAsset(obj, isAvatar, out _));
             DragAndDrop.visualMode = anyValid ? DragAndDropVisualMode.Copy : DragAndDropVisualMode.Rejected;
             evt.StopPropagation();
         });
@@ -1240,24 +1332,24 @@ public class AvatarPublisherUI : EditorWindow
         {
             DragAndDrop.AcceptDrag();
 
-            var targetList = isAvatar ? _avatarPrefabs : _cosmeticPrefabs;
+            IEnumerable<UnityEngine.Object> existing = isAvatar ? _avatarPrefabs : _cosmeticAssets;
             // Dedupe by GUID against existing entries AND within the dropped batch.
             var seenGuids = new HashSet<string>(
-                targetList.Where(p => p != null)
-                          .Select(p => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(p))));
+                existing.Where(p => p != null)
+                        .Select(p => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(p))));
 
             int added = 0;
             int rejected = 0;
             foreach (var obj in DragAndDrop.objectReferences)
             {
-                if (!(obj is GameObject go)) { continue; }
-                if (!ValidatePrefab(go, isAvatar, out _)) { rejected++; continue; }
+                if (obj == null) { continue; }
+                if (!ValidateAsset(obj, isAvatar, out _)) { rejected++; continue; }
 
-                string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(go));
+                string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(obj));
                 if (string.IsNullOrEmpty(guid) || seenGuids.Contains(guid)) { continue; }
 
                 seenGuids.Add(guid);
-                targetList.Add(go);
+                if (isAvatar) { _avatarPrefabs.Add((GameObject)obj); } else { _cosmeticAssets.Add(obj); }
                 added++;
             }
 
@@ -1273,7 +1365,7 @@ public class AvatarPublisherUI : EditorWindow
             {
                 ShowPrefabsError(isAvatar
                     ? "Dropped items must be project prefabs with a VirtualVenues Avatar component."
-                    : "Dropped items must be project prefabs.");
+                    : "Dropped items must be project prefabs, Materials or Texture2Ds.");
             }
             evt.StopPropagation();
         });
@@ -1303,7 +1395,7 @@ public class AvatarPublisherUI : EditorWindow
     private List<CosmeticMetadataEntry> BuildCosmeticMetadataFromPrefabs()
     {
         var entries = new List<CosmeticMetadataEntry>();
-        foreach (var prefab in _cosmeticPrefabs)
+        foreach (var prefab in _cosmeticAssets)
         {
             if (prefab == null) { continue; }
 
@@ -1669,6 +1761,7 @@ public class AvatarPublisherUI : EditorWindow
         if (_catalogListContainer == null) { return; }
 
         _catalogListContainer.Clear();
+        if (_catalogsTitle != null) { _catalogsTitle.text = $"Published Catalogs ({_catalogs.Length})"; }
 
         if (_catalogs.Length == 0)
         {
@@ -1730,10 +1823,24 @@ public class AvatarPublisherUI : EditorWindow
             var infoContainer = new VisualElement();
             infoContainer.AddToClassList("catalog-card-info");
 
+            // Name + latest-version pill on one line.
+            var nameRow = new VisualElement();
+            nameRow.AddToClassList("catalog-name-row");
+
             var nameLabel = new Label(catalog.name ?? "Unnamed Catalog");
             nameLabel.AddToClassList("catalog-name");
-            infoContainer.Add(nameLabel);
+            nameRow.Add(nameLabel);
 
+            if (!string.IsNullOrEmpty(catalog.latestVersionTag))
+            {
+                var versionTag = new Label(catalog.latestVersionTag);
+                versionTag.AddToClassList("catalog-version-tag");
+                nameRow.Add(versionTag);
+            }
+            infoContainer.Add(nameRow);
+
+            // .catalog-id ellipsizes; TextElement.displayTooltipWhenElided (default) shows the full id on hover
+            // and overrides any tooltip set here, so none is set.
             var idLabel = new Label(catalog.catalogId);
             idLabel.AddToClassList("catalog-id");
             infoContainer.Add(idLabel);
@@ -1750,11 +1857,6 @@ public class AvatarPublisherUI : EditorWindow
             var buttonsContainer = new VisualElement();
             buttonsContainer.AddToClassList("catalog-card-buttons");
 
-            // Latest version
-            var latestLabel = new Label($"Latest: {catalog.latestVersionTag ?? "none"}");
-            latestLabel.AddToClassList("catalog-version-count");
-            buttonsContainer.Add(latestLabel);
-
             var renameBtn = new Button(() => StartRename(catalog)) { text = "Rename" };
             renameBtn.AddToClassList("action-button");
             buttonsContainer.Add(renameBtn);
@@ -1768,20 +1870,6 @@ public class AvatarPublisherUI : EditorWindow
         }
 
         card.Add(headerRow);
-
-        // Latest version tag row
-        if (!string.IsNullOrEmpty(catalog.latestVersionTag))
-        {
-            var versionsRow = new VisualElement();
-            versionsRow.style.flexDirection = FlexDirection.Row;
-            versionsRow.style.marginTop = 4;
-
-            var versionTag = new Label(catalog.latestVersionTag);
-            versionTag.AddToClassList("catalog-version-tag");
-            versionsRow.Add(versionTag);
-
-            card.Add(versionsRow);
-        }
 
         return card;
     }
@@ -1982,12 +2070,12 @@ public class AvatarPublisherUI : EditorWindow
         {
             // Validate auto build inputs
             int avatarCount = _avatarPrefabs.Count(p => p != null);
-            int cosmeticCount = _cosmeticPrefabs.Count(p => p != null);
+            int cosmeticCount = _cosmeticAssets.Count(p => p != null);
 
             if (avatarCount == 0 && cosmeticCount == 0)
             {
-                Debug.LogWarning("[AvatarPublisher] Validation failed: No prefabs added.");
-                ShowPrefabsError("Please add at least one avatar or cosmetic prefab.");
+                Debug.LogWarning("[AvatarPublisher] Validation failed: nothing added.");
+                ShowPrefabsError("Please add at least one avatar or cosmetic.");
                 isValid = false;
             }
             else
@@ -1996,18 +2084,18 @@ public class AvatarPublisherUI : EditorWindow
                 string invalidReason = FirstInvalidPrefabReason();
                 if (!string.IsNullOrEmpty(invalidReason))
                 {
-                    Debug.LogWarning($"[AvatarPublisher] Validation failed: invalid prefab — {invalidReason}");
+                    Debug.LogWarning($"[AvatarPublisher] Validation failed: invalid asset — {invalidReason}");
                     ShowPrefabsError(invalidReason);
                     isValid = false;
                 }
                 else
                 {
-                    // Catalog content is keyed by prefab.name, so duplicate names silently overwrite.
+                    // Catalog content is keyed by asset name, so duplicate names silently overwrite.
                     string dupName = FirstDuplicatePrefabName();
                     if (!string.IsNullOrEmpty(dupName))
                     {
-                        Debug.LogWarning($"[AvatarPublisher] Validation failed: duplicate prefab name \"{dupName}\".");
-                        ShowPrefabsError($"Two prefabs are named \"{dupName}\". Catalog content is keyed by prefab name, so duplicates overwrite each other — rename one.");
+                        Debug.LogWarning($"[AvatarPublisher] Validation failed: duplicate asset name \"{dupName}\".");
+                        ShowPrefabsError($"Two assets are named \"{dupName}\". Catalog content is keyed by asset name, so duplicates overwrite each other — rename one.");
                         isValid = false;
                     }
                 }
@@ -2119,7 +2207,7 @@ public class AvatarPublisherUI : EditorWindow
 
             // Collect prefabs
             var avatarPrefabs = _avatarPrefabs.Where(p => p != null).ToList();
-            var cosmeticPrefabs = _cosmeticPrefabs.Where(p => p != null).ToList();
+            var cosmeticPrefabs = _cosmeticAssets.Where(p => p != null).ToList();
 
             // For auto build, we need the contentBaseUrl before building so Addressables
             // bakes the correct remote load path. Call upload-urls first with a placeholder

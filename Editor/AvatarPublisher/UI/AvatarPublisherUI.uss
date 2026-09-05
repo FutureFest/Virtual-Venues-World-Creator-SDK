@@ -16,18 +16,17 @@
     border-radius: 10px;
 }
 
+/* Only auto-build-section / manual-bundle-section keep this; it is a plain group, not a card,
+   so the publisher section reads as one flat surface. */
 .subsection {
-    margin: 6px 0;
-    padding: 8px;
-    background-color: var(--vv-surface-strong);
-    border-radius: 6px;
+    margin: 4px 0;
+    padding: 0;
 }
 
-.section-title {
-    font-size: 15px;
-    -unity-font-style: bold;
-    margin-bottom: 6px;
-    color: var(--vv-text);
+.divider {
+    height: 1px;
+    background-color: var(--vv-border);
+    margin: 8px 0;
 }
 
 .subsection-title {
@@ -38,17 +37,27 @@
 }
 
 /* Authentication */
+#auth-section {
+    padding: 8px;
+}
+
+.auth-row {
+    flex-direction: row;
+    align-items: center;
+}
+
 .user-greeting {
+    flex-grow: 1;
     font-size: 14px;
     -unity-font-style: bold;
-    margin-bottom: 8px;
+    margin: 0;
     color: var(--vv-success);
 }
 
 .auth-button {
     width: 100px;
     height: 26px;
-    margin: 5px 0;
+    margin: 0;
     background-color: rgba(0, 0, 0, 0);
     color: var(--vv-accent);
     -unity-font-style: bold;
@@ -177,7 +186,18 @@
 
 .prefab-object-field {
     flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
     height: 22px;
+}
+
+/* Cosmetic slot dropdown/text field: fixed width; the ObjectField beside it shrinks to fit. */
+.slot-field {
+    flex-grow: 0;
+    flex-shrink: 0;
+    width: 120px;
+    height: 22px;
+    margin-left: 4px;
 }
 
 .remove-prefab-button {
@@ -422,7 +442,7 @@
 .field-row {
     flex-direction: row;
     align-items: center;
-    margin: 3px 0;
+    margin: 4px 0;
 }
 
 .field-row-label {
@@ -456,11 +476,17 @@
     color: var(--vv-text-faint);
     -unity-font-style: italic;
     -unity-text-align: middle-center;
-    margin-top: 4px;
-    padding: 3px;
+    white-space: normal;
+    margin-top: 6px;
+    padding: 8px;
     border-width: 1px;
     border-color: var(--vv-border);
     border-radius: 6px;
+}
+
+/* Long per-avatar slot summary inside the cosmetic foldout */
+.slot-summary {
+    white-space: normal;
 }
 
 Label {
@@ -476,31 +502,24 @@ Button {
     margin: 2px 0;
 }
 
-/* Version label */
+/* Version label — re-parented into the brand header row from C# (CreateGUI). */
 .version-label {
-    position: absolute;
-    bottom: 4px;
-    right: 8px;
+    margin-left: auto;
+    align-self: flex-start;
     font-size: 10px;
     color: var(--vv-text-faint);
     -unity-text-align: middle-right;
 }
 
 /* Catalog list */
-.catalog-list-scroll {
-    max-height: 280px;
-    min-height: 100px;
-    margin: 5px 0;
-}
-
 .catalog-list-container {
-    padding: 5px;
+    padding: 5px 0;
 }
 
 /* Catalog cards */
 .catalog-card {
-    padding: 10px;
-    margin: 6px 0;
+    padding: 8px;
+    margin: 4px 0;
     background-color: var(--vv-surface);
     border-radius: 10px;
     border-width: 1px;
@@ -525,18 +544,31 @@ Button {
 
 .catalog-card-info {
     flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.catalog-name-row {
+    flex-direction: row;
+    align-items: center;
 }
 
 .catalog-name {
     font-size: 13px;
     -unity-font-style: bold;
     color: var(--vv-text);
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .catalog-id {
     font-size: 9px;
     color: var(--vv-text-faint);
     margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .catalog-name-edit {
@@ -553,12 +585,7 @@ Button {
 .catalog-card-buttons {
     flex-direction: row;
     align-items: center;
-}
-
-.catalog-version-count {
-    font-size: 11px;
-    color: var(--vv-text-muted);
-    margin-right: 10px;
+    flex-shrink: 0;
 }
 
 .catalog-version-tag {
@@ -567,7 +594,8 @@ Button {
     background-color: var(--vv-primary-soft);
     padding: 2px 8px;
     border-radius: 999px;
-    margin-right: 5px;
+    margin-left: 6px;
+    flex-shrink: 0;
 }
 
 .action-button {
@@ -591,16 +619,16 @@ Button {
     color: var(--vv-danger);
     font-size: 11px;
     margin-top: 4px;
+    white-space: normal;
 }
 
-/* Info box */
-.info-box {
-    padding: 10px;
-    background-color: var(--vv-warning-soft);
-    border-radius: 8px;
-    border-width: 1px;
-    border-color: var(--vv-warning);
+/* Empty-state label (catalog list) */
+.empty-label {
+    font-size: 11px;
     color: var(--vv-text-muted);
+    -unity-font-style: italic;
+    padding: 6px 0;
+    white-space: normal;
 }
 
 /* Copy button */

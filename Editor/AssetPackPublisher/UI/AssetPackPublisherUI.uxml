@@ -2,8 +2,10 @@
     <ui:ScrollView>
         <ui:VisualElement class="main-container">
             <ui:VisualElement name="auth-section" class="section">
-                <ui:Label name="user-greeting" class="user-greeting" />
-                <ui:Button name="auth-button" text="Login" class="auth-button" />
+                <ui:VisualElement class="auth-row">
+                    <ui:Label name="user-greeting" class="user-greeting" />
+                    <ui:Button name="auth-button" text="Login" class="auth-button" />
+                </ui:VisualElement>
                 <ui:VisualElement name="device-flow-container" class="device-flow-container">
                     <ui:Label text="1. In a browser on this computer or your phone, open:" />
                     <ui:VisualElement class="row">
@@ -18,19 +20,29 @@
                 <ui:Label name="auth-result" class="auth-result" />
             </ui:VisualElement>
             <ui:VisualElement name="publisher-section" class="section">
-                <ui:Label text="Asset Pack Publisher" class="section-title" />
-                <ui:VisualElement class="subsection">
-                    <ui:Label text="Pack Name:" />
+                <!-- BuildPackSection() inserts the "Pack" group at index 0, above this divider. -->
+                <ui:VisualElement class="divider" />
+                <ui:VisualElement class="field-row">
+                    <ui:Label text="Pack Name:" class="field-row-label" />
                     <ui:TextField name="pack-name-field" class="text-input" />
-                    <ui:Label text="Version:" />
-                    <ui:TextField name="version-field" class="text-input" />
-                    <ui:Label text="Price (0 = free):" />
-                    <ui:IntegerField name="price-field" />
-                    <ui:Label text="Tags (comma-separated):" />
-                    <ui:TextField name="tags-field" class="text-input" />
-                    <ui:Label text="Categories (comma-separated):" />
-                    <ui:TextField name="categories-field" class="text-input" />
                 </ui:VisualElement>
+                <ui:VisualElement class="field-row">
+                    <ui:Label text="Version:" class="field-row-label" />
+                    <ui:TextField name="version-field" class="text-input" />
+                </ui:VisualElement>
+                <ui:VisualElement class="field-row">
+                    <ui:Label text="Price (0 = free):" class="field-row-label" />
+                    <ui:IntegerField name="price-field" />
+                </ui:VisualElement>
+                <ui:VisualElement class="field-row">
+                    <ui:Label text="Tags:" class="field-row-label" />
+                    <ui:TextField name="tags-field" class="text-input" placeholder-text="comma-separated" tooltip="Comma-separated tags" />
+                </ui:VisualElement>
+                <ui:VisualElement class="field-row">
+                    <ui:Label text="Categories:" class="field-row-label" />
+                    <ui:TextField name="categories-field" class="text-input" placeholder-text="comma-separated" tooltip="Comma-separated categories" />
+                </ui:VisualElement>
+                <ui:VisualElement class="divider" />
                 <ui:VisualElement class="subsection">
                     <ui:Label text="Assets" class="subsection-title" />
                     <ui:VisualElement name="assets-container" class="assets-container" />

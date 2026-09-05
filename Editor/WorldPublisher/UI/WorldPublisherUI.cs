@@ -43,6 +43,8 @@ public class WorldPublisherUI : EditorWindow
     private Label _progressMessage;
     private ProgressBar _progressBar;
     private Label _versionLabel;
+    private VisualElement _worldsSection;
+    private Label _worldsTitle;
 
     // Project setup banner
     private VisualElement _setupBanner;
@@ -131,6 +133,8 @@ public class WorldPublisherUI : EditorWindow
         VVEditorUI.ApplyTheme(rootVisualElement, "World Publisher", "Publish worlds to VirtualVenues");
 
         BindUIElements();
+        // The version belongs at the right edge of the brand header, not floating over the list.
+        if (_versionLabel != null) { rootVisualElement.Q(className: "vv-header")?.Add(_versionLabel); }
         SetupEventHandlers();
         InitializeUI();
         SetVersionLabel();
@@ -160,6 +164,8 @@ public class WorldPublisherUI : EditorWindow
         // World list
         _worldListContainer = root.Q<VisualElement>("world-list-container");
         _worldListEmptyLabel = root.Q<Label>("world-list-empty");
+        _worldsSection = root.Q<VisualElement>("worlds-section");
+        _worldsTitle = root.Q<Label>("worlds-title");
 
         _sceneSelector = root.Q<ObjectField>("scene-selector");
         _sceneSelector.objectType = typeof(SceneAsset);
@@ -384,16 +390,18 @@ public class WorldPublisherUI : EditorWindow
     {
         if (isLoggedIn)
         {
-            _userGreeting.text = _userInfo != null ? $"Hello {_userInfo.FullName}!" : "Logged in";
+            _userGreeting.text = _userInfo != null ? $"Signed in as {_userInfo.FullName}" : "Signed in";
             _userGreeting.style.display = DisplayStyle.Flex;
             _authButton.text = "Sign Out";
             _publisherSection.style.display = DisplayStyle.Flex;
+            if (_worldsSection != null) { _worldsSection.style.display = DisplayStyle.Flex; }
         }
         else
         {
             _userGreeting.style.display = DisplayStyle.None;
             _authButton.text = "Login";
             _publisherSection.style.display = DisplayStyle.None;
+            if (_worldsSection != null) { _worldsSection.style.display = DisplayStyle.None; }
         }
     }
 
@@ -511,6 +519,7 @@ public class WorldPublisherUI : EditorWindow
         if (_worldListContainer == null) { return; }
 
         _worldListContainer.Clear();
+        if (_worldsTitle != null) { _worldsTitle.text = $"Published Worlds ({_worlds.Length})"; }
 
         if (_worlds.Length == 0)
         {
@@ -545,6 +554,9 @@ public class WorldPublisherUI : EditorWindow
         var headerRow = new VisualElement();
         headerRow.AddToClassList("world-card-header");
 
+        // The date sits under the name inside the info column; only the rename editor has no such column.
+        VisualElement dateTarget = card;
+
         if (_editingWorldId == world.worldId)
         {
             // Inline edit mode
@@ -576,6 +588,7 @@ public class WorldPublisherUI : EditorWindow
             var idLabel = new Label(world.worldId);
             idLabel.AddToClassList("world-id");
             infoContainer.Add(idLabel);
+            dateTarget = infoContainer;
 
             headerRow.Add(infoContainer);
 
@@ -601,15 +614,15 @@ public class WorldPublisherUI : EditorWindow
         try
         {
             DateTime publishTime = DateTime.Parse(world.updatedAt, null, DateTimeStyles.AdjustToUniversal).ToLocalTime();
-            var dateLabel = new Label($"Updated: {publishTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}");
+            var dateLabel = new Label($"Updated {publishTime.ToString("MMM d, yyyy HH:mm", CultureInfo.InvariantCulture)}");
             dateLabel.AddToClassList("world-date");
-            card.Add(dateLabel);
+            dateTarget.Add(dateLabel);
         }
         catch
         {
-            var dateLabel = new Label($"Updated: {world.updatedAt}");
+            var dateLabel = new Label($"Updated {world.updatedAt}");
             dateLabel.AddToClassList("world-date");
-            card.Add(dateLabel);
+            dateTarget.Add(dateLabel);
         }
 
         return card;
