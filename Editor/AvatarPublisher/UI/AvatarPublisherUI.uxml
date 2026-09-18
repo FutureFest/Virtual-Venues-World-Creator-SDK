@@ -48,6 +48,7 @@
                         <ui:Label text="Select Catalog:" class="field-row-label" />
                         <ui:DropdownField name="catalog-dropdown" class="catalog-dropdown" />
                     </ui:VisualElement>
+                    <ui:Label name="catalog-roster-status" class="empty-label" />
                     <ui:Label name="catalog-dropdown-error" class="error-label" />
                 </ui:VisualElement>
 

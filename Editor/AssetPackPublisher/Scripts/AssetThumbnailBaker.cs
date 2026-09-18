@@ -89,6 +89,77 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             }
         }
 
+        /// <summary>Any publishable asset: a prefab is rendered, a Material is rendered on a preview sphere, a
+        /// Texture is blitted to a readable square. Null for anything else or on failure. Caller owns the result.</summary>
+        public static Texture2D BakeAsset(UnityEngine.Object asset, int size = 256)
+        {
+            if (asset is GameObject go) { return BakeTexture(go, size); }
+            if (asset is Material mat) { return BakeMaterial(mat, size); }
+            if (asset is Texture tex) { return ToReadableSquare(tex, size); }
+            return null;
+        }
+
+        /// <summary>Blit any (possibly compressed / non-readable) texture into a readable square Texture2D the
+        /// caller owns, so a creator's custom icon uploads + displays exactly like a baked one. Stretches
+        /// non-square sources.</summary>
+        public static Texture2D ToReadableSquare(Texture src, int size = 256)
+        {
+            if (src == null || size <= 0) { return null; }
+
+            RenderTexture rt = RenderTexture.GetTemporary(size, size, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+            RenderTexture prev = RenderTexture.active;
+            Texture2D tex = null;
+            try
+            {
+                RenderTexture.active = rt;
+                GL.Clear(true, true, new Color(0f, 0f, 0f, 0f)); // transparent background
+                Graphics.Blit(src, rt);
+
+                tex = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: false);
+                tex.ReadPixels(new Rect(0, 0, size, size), 0, 0);
+                tex.Apply();
+                return tex;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[AssetThumbnailBaker] texture read failed for '{src.name}': {ex.Message}");
+                if (tex != null) { UnityEngine.Object.DestroyImmediate(tex); }
+                return null;
+            }
+            finally
+            {
+                RenderTexture.active = prev;
+                RenderTexture.ReleaseTemporary(rt);
+            }
+        }
+
+        /// <summary>Render a material on a preview SPHERE — the same primitive Unity's own material inspector uses,
+        /// and for the same reason: a sphere shows the specular lobe, the normal map and the silhouette falloff
+        /// at once, where a flat swatch shows only base colour. Goes through <see cref="BakeTexture"/> so material
+        /// tiles light and frame exactly like prefab tiles; the temporary sphere is destroyed either way.</summary>
+        public static Texture2D BakeMaterial(Material material, int size = 256)
+        {
+            if (material == null) { return null; }
+            GameObject sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            try
+            {
+                sphere.hideFlags = HideFlags.HideAndDontSave;
+                Collider sphereCollider = sphere.GetComponent<Collider>();
+                if (sphereCollider != null) { UnityEngine.Object.DestroyImmediate(sphereCollider); }
+                sphere.GetComponent<Renderer>().sharedMaterial = material;
+                return BakeTexture(sphere, size);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[AssetThumbnailBaker] material preview failed for '{material.name}': {ex.Message}");
+                return null;
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(sphere);
+            }
+        }
+
         /// <summary>Renders <paramref name="prefab"/> and returns PNG bytes, or null on failure.</summary>
         public static byte[] BakePng(GameObject prefab, int size = 256)
         {

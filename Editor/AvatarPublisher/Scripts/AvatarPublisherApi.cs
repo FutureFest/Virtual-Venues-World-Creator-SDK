@@ -43,6 +43,9 @@ namespace AvatarPublisher
         public string name;
         public string gameId;
         public string guid;
+        // Upload object name of the item's icon ("thumb_<guid>.png"), uploaded beside the bundles. The backend
+        // composes the public URL itself. JsonUtility sends "" when unset; the backend treats empty as absent.
+        public string iconObject;
     }
 
     [Serializable]
@@ -53,6 +56,7 @@ namespace AvatarPublisher
         public string name;
         public string gameId;
         public string guid;
+        public string iconObject;
     }
 
     [Serializable]
@@ -215,11 +219,11 @@ namespace AvatarPublisher
         /// <summary>
         /// Upload a file to S3 using presigned URL
         /// </summary>
-        public static async Task UploadFileAsync(string presignedUrl, byte[] fileData)
+        public static async Task UploadFileAsync(string presignedUrl, byte[] fileData, string contentType = "application/octet-stream")
         {
             using (UnityWebRequest www = UnityWebRequest.Put(presignedUrl, fileData))
             {
-                www.SetRequestHeader("Content-Type", "application/octet-stream");
+                www.SetRequestHeader("Content-Type", contentType);
 
                 await SendWebRequestAsync(www);
 
@@ -404,6 +408,11 @@ namespace AvatarPublisher
             }
         }
 
+        private static bool IsIconObject(string objectName)
+        {
+            return objectName != null && objectName.EndsWith(".png", StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <summary>
         /// Complete upload workflow: get URLs, upload all files, confirm
         /// </summary>
@@ -423,7 +432,22 @@ namespace AvatarPublisher
                 string[] bundleNames = bundleFiles.Keys.ToArray();
 
                 progress?.Report((0.05f, "Requesting upload URLs..."));
-                var uploadUrls = await GetUploadUrlsAsync(catalogId, versionId, bundleNames);
+                CatalogUploadUrlsResponse uploadUrls;
+                try
+                {
+                    uploadUrls = await GetUploadUrlsAsync(catalogId, versionId, bundleNames);
+                }
+                catch (Exception ex) when (bundleNames.Any(IsIconObject) && ex.Message.Contains("must end in .bundle"))
+                {
+                    // A backend that predates catalog-item icons rejects the .png objects by name — before it mints
+                    // ids or touches S3/DB — so retrying without them is safe. Publishing never fails over icons.
+                    Debug.LogWarning("[AvatarPublisher] The backend rejected icon objects (needs the catalog-item-icons backend change); publishing without icons.");
+                    foreach (string png in bundleNames.Where(IsIconObject)) { bundleFiles.Remove(png); }
+                    bundleNames = bundleFiles.Keys.ToArray();
+                    foreach (AvatarMetadata a in metadata?.avatars ?? Array.Empty<AvatarMetadata>()) { a.iconObject = null; }
+                    foreach (CosmeticMetadata c in metadata?.cosmetics ?? Array.Empty<CosmeticMetadata>()) { c.iconObject = null; }
+                    uploadUrls = await GetUploadUrlsAsync(catalogId, versionId, bundleNames);
+                }
 
                 // Prefer the caller-supplied ids (always correct for existing catalogs); fall back to the
                 // server-assigned ids for brand-new catalogs where the caller passed null/empty.
@@ -448,7 +472,8 @@ namespace AvatarPublisher
                     {
                         float progressValue = 0.15f + (0.7f * filesUploaded / totalFiles);
                         progress?.Report((progressValue, $"Uploading {bundleUrl.name}... ({filesUploaded + 1}/{totalFiles})"));
-                        await UploadFileAsync(bundleUrl.presignedUrl, bundleData);
+                        // Icons get their real type so the wardrobe <img> never has to sniff.
+                        await UploadFileAsync(bundleUrl.presignedUrl, bundleData, IsIconObject(bundleUrl.name) ? "image/png" : "application/octet-stream");
                         filesUploaded++;
                     }
                 }

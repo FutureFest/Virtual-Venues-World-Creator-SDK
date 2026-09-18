@@ -2,6 +2,38 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.9.22] - 2026-09-17
+
+### Added — load a published catalog into the publish lists
+
+Pick a catalog in the Avatar Publisher's **Existing** dropdown (or press **Load** on a catalog card, or
+click Existing with empty lists) and the Avatar Prefabs / Cosmetics lists fill with that catalog's latest
+version, each item rebound to its local asset by the GUID captured at publish, with the published slot
+carried over. The next Publish is then a new version built from exactly what you see.
+
+- Items whose GUID has no valid asset in this project stay as **placeholder rows** with a rebind field
+  and an X. Publish skips them (with a console warning) rather than blocking.
+- **Replace after confirm**: a non-empty list edited since the last load or publish asks before it is
+  replaced. "Keep" leaves the list, and the status line says which catalog it will publish to.
+- A status line under the dropdown shows what is loaded; the loaded catalog's card is highlighted.
+
+### Added — row icons
+
+Every Avatar / Cosmetic row shows a baked icon: a prefab render, a material on a preview sphere, or the
+texture itself, baked one per editor tick and cached. Click the icon for an inline custom Texture2D
+field, drop a texture onto it, or right-click to reset to the auto icon. Custom icons persist with the
+list.
+
+Icons are re-baked at publish and uploaded beside the bundles as `thumb_<assetGuid>.png`, with
+`iconObject` in the catalog metadata. Until the backend accepts `.png` objects, the publisher detects
+the rejection and republishes without icons, so publishing never fails on them.
+
+### Changed
+
+- The Material (preview sphere) and Texture (readable blit) bake paths moved from the Asset Pack
+  Publisher window into `AssetThumbnailBaker` (`BakeMaterial`, `ToReadableSquare`, `BakeAsset`). No
+  behaviour change for asset packs.
+
 ## [0.9.21] - 2026-09-04
 
 ### Added — Material and Texture cosmetics

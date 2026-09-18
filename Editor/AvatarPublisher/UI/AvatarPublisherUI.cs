@@ -16,6 +16,9 @@ using VirtualVenues.Editor.AvatarPublisher;
 using VirtualVenues.Editor.ProjectSetup;
 using VirtualVenues.Editor.Publishing;
 using VirtualVenues.Editor.UI;
+// Alias, not a namespace import: that namespace also carries AssetMeta / UploadUrl / ConfirmUploadRequest,
+// which collide with this file's own DTO set (global namespace).
+using AssetThumbnailBaker = VirtualVenues.Editor.AssetPackPublisher.AssetThumbnailBaker;
 
 public class AvatarPublisherUI : EditorWindow
 {
@@ -37,6 +40,7 @@ public class AvatarPublisherUI : EditorWindow
     private TextField _catalogNameField;
     private Label _catalogNameError;
     private DropdownField _catalogDropdown;
+    private Label _rosterStatus;
 
     // UI Elements - Version
     private TextField _versionTagField;
@@ -142,6 +146,25 @@ public class AvatarPublisherUI : EditorWindow
     private const string COSMETIC_PREFAB_GUIDS_KEY = "AvatarPublisher_CosmeticPrefabGuids";
     private const string COSMETIC_SLOT_IDS_KEY = "AvatarPublisher_CosmeticSlotIds";
 
+    // A published catalog's roster loaded into the lists (null = hand-built). Items whose published GUID
+    // has no valid asset in this project stay as placeholders the creator can rebind; publish skips them.
+    private readonly List<UnboundItem> _unboundItems = new List<UnboundItem>();
+    private string _loadedCatalogId;
+    private string _loadedSignature; // SavePrefabGuids() right after a load / publish; differs = edited since
+    private const string UNBOUND_ITEMS_KEY = "AvatarPublisher_UnboundItems";
+    private const string LOADED_CATALOG_KEY = "AvatarPublisher_LoadedCatalogId";
+    private const string LOADED_SIGNATURE_KEY = "AvatarPublisher_LoadedSignature";
+    private const string ROSTER_STATUS_KEY = "AvatarPublisher_RosterStatus";
+
+    // Row icons. _icons holds the baked (or custom-blitted) textures the window OWNS; a null value means the
+    // bake was attempted and failed, so a bad asset never reschedules forever. _customIcons are project
+    // references (never destroyed, never pruned — re-adding an asset gets its custom icon back).
+    private readonly Dictionary<UnityEngine.Object, Texture2D> _icons = new Dictionary<UnityEngine.Object, Texture2D>();
+    private readonly Dictionary<UnityEngine.Object, Texture2D> _customIcons = new Dictionary<UnityEngine.Object, Texture2D>();
+    private bool _bakeScheduled;
+    private const string CUSTOM_ICONS_KEY = "AvatarPublisher_CustomIcons"; // "assetGuid=iconGuid,..."
+    private const int ICON_SIZE = 256;
+
     private class BundleFileInfo
     {
         public string FileName;
@@ -156,6 +179,7 @@ public class AvatarPublisherUI : EditorWindow
         public string Name = "";
         public string GameId = "";
         public string Guid = "";
+        public string IconObject = ""; // "thumb_<guid>.png" — uploaded beside the bundles when baked
     }
 
     private class CosmeticMetadataEntry
@@ -165,6 +189,22 @@ public class AvatarPublisherUI : EditorWindow
         public string Name = "";
         public string GameId = "";
         public string Guid = "";
+        public string IconObject = "";
+    }
+
+    [Serializable]
+    private class UnboundItem
+    {
+        public string name;
+        public string guid;
+        public string slotId;
+        public bool isAvatar;
+    }
+
+    [Serializable]
+    private class UnboundItemList
+    {
+        public List<UnboundItem> items = new List<UnboundItem>();
     }
 
     [MenuItem("VirtualVenues/Avatar Publisher")]
@@ -183,6 +223,7 @@ public class AvatarPublisherUI : EditorWindow
     private void OnDisable()
     {
         AuthManager.AuthStateChanged -= OnAuthStateChanged;
+        ClearIcons(); // window close AND domain reload: the baked textures are ours to free
     }
 
     private void OnAuthStateChanged()
@@ -260,6 +301,7 @@ public class AvatarPublisherUI : EditorWindow
         _catalogNameField = root.Q<TextField>("catalog-name-field");
         _catalogNameError = root.Q<Label>("catalog-name-error");
         _catalogDropdown = root.Q<DropdownField>("catalog-dropdown");
+        _rosterStatus = root.Q<Label>("catalog-roster-status");
 
         // Version
         _versionTagField = root.Q<TextField>("version-tag-field");
@@ -683,7 +725,12 @@ public class AvatarPublisherUI : EditorWindow
         UpdateCatalogModeUI(evt.newValue);
         EditorPrefs.SetInt(CATALOG_MODE_KEY, evt.newValue);
         // Entering "Add Version to Existing" → pre-fill the next version for the selected catalog.
-        if (evt.newValue == 1) { AutoFillVersionForSelectedCatalog(); }
+        if (evt.newValue != 1) { return; }
+        AutoFillVersionForSelectedCatalog();
+        // Empty lists fill from the selected catalog. A hand-built list is left alone — it may well be
+        // meant as that catalog's next version — with a hint pointing at the card's Load button.
+        if (!HasAnyItems()) { _ = LoadCatalogRosterAsync(SelectedCatalog()); }
+        else if (string.IsNullOrEmpty(_loadedCatalogId)) { SetRosterStatus("Lists are hand-built. Use Load on a catalog below to fill them from a published version."); }
     }
 
     private void UpdateCatalogModeUI(int mode)
@@ -724,7 +771,11 @@ public class AvatarPublisherUI : EditorWindow
         }
         else if (_catalogDropdown.index < 0)
         {
-            _catalogDropdown.index = 0;
+            // Silent select + the side effects the change event would run. Never fire the event from
+            // here: this runs on every background list refresh, and the event now loads catalog contents.
+            _catalogDropdown.SetValueWithoutNotify(choices[0]);
+            PersistSelectedCatalog();
+            AutoFillVersionForSelectedCatalog();
         }
     }
 
@@ -732,7 +783,19 @@ public class AvatarPublisherUI : EditorWindow
     {
         PersistSelectedCatalog();
         AutoFillVersionForSelectedCatalog();
+        if (_catalogModeGroup != null && _catalogModeGroup.value == 1 && !_suppressVersionAutoFill)
+        {
+            _ = LoadCatalogRosterAsync(SelectedCatalog());
+        }
     }
+
+    private CatalogSummary SelectedCatalog()
+    {
+        int index = _catalogDropdown != null ? _catalogDropdown.index : -1;
+        return index >= 0 && index < _catalogs.Length ? _catalogs[index] : null;
+    }
+
+    private bool HasAnyItems() => _avatarPrefabs.Any(p => p != null) || _cosmeticAssets.Any(p => p != null);
 
     // Remembers the selected catalog by id so it survives domain reloads / window reconstruction.
     private void PersistSelectedCatalog()
@@ -758,6 +821,139 @@ public class AvatarPublisherUI : EditorWindow
         string next = BumpPatch(_catalogs[index].latestVersionTag);
         _versionTagField.value = next;
         EditorPrefs.SetString(VERSION_TAG_KEY, next);
+    }
+
+    #endregion
+
+    #region Catalog Roster
+
+    /// <summary>
+    /// Fills the Avatar Prefabs / Cosmetics lists with the latest version of a published catalog, rebinding
+    /// each item to its local asset by the GUID captured at publish. Items with no valid local asset stay as
+    /// placeholders (see CreateUnboundRow): publish skips them, it is never blocked by them.
+    /// </summary>
+    private async Task LoadCatalogRosterAsync(CatalogSummary cat)
+    {
+        if (_isPublishing || cat == null || string.IsNullOrEmpty(cat.catalogId)) { return; }
+        string catName = cat.name ?? cat.catalogId;
+        try
+        {
+            ClearPrefabsError();
+
+            // Replace-after-confirm: only a non-empty list edited since the last load / publish earns a dialog.
+            if (HasAnyItems() && SavePrefabGuids() != _loadedSignature)
+            {
+                string next = BumpPatch(cat.latestVersionTag);
+                bool replace = EditorUtility.DisplayDialog("Replace current list?",
+                    $"Replace the current {_avatarPrefabs.Count(p => p != null)} avatar(s) and {_cosmeticAssets.Count(p => p != null)} cosmetic(s) " +
+                    $"with the contents of \"{catName}\"?\n\nKeep = the current list stays and will publish to \"{catName}\" as v{next}.",
+                    "Replace", "Keep");
+                if (!replace)
+                {
+                    SetRosterStatus($"Current list will publish to \"{catName}\" as v{next}.");
+                    return;
+                }
+            }
+
+            int authGen = _authGen;
+            SetRosterStatus($"Loading contents of \"{catName}\"...");
+            CatalogDetail detail = await AvatarPublisherApi.GetCatalogAsync(cat.catalogId);
+
+            // Stale response: window gone, signed out, a publish started (it re-reads the live lists between
+            // the Addressables build and the metadata build), or another catalog was picked meanwhile.
+            if (this == null || authGen != _authGen || _isPublishing) { return; }
+            if (SelectedCatalog()?.catalogId != cat.catalogId) { return; }
+
+            ClearIcons();
+            _avatarPrefabs.Clear();
+            _cosmeticAssets.Clear();
+            _cosmeticSlotIds.Clear();
+            _unboundItems.Clear();
+
+            var seenGuids = new HashSet<string>();
+            foreach (AvatarMetadata a in detail?.avatars ?? Array.Empty<AvatarMetadata>())
+            {
+                if (a == null || (!string.IsNullOrEmpty(a.guid) && !seenGuids.Add(a.guid))) { continue; }
+                var prefab = LoadByGuid<GameObject>(a.guid);
+                if (prefab != null && IsValidAvatarPrefab(prefab, out _)) { _avatarPrefabs.Add(prefab); }
+                else { _unboundItems.Add(new UnboundItem { name = a.name ?? a.gameId ?? a.id, guid = a.guid, isAvatar = true }); }
+            }
+
+            seenGuids.Clear();
+            foreach (CosmeticMetadata c in detail?.cosmetics ?? Array.Empty<CosmeticMetadata>())
+            {
+                if (c == null || (!string.IsNullOrEmpty(c.guid) && !seenGuids.Add(c.guid))) { continue; }
+                string slotId = c.categoryId?.Trim() ?? "";
+                var asset = LoadByGuid<UnityEngine.Object>(c.guid);
+                if (asset != null && IsValidCosmeticAsset(asset, out _))
+                {
+                    // Slot first, then add: CreateSlotControl auto-picks a slot for any asset without one.
+                    _cosmeticSlotIds[asset] = slotId;
+                    _cosmeticAssets.Add(asset);
+                }
+                else { _unboundItems.Add(new UnboundItem { name = c.name ?? c.gameId ?? c.id, guid = c.guid, slotId = slotId, isAvatar = false }); }
+            }
+
+            UpdateAvatarPrefabsUI(); // rebuilds the cosmetic rows too, and saves
+            if (_avatarPrefabsFoldout != null) { _avatarPrefabsFoldout.value = true; }
+            if (_cosmeticPrefabsFoldout != null) { _cosmeticPrefabsFoldout.value = true; }
+
+            _loadedCatalogId = cat.catalogId;
+            _loadedSignature = SavePrefabGuids(); // after the rebuild, so auto-picked slots are part of it
+            PersistLoadedState(RosterStatusText(catName, detail?.versionTag));
+            UpdateCatalogListUI(); // re-aim the card highlight
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[AvatarPublisher] Loading \"{catName}\" failed: {ex.Message}");
+            if (this != null) { SetRosterStatus($"Couldn't load \"{catName}\": {ex.Message}", isError: true); }
+        }
+    }
+
+    // Card "Load": target this catalog (Existing mode + dropdown) and fill the lists from its latest version.
+    private void OnLoadCatalogClicked(CatalogSummary catalog)
+    {
+        if (_isPublishing || catalog == null) { return; }
+        EditorPrefs.SetString(SELECTED_CATALOG_KEY, catalog.catalogId);
+        SelectRadioButton(_catalogModeGroup, 1);
+        EditorPrefs.SetInt(CATALOG_MODE_KEY, 1);
+        UpdateCatalogModeUI(1); // its dropdown rebuild restores the saved id silently
+        AutoFillVersionForSelectedCatalog();
+        _ = LoadCatalogRosterAsync(catalog);
+    }
+
+    private static T LoadByGuid<T>(string guid) where T : UnityEngine.Object
+    {
+        if (string.IsNullOrEmpty(guid)) { return null; }
+        string path = AssetDatabase.GUIDToAssetPath(guid);
+        return string.IsNullOrEmpty(path) ? null : AssetDatabase.LoadAssetAtPath<T>(path);
+    }
+
+    private string RosterStatusText(string catName, string versionTag)
+    {
+        string text = $"Showing \"{catName}\"{(string.IsNullOrEmpty(versionTag) ? "" : " v" + versionTag)} - " +
+                      $"{_avatarPrefabs.Count(p => p != null)} avatar(s), {_cosmeticAssets.Count(p => p != null)} cosmetic(s)";
+        return _unboundItems.Count > 0
+            ? $"{text}, {_unboundItems.Count} missing in this project (placeholders, skipped at publish)."
+            : $"{text}.";
+    }
+
+    // Only the "Showing ..." text is persisted; loading / error / hint texts are transient.
+    private void PersistLoadedState(string statusText)
+    {
+        EditorPrefs.SetString(LOADED_CATALOG_KEY, _loadedCatalogId ?? "");
+        EditorPrefs.SetString(LOADED_SIGNATURE_KEY, _loadedSignature ?? "");
+        EditorPrefs.SetString(ROSTER_STATUS_KEY, statusText ?? "");
+        SetRosterStatus(statusText);
+    }
+
+    private void SetRosterStatus(string text, bool isError = false)
+    {
+        if (_rosterStatus == null) { return; }
+        _rosterStatus.text = text ?? "";
+        _rosterStatus.style.display = string.IsNullOrEmpty(text) ? DisplayStyle.None : DisplayStyle.Flex;
+        _rosterStatus.EnableInClassList("error-label", isError);
+        _rosterStatus.EnableInClassList("empty-label", !isError);
     }
 
     #endregion
@@ -819,6 +1015,10 @@ public class AvatarPublisherUI : EditorWindow
             });
             _avatarPrefabsContainer.Add(row);
         }
+        foreach (UnboundItem item in _unboundItems)
+        {
+            if (item.isAvatar) { _avatarPrefabsContainer.Add(CreateUnboundRow(item)); }
+        }
 
         UpdateCosmeticPrefabsUI();
         UpdatePrefabFoldoutLabels();
@@ -851,22 +1051,28 @@ public class AvatarPublisherUI : EditorWindow
                 UpdateCosmeticPrefabsUI();
             });
             // The asset field's type follows the chosen slot until an asset is assigned; after that a
-            // kind/type mismatch is shown immediately and blocks publish.
-            var objectField = row.Q<ObjectField>();
+            // kind/type mismatch is shown immediately and blocks publish. Query by class: the row can also
+            // hold the custom-icon picker, which is an ObjectField too.
+            var objectField = row.Q<ObjectField>(className: "prefab-object-field");
             slotControl.RegisterValueChangedCallback(evt =>
             {
                 if (asset == null) { objectField.objectType = CosmeticFieldType(null, evt.newValue); return; }
                 string mismatch = CosmeticKindMismatch(asset, evt.newValue);
                 if (mismatch != null) { ShowPrefabsError(mismatch); } else { ClearPrefabsError(); }
             });
-            // Row reads [asset][slot][X]; CreatePrefabRow builds [asset][X].
-            row.Insert(1, slotControl);
+            // Row reads [icon][asset][slot][X]; CreatePrefabRow builds [icon][asset][X].
+            row.Insert(2, slotControl);
             _cosmeticPrefabsContainer.Add(row);
+        }
+        foreach (UnboundItem item in _unboundItems)
+        {
+            if (!item.isAvatar) { _cosmeticPrefabsContainer.Add(CreateUnboundRow(item)); }
         }
 
         UpdateAvatarSlotsSummary();
         UpdatePrefabFoldoutLabels();
         SavePrefabGuids();
+        ScheduleIconBakes(); // every rebuild path ends here — prune dead icons, bake missing ones off the hot path
     }
 
     /// <summary>
@@ -1027,6 +1233,9 @@ public class AvatarPublisherUI : EditorWindow
         var row = new VisualElement();
         row.AddToClassList("prefab-row");
 
+        Image icon = CreateIconElement(currentValue, row);
+        row.Add(icon);
+
         var objectField = new ObjectField();
         objectField.objectType = objectType;
         // Only project assets are valid catalog content — never scene objects.
@@ -1042,11 +1251,15 @@ public class AvatarPublisherUI : EditorWindow
                 ShowPrefabsError(reason);
                 // Revert without re-triggering this callback.
                 objectField.SetValueWithoutNotify(null);
+                icon.userData = null;
                 onValueChanged(null);
             }
             else
             {
                 ClearPrefabsError();
+                // Avatar rows are NOT rebuilt on a value change (only the cosmetic rows are), so the icon
+                // tracks its asset here; RefreshIconImages reads it back.
+                icon.userData = asset;
                 onValueChanged(asset);
             }
             UpdatePrefabFoldoutLabels();
@@ -1061,18 +1274,242 @@ public class AvatarPublisherUI : EditorWindow
         return row;
     }
 
+    #region Icons
+
+    // The row's icon: the cached auto render, or the creator's custom texture. Click → inline custom-icon
+    // picker; drop a Texture2D → custom icon; right-click → reset. Every handler reads icon.userData at event
+    // time (never the captured asset) because avatar rows keep their icon across ObjectField changes.
+    private Image CreateIconElement(UnityEngine.Object asset, VisualElement row)
+    {
+        var icon = new Image { scaleMode = ScaleMode.ScaleToFit, userData = asset, image = IconTexture(asset) };
+        icon.AddToClassList("prefab-icon");
+        icon.tooltip = "Click to choose a custom icon, or drop a texture here. Right-click to reset to the auto icon.";
+
+        icon.RegisterCallback<ClickEvent>(_ => ToggleIconPicker(icon, row));
+        icon.RegisterCallback<DragUpdatedEvent>(evt =>
+        {
+            // Only claim texture drags: a prefab dragged across the icon must still reach the Foldout's multi-drop.
+            if (icon.userData as UnityEngine.Object == null || !DragAndDrop.objectReferences.Any(o => o is Texture2D)) { return; }
+            DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+            evt.StopPropagation();
+        });
+        icon.RegisterCallback<DragPerformEvent>(evt =>
+        {
+            var tex = DragAndDrop.objectReferences.OfType<Texture2D>().FirstOrDefault();
+            if (icon.userData as UnityEngine.Object == null || tex == null) { return; }
+            DragAndDrop.AcceptDrag();
+            SetCustomIcon(icon.userData as UnityEngine.Object, tex);
+            evt.StopPropagation(); // or the Foldout's multi-drop ALSO adds the texture as a cosmetic
+        });
+        icon.AddManipulator(new ContextualMenuManipulator(evt =>
+        {
+            var target = icon.userData as UnityEngine.Object;
+            bool custom = target != null && _customIcons.ContainsKey(target);
+            evt.menu.AppendAction("Reset to auto icon", _ => SetCustomIcon(target, null),
+                custom ? DropdownMenuAction.Status.Normal : DropdownMenuAction.Status.Disabled);
+        }));
+        return icon;
+    }
+
+    // Inline Texture2D field right after the icon. It stays until the icon is clicked again or the rows
+    // rebuild (any list change), so the object picker can keep updating it while open.
+    private void ToggleIconPicker(Image icon, VisualElement row)
+    {
+        var existing = row.Q<ObjectField>(className: "icon-picker-field");
+        if (existing != null) { existing.RemoveFromHierarchy(); return; }
+        var target = icon.userData as UnityEngine.Object;
+        if (target == null) { return; }
+
+        var picker = new ObjectField { objectType = typeof(Texture2D), allowSceneObjects = false };
+        picker.AddToClassList("icon-picker-field");
+        picker.tooltip = "Custom icon (a project Texture2D). Clear it to go back to the auto icon.";
+        picker.SetValueWithoutNotify(_customIcons.TryGetValue(target, out Texture2D current) ? current : null);
+        picker.RegisterValueChangedCallback(evt => SetCustomIcon(icon.userData as UnityEngine.Object, evt.newValue as Texture2D));
+        row.Insert(row.IndexOf(icon) + 1, picker);
+    }
+
+    private void SetCustomIcon(UnityEngine.Object asset, Texture2D tex)
+    {
+        if (asset == null) { return; }
+        if (tex != null && !AssetDatabase.IsMainAsset(tex))
+        {
+            // An embedded texture shares its model's GUID, so it could never be restored correctly.
+            ShowPrefabsError($"\"{tex.name}\" is embedded in another asset. Extract it into its own file to use it as an icon.");
+            return;
+        }
+        if (tex != null) { _customIcons[asset] = tex; } else { _customIcons.Remove(asset); }
+        BakeIcon(asset);
+        RefreshIconImages();
+        SavePrefabGuids();
+    }
+
+    private Texture2D IconTexture(UnityEngine.Object asset)
+    {
+        return asset != null && _icons.TryGetValue(asset, out Texture2D tex) ? tex : null;
+    }
+
+    private void BakeIcon(UnityEngine.Object asset)
+    {
+        if (asset == null) { return; }
+        if (_icons.TryGetValue(asset, out Texture2D old) && old != null) { DestroyImmediate(old); }
+        _icons[asset] = _customIcons.TryGetValue(asset, out Texture2D custom) && custom != null
+            ? AssetThumbnailBaker.ToReadableSquare(custom, ICON_SIZE)
+            : AssetThumbnailBaker.BakeAsset(asset, ICON_SIZE);
+    }
+
+    private IEnumerable<UnityEngine.Object> ListedAssets()
+    {
+        return _avatarPrefabs.Cast<UnityEngine.Object>().Concat(_cosmeticAssets).Where(a => a != null);
+    }
+
+    // Prune icons for assets no longer listed, re-point the row images, then bake what's missing — one asset
+    // per editor tick (DeferredBakeIcons), so a ten-avatar drop never freezes the editor for seconds.
+    private void ScheduleIconBakes()
+    {
+        var listed = new HashSet<UnityEngine.Object>(ListedAssets());
+        foreach (UnityEngine.Object stale in _icons.Keys.Where(k => k == null || !listed.Contains(k)).ToList())
+        {
+            if (_icons[stale] != null) { DestroyImmediate(_icons[stale]); }
+            _icons.Remove(stale);
+        }
+        RefreshIconImages(); // a swapped-out asset's row may still show a destroyed texture
+
+        if (_bakeScheduled || !listed.Any(a => !_icons.ContainsKey(a))) { return; }
+        _bakeScheduled = true;
+        EditorApplication.delayCall += DeferredBakeIcons;
+    }
+
+    private void DeferredBakeIcons()
+    {
+        _bakeScheduled = false;
+        if (this == null || _isPublishing) { return; } // publishing switches the build target; bake after
+        UnityEngine.Object next = ListedAssets().FirstOrDefault(a => !_icons.ContainsKey(a));
+        if (next == null) { return; }
+        BakeIcon(next);
+        RefreshIconImages();
+        ScheduleIconBakes(); // re-arms while anything is still missing
+    }
+
+    private void RefreshIconImages()
+    {
+        rootVisualElement?.Query<Image>(className: "prefab-icon")
+            .ForEach(img => img.image = IconTexture(img.userData as UnityEngine.Object));
+    }
+
+    private void ClearIcons()
+    {
+        foreach (Texture2D tex in _icons.Values) { if (tex != null) { DestroyImmediate(tex); } }
+        _icons.Clear();
+    }
+
+    // Upload object name: the asset GUID is hex-only and unique, where sanitised display names can collide
+    // (avatar "Hat_Halo" vs slot "Hat" + id "Halo").
+    private static string IconObjectName(UnityEngine.Object asset)
+    {
+        return $"thumb_{AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(asset))}.png";
+    }
+
+    // Publish-time icons: re-bakes EVERY listed asset (a cached preview may predate an edit to the prefab or
+    // material) and returns the PNGs keyed by upload object name. Runs before the Addressables build, which
+    // switches the build target out from under PreviewRenderUtility.
+    private Dictionary<string, byte[]> CollectIconPngs()
+    {
+        var icons = new Dictionary<string, byte[]>();
+        foreach (UnityEngine.Object asset in ListedAssets())
+        {
+            BakeIcon(asset);
+            Texture2D tex = IconTexture(asset);
+            if (tex == null) { continue; }
+            try { icons[IconObjectName(asset)] = tex.EncodeToPNG(); }
+            catch (Exception ex) { Debug.LogWarning($"[AvatarPublisher] Icon encode failed for \"{asset.name}\": {ex.Message}"); }
+        }
+        RefreshIconImages();
+        return icons;
+    }
+
+    #endregion
+
+    // A loaded-catalog item whose published GUID has no valid asset in this project. The creator can rebind
+    // it (the published slot carries over) or remove it; left alone, publish skips it and the new version
+    // ships without it.
+    private VisualElement CreateUnboundRow(UnboundItem item)
+    {
+        var row = new VisualElement();
+        row.AddToClassList("prefab-row");
+
+        var label = new Label(item.isAvatar || string.IsNullOrEmpty(item.slotId)
+            ? $"{item.name} - missing or invalid in this project"
+            : $"{item.name} - missing or invalid in this project (slot {item.slotId})");
+        label.AddToClassList("unbound-label");
+        label.tooltip = $"Published GUID {item.guid} resolves to no valid asset here. Assign the asset to rebind it, or remove the row. Publish skips it otherwise.";
+        row.Add(label);
+
+        var objectField = new ObjectField
+        {
+            objectType = item.isAvatar ? typeof(GameObject) : CosmeticFieldType(null, item.slotId),
+            allowSceneObjects = false,
+        };
+        objectField.AddToClassList("prefab-object-field");
+        objectField.RegisterValueChangedCallback(evt =>
+        {
+            UnityEngine.Object asset = evt.newValue;
+            if (asset == null) { return; }
+            string reason;
+            bool ok = item.isAvatar
+                ? IsValidAvatarPrefab(asset as GameObject, out reason)
+                // Not ValidateAsset: it reads the slot dict, which has no entry for a freshly picked asset.
+                : IsValidCosmeticAsset(asset, out reason) && (reason = CosmeticKindMismatch(asset, item.slotId)) == null;
+            if (!ok)
+            {
+                ShowPrefabsError(reason);
+                objectField.SetValueWithoutNotify(null);
+                return;
+            }
+            ClearPrefabsError();
+            _unboundItems.Remove(item);
+            if (item.isAvatar)
+            {
+                _avatarPrefabs.Add((GameObject)asset);
+                UpdateAvatarPrefabsUI();
+            }
+            else
+            {
+                _cosmeticSlotIds[asset] = item.slotId; // slot first, then add (CreateSlotControl auto-picks otherwise)
+                _cosmeticAssets.Add(asset);
+                UpdateCosmeticPrefabsUI();
+            }
+        });
+        row.Add(objectField);
+
+        var removeBtn = new Button(() =>
+        {
+            _unboundItems.Remove(item);
+            if (item.isAvatar) { UpdateAvatarPrefabsUI(); } else { UpdateCosmeticPrefabsUI(); }
+        }) { text = "X" };
+        removeBtn.AddToClassList("remove-prefab-button");
+        row.Add(removeBtn);
+
+        return row;
+    }
+
     private void UpdatePrefabFoldoutLabels()
     {
         int avatarCount = _avatarPrefabs.Count(p => p != null);
         int cosmeticCount = _cosmeticAssets.Count(p => p != null);
+        int avatarMissing = _unboundItems.Count(i => i.isAvatar);
+        int cosmeticMissing = _unboundItems.Count - avatarMissing;
 
         if (_avatarPrefabsFoldout != null)
         {
-            _avatarPrefabsFoldout.text = $"Avatar Prefabs ({avatarCount})";
+            _avatarPrefabsFoldout.text = avatarMissing > 0
+                ? $"Avatar Prefabs ({avatarCount}, {avatarMissing} missing)"
+                : $"Avatar Prefabs ({avatarCount})";
         }
         if (_cosmeticPrefabsFoldout != null)
         {
-            _cosmeticPrefabsFoldout.text = $"Cosmetics ({cosmeticCount})";
+            _cosmeticPrefabsFoldout.text = cosmeticMissing > 0
+                ? $"Cosmetics ({cosmeticCount}, {cosmeticMissing} missing)"
+                : $"Cosmetics ({cosmeticCount})";
         }
     }
 
@@ -1200,6 +1637,11 @@ public class AvatarPublisherUI : EditorWindow
     {
         if (_buildModeGroup == null || _buildModeGroup.value != 0) { return; } // auto-build only
 
+        if (_unboundItems.Count > 0)
+        {
+            Debug.LogWarning($"[AvatarPublisher] {_unboundItems.Count} item(s) from the loaded catalog have no local asset and will NOT be in this version: {string.Join(", ", _unboundItems.Select(i => i.name))}");
+        }
+
         List<string> declared = CollectDeclaredSlotIds();
         foreach (var cosmetic in _cosmeticAssets)
         {
@@ -1254,13 +1696,30 @@ public class AvatarPublisherUI : EditorWindow
 
     // --- Auto-build prefab-selection persistence (survives window reconstruction) ---
 
-    private void SavePrefabGuids()
+    // Returns the publishable shape (which assets, which slot each cosmetic targets) so callers can detect
+    // edits since the last catalog load. Placeholders are persisted but not part of it: removing one
+    // changes nothing that ships.
+    private string SavePrefabGuids()
     {
-        EditorPrefs.SetString(AVATAR_PREFAB_GUIDS_KEY, SerializePrefabGuids(_avatarPrefabs));
-        EditorPrefs.SetString(COSMETIC_PREFAB_GUIDS_KEY, SerializePrefabGuids(_cosmeticAssets));
-        EditorPrefs.SetString(COSMETIC_SLOT_IDS_KEY, string.Join(",", _cosmeticAssets
+        string avatarGuids = SerializePrefabGuids(_avatarPrefabs);
+        string cosmeticGuids = SerializePrefabGuids(_cosmeticAssets);
+        string cosmeticSlots = string.Join(",", _cosmeticAssets
             .Where(p => p != null && !string.IsNullOrEmpty(GetCosmeticSlotId(p)))
-            .Select(p => $"{AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(p))}={GetCosmeticSlotId(p)}")));
+            .Select(p => $"{AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(p))}={GetCosmeticSlotId(p)}"));
+        EditorPrefs.SetString(AVATAR_PREFAB_GUIDS_KEY, avatarGuids);
+        EditorPrefs.SetString(COSMETIC_PREFAB_GUIDS_KEY, cosmeticGuids);
+        EditorPrefs.SetString(COSMETIC_SLOT_IDS_KEY, cosmeticSlots);
+        EditorPrefs.SetString(UNBOUND_ITEMS_KEY, JsonUtility.ToJson(new UnboundItemList { items = _unboundItems }));
+        // Custom icons of LISTED assets only (unlisted ones stay in memory for re-adds, but never pile up in prefs).
+        var listed = new HashSet<UnityEngine.Object>(ListedAssets());
+        string customIcons = string.Join(",", _customIcons
+            .Where(kv => kv.Key != null && kv.Value != null && listed.Contains(kv.Key))
+            .Select(kv => $"{AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(kv.Key))}={AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(kv.Value))}"));
+        EditorPrefs.SetString(CUSTOM_ICONS_KEY, customIcons);
+        // A custom icon ships, so it counts as an edit — appended only when present, so signatures persisted
+        // before icons existed keep matching.
+        string signature = $"{avatarGuids}|{cosmeticGuids}|{cosmeticSlots}";
+        return customIcons.Length > 0 ? $"{signature}|{customIcons}" : signature;
     }
 
     private static string SerializePrefabGuids(IEnumerable<UnityEngine.Object> assets)
@@ -1280,6 +1739,27 @@ public class AvatarPublisherUI : EditorWindow
         RestorePrefabList(_avatarPrefabs, EditorPrefs.GetString(AVATAR_PREFAB_GUIDS_KEY, ""));
         RestorePrefabList(_cosmeticAssets, EditorPrefs.GetString(COSMETIC_PREFAB_GUIDS_KEY, ""));
         RestoreCosmeticSlotIds(EditorPrefs.GetString(COSMETIC_SLOT_IDS_KEY, ""));
+        // Placeholders + loaded-catalog state must be read BEFORE the rebuild below, which re-saves them.
+        _unboundItems.Clear();
+        string unboundJson = EditorPrefs.GetString(UNBOUND_ITEMS_KEY, "");
+        if (!string.IsNullOrEmpty(unboundJson))
+        {
+            try { _unboundItems.AddRange(JsonUtility.FromJson<UnboundItemList>(unboundJson)?.items ?? new List<UnboundItem>()); }
+            catch (Exception ex) { Debug.LogWarning($"[AvatarPublisher] Could not restore placeholder rows: {ex.Message}"); }
+        }
+        _loadedCatalogId = EditorPrefs.GetString(LOADED_CATALOG_KEY, "");
+        if (string.IsNullOrEmpty(_loadedCatalogId)) { _loadedCatalogId = null; }
+        _loadedSignature = EditorPrefs.GetString(LOADED_SIGNATURE_KEY, "");
+        SetRosterStatus(EditorPrefs.GetString(ROSTER_STATUS_KEY, ""));
+        _customIcons.Clear();
+        foreach (string pair in EditorPrefs.GetString(CUSTOM_ICONS_KEY, "").Split(','))
+        {
+            string[] parts = pair.Split('=');
+            if (parts.Length != 2) { continue; }
+            var asset = LoadByGuid<UnityEngine.Object>(parts[0]);
+            var tex = LoadByGuid<Texture2D>(parts[1]);
+            if (asset != null && tex != null) { _customIcons[asset] = tex; }
+        }
         // UpdateAvatarPrefabsUI rebuilds the cosmetic rows too — their slot options come from the avatars.
         UpdateAvatarPrefabsUI();
     }
@@ -1386,7 +1866,8 @@ public class AvatarPublisherUI : EditorWindow
                 Id = prefab.name,
                 Name = prefab.name,
                 GameId = prefab.name,
-                Guid = guid
+                Guid = guid,
+                IconObject = IconObjectName(prefab)
             });
         }
         return entries;
@@ -1413,7 +1894,8 @@ public class AvatarPublisherUI : EditorWindow
                 CategoryId = slotId,
                 Name = assetId,
                 GameId = assetId,
-                Guid = guid
+                Guid = guid,
+                IconObject = IconObjectName(prefab)
             });
         }
         return entries;
@@ -1793,7 +2275,9 @@ public class AvatarPublisherUI : EditorWindow
         var card = new VisualElement();
         card.AddToClassList("catalog-card");
 
-        if (catalog.catalogId == _lastPublishedCatalogId)
+        // Highlight = the catalog the lists currently belong to: just published, or loaded into them.
+        if (!string.IsNullOrEmpty(catalog.catalogId)
+            && (catalog.catalogId == _lastPublishedCatalogId || catalog.catalogId == _loadedCatalogId))
         {
             card.AddToClassList("catalog-card-highlight");
         }
@@ -1856,6 +2340,11 @@ public class AvatarPublisherUI : EditorWindow
 
             var buttonsContainer = new VisualElement();
             buttonsContainer.AddToClassList("catalog-card-buttons");
+
+            var loadBtn = new Button(() => OnLoadCatalogClicked(catalog)) { text = "Load" };
+            loadBtn.AddToClassList("action-button");
+            loadBtn.tooltip = "Fill the Avatar Prefabs / Cosmetics lists with this catalog's latest version, ready to publish the next one.";
+            buttonsContainer.Add(loadBtn);
 
             var renameBtn = new Button(() => StartRename(catalog)) { text = "Rename" };
             renameBtn.AddToClassList("action-button");
@@ -1921,6 +2410,9 @@ public class AvatarPublisherUI : EditorWindow
         try
         {
             await AvatarPublisherApi.DeleteCatalogAsync(catalogId);
+            // The list itself stays (republishing it as a new catalog is a legit next step); only the
+            // "Showing ..." claim goes.
+            if (this != null && catalogId == _loadedCatalogId) { _loadedCatalogId = null; PersistLoadedState(""); }
             _ = RefreshCatalogList();
             EditorUtility.DisplayDialog("Success", "Catalog deleted successfully!", "OK");
         }
@@ -2191,6 +2683,11 @@ public class AvatarPublisherUI : EditorWindow
 
         try
         {
+            // Icons are baked NOW, in the current build target: BuildForWebGPU switches it, and the preview
+            // renderer would bake under the wrong pipeline state afterwards.
+            UpdateProgress(0.01f, "Baking icons...");
+            Dictionary<string, byte[]> icons = CollectIconPngs();
+
             bool isNewCatalog = _catalogModeGroup.value == 0;
             string catalogName = isNewCatalog ? _catalogNameField.value.Trim() : _catalogs[_catalogDropdown.index].name;
             string versionTag = _versionTagField.value.Trim();
@@ -2303,6 +2800,10 @@ public class AvatarPublisherUI : EditorWindow
 
             UpdateProgress(0.6f, "Building metadata...");
 
+            // Icons ride the same presign / upload / confirm path as the bundles. UploadCatalogAsync drops them
+            // again (and blanks iconObject) if the backend predates icon support, so publishing never fails on them.
+            foreach (KeyValuePair<string, byte[]> icon in icons) { bundleFiles[icon.Key] = icon.Value; }
+
             // Build metadata from prefabs
             var avatarMetadata = BuildAvatarMetadataFromPrefabs();
             var cosmeticMetadata = BuildCosmeticMetadataFromPrefabs();
@@ -2317,7 +2818,8 @@ public class AvatarPublisherUI : EditorWindow
                     id = e.Id,
                     name = e.Name,
                     gameId = e.GameId,
-                    guid = e.Guid
+                    guid = e.Guid,
+                    iconObject = icons.ContainsKey(e.IconObject) ? e.IconObject : null
                 }).ToArray(),
                 cosmetics = cosmeticMetadata.Select(e => new CosmeticMetadata
                 {
@@ -2325,7 +2827,8 @@ public class AvatarPublisherUI : EditorWindow
                     categoryId = e.CategoryId,
                     name = e.Name,
                     gameId = e.GameId,
-                    guid = e.Guid
+                    guid = e.Guid,
+                    iconObject = icons.ContainsKey(e.IconObject) ? e.IconObject : null
                 }).ToArray()
             };
 
@@ -2349,6 +2852,14 @@ public class AvatarPublisherUI : EditorWindow
 
             _lastPublishedCatalogId = uploadedCatalog?.catalogId;
             UpdateProgress(1f, "Upload complete!");
+
+            // The lists ARE this version now: drop placeholders (they were skipped) and mark the roster clean,
+            // so the post-publish catalog selection below never re-fetches against a just-written store.
+            _unboundItems.Clear();
+            UpdateAvatarPrefabsUI();
+            _loadedCatalogId = uploadedCatalog?.catalogId;
+            _loadedSignature = SavePrefabGuids();
+            PersistLoadedState(RosterStatusText(uploadedCatalog?.name ?? catalogName, versionTag));
 
             await Task.Delay(500);
 

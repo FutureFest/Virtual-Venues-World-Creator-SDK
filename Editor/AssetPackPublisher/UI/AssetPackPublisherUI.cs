@@ -2177,18 +2177,18 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             Texture2D tex;
             if (row.iconMode == IconMode.Custom && row.customIcon != null)
             {
-                tex = ToReadableSquare(row.customIcon, 256);
+                tex = AssetThumbnailBaker.ToReadableSquare(row.customIcon, 256);
             }
             else if (IsSkyboxRow(row))
             {
                 if (row.texture == null) { return; }
                 tex = BakeSkyboxPreview(row.texture, 256);
-                if (tex == null && row.texture is Texture2D) { tex = ToReadableSquare(row.texture, 256); }
+                if (tex == null && row.texture is Texture2D) { tex = AssetThumbnailBaker.ToReadableSquare(row.texture, 256); }
             }
             else if (IsMaterialRow(row))
             {
                 if (row.material == null) { return; }
-                tex = BakeMaterialPreview(row.material, 256);
+                tex = AssetThumbnailBaker.BakeMaterial(row.material, 256);
             }
             else
             {
@@ -2202,66 +2202,8 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             catch (Exception ex) { Debug.LogWarning($"[AssetPackPublisher] preview encode failed: {ex.Message}"); }
         }
 
-        // Blit any (possibly compressed / non-readable) texture into a readable square Texture2D the caller owns,
-        // so a creator's custom icon uploads + displays exactly like a baked one.
-        private static Texture2D ToReadableSquare(Texture src, int size)
-        {
-            if (src == null || size <= 0) { return null; }
-
-            RenderTexture rt = RenderTexture.GetTemporary(size, size, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
-            RenderTexture prev = RenderTexture.active;
-            Texture2D tex = null;
-            try
-            {
-                RenderTexture.active = rt;
-                GL.Clear(true, true, new Color(0f, 0f, 0f, 0f)); // transparent background
-                Graphics.Blit(src, rt);
-
-                tex = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: false);
-                tex.ReadPixels(new Rect(0, 0, size, size), 0, 0);
-                tex.Apply();
-                return tex;
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[AssetPackPublisher] custom icon read failed: {ex.Message}");
-                if (tex != null) { DestroyImmediate(tex); }
-                return null;
-            }
-            finally
-            {
-                RenderTexture.active = prev;
-                RenderTexture.ReleaseTemporary(rt);
-            }
-        }
-
-        // Render a material on a preview SPHERE — the same primitive Unity's own material inspector uses,
-        // and for the same reason: a sphere shows the specular lobe, the normal map and the silhouette
-        // falloff at once, where a flat swatch shows only base colour (which the creator already knows).
-        // Goes through the shared PreviewRenderUtility baker so material tiles light and frame exactly like
-        // prefab tiles; the temporary sphere is destroyed either way.
-        private static Texture2D BakeMaterialPreview(Material material, int size)
-        {
-            if (material == null) { return null; }
-            GameObject sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            try
-            {
-                sphere.hideFlags = HideFlags.HideAndDontSave;
-                Collider sphereCollider = sphere.GetComponent<Collider>();
-                if (sphereCollider != null) { DestroyImmediate(sphereCollider); }
-                sphere.GetComponent<Renderer>().sharedMaterial = material;
-                return AssetThumbnailBaker.BakeTexture(sphere, size);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[AssetPackPublisher] material preview failed for '{material.name}': {ex.Message}");
-                return null;
-            }
-            finally
-            {
-                DestroyImmediate(sphere);
-            }
-        }
+        // Texture (readable blit) and Material (preview sphere) paths live in AssetThumbnailBaker — shared
+        // with the Avatar Publisher.
 
         // Render a skybox texture as it will actually look in the sky: wrap it in the matching template
         // shader (editor-time Shader.Find is fine — every variant exists in-editor) and shoot a

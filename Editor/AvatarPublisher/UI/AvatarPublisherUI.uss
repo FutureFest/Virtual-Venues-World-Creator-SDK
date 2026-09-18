@@ -200,6 +200,37 @@
     margin-left: 4px;
 }
 
+/* Row icon: the baked preview (or the creator's custom texture). --vv-border, not --vv-inset: the row is
+   already inset-coloured and the cell would vanish. */
+.prefab-icon {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    margin-right: 4px;
+    background-color: var(--vv-border);
+    border-radius: 4px;
+}
+
+/* Inline custom-icon picker, shown by clicking the icon. */
+.icon-picker-field {
+    width: 150px;
+    height: 22px;
+    flex-shrink: 0;
+    margin-right: 4px;
+}
+
+/* Placeholder row for a loaded-catalog item with no valid local asset. min-width: 0 keeps a long name
+   from pushing the rebind ObjectField out of the row. */
+.unbound-label {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    color: var(--vv-warning);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .remove-prefab-button {
     width: 22px;
     height: 22px;
