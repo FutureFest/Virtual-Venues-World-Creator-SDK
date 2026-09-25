@@ -108,6 +108,7 @@ namespace VirtualVenues.Editor.Publishing
         /// <summary>Sets the remote load path baked into the catalog to the given content base URL.</summary>
         public void SetRemoteLoadPath(string contentBaseUrl)
         {
+            contentBaseUrl = PublicContentUrl(contentBaseUrl);
             var settings = GetOrCreateSettings();
             settings.profileSettings.SetValue(settings.activeProfileId, AddressableAssetSettings.kRemoteLoadPath, contentBaseUrl);
             EditorUtility.SetDirty(settings);
@@ -466,11 +467,23 @@ namespace VirtualVenues.Editor.Publishing
 
         // ---- static helpers -------------------------------------------------------------------- //
 
-        /// <summary>Builds the user-scoped content base URL for a catalog version.</summary>
+        /// <summary>Resolves the public download origin without changing custom origins.</summary>
+        // Only migrate the shared testing bucket. Presigned write URLs must never use this.
+        public static string PublicContentUrl(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return "https://de8iqu32dnmsj.cloudfront.net";
+            if (Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+                (uri.Host == "fractal-testing-ff-bucket.s3.amazonaws.com" ||
+                 uri.Host == "fractal-testing-ff-bucket.s3.us-east-1.amazonaws.com" ||
+                 uri.Host == "fractal-testing-ff-bucket.s3-us-east-1.amazonaws.com"))
+                return "https://de8iqu32dnmsj.cloudfront.net" + uri.AbsolutePath + uri.Query + uri.Fragment;
+            return value;
+        }
+
         public static string BuildContentBaseUrl(string bucketUrl, string userId, string catalogId, string versionId)
         {
             string safeUserId = Uri.EscapeDataString(userId);
-            return $"{bucketUrl}/users/{safeUserId}/catalogs/{catalogId}/versions/{versionId}";
+            return $"{PublicContentUrl(bucketUrl).TrimEnd('/')}/users/{safeUserId}/catalogs/{catalogId}/versions/{versionId}";
         }
 
         /// <summary>Generates a unique version id (UUID v4).</summary>

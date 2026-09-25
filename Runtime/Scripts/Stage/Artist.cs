@@ -96,5 +96,10 @@ namespace VirtualVenues.WorldCreator
             _instances.Add(artist);
             onArtistAdded?.Invoke(artist);
         }
+
+        private void OnDestroy()
+        {
+            _instances.Remove(this);
+        }
     }
 }

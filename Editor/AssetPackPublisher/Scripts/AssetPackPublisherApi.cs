@@ -445,7 +445,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             string noQuery = q >= 0 ? presignedBinUrl.Substring(0, q) : presignedBinUrl;
             int lastSlash = noQuery.LastIndexOf('/');
             if (lastSlash < 0) { return null; }
-            return noQuery.Substring(0, lastSlash + 1);
+            return AddressablesCatalogBuilder.PublicContentUrl(noQuery.Substring(0, lastSlash + 1));
         }
 
         private static string FindUrl(UploadUrl[] urls, string objectName)

@@ -56,6 +56,11 @@ namespace VirtualVenues.WorldCreator
             _instances.Add(stage);
             onStageAdded?.Invoke(stage);
         }
+
+        private void OnDestroy()
+        {
+            _instances.Remove(this);
+        }
     }
 
 #if UNITY_EDITOR

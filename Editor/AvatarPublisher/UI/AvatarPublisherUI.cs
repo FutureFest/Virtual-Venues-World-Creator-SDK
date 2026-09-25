@@ -2726,6 +2726,7 @@ public class AvatarPublisherUI : EditorWindow
             string contentBaseUrl = $"{binUri.Scheme}://{binUri.Host}" +
                 binUri.AbsolutePath.Substring(0, binUri.AbsolutePath.LastIndexOf('/'));
 
+            contentBaseUrl = VirtualVenues.Editor.Publishing.AddressablesCatalogBuilder.PublicContentUrl(contentBaseUrl);
             UpdateProgress(0.05f, "Configuring Addressables...");
 
             // Set remote load path to API-derived content URL

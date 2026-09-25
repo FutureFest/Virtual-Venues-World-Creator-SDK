@@ -75,6 +75,11 @@ namespace VirtualVenues.WorldCreator
             onStageTriggerAdded?.Invoke(trigger);
         }
 
+        private void OnDestroy()
+        {
+            _instances.Remove(this);
+        }
+
         private void FindStageReference()
         {
             var stages = FindObjectsByType<Stage>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);

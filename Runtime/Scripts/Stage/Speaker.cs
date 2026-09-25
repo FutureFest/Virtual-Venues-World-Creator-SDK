@@ -111,5 +111,10 @@ namespace VirtualVenues.WorldCreator
             _instances.Add(speaker);
             onSpeakerAdded?.Invoke(speaker);
         }
+
+        private void OnDestroy()
+        {
+            _instances.Remove(this);
+        }
     }
 }

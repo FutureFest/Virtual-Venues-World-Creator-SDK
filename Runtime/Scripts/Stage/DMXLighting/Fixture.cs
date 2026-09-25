@@ -76,6 +76,11 @@ namespace VirtualVenues.WorldCreator
             onFixtureAdded?.Invoke(fixture);
         }
 
+        private void OnDestroy()
+        {
+            _instances.Remove(this);
+        }
+
         private void FindStageReference()
         {
             var stages = FindObjectsByType<Stage>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);

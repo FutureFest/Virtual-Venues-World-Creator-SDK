@@ -101,5 +101,10 @@ namespace VirtualVenues.WorldCreator
             _instances.Add(screen);
             onScreenAdded?.Invoke(screen);
         }
+
+        private void OnDestroy()
+        {
+            _instances.Remove(this);
+        }
     }
 }
