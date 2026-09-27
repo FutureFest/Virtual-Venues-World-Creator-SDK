@@ -9,6 +9,7 @@ namespace VirtualVenues.WorldCreator
             None,
             BrowserBridge,
             Seat, // append only — serialized as int
+            Vehicle,
         }
 
         public abstract InteractbaleType InteractableType { get; }

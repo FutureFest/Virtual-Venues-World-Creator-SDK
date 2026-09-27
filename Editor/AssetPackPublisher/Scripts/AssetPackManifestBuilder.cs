@@ -252,6 +252,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             if (node.GetComponentInChildren<Stage>(true) != null) { return true; }
             if (node.GetComponentInChildren<Artist>(true) != null) { return true; }
             if (node.GetComponentInChildren<Seat>(true) != null) { return true; }
+            if (node.GetComponentInChildren<Vehicle>(true) != null) { return true; }
             return false;
         }
 

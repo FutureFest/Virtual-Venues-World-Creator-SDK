@@ -1192,11 +1192,37 @@ public class AvatarPublisherUI : EditorWindow
     private string CosmeticKindMismatch(UnityEngine.Object asset, string slotId)
     {
         if (asset == null || string.IsNullOrEmpty(slotId)) { return null; }
+        string special = SpecialSlotMismatch(asset, slotId);
+        if (special != null) { return special; }
         var kinds = DeclaredKindsOf(slotId).ToList();
         if (kinds.Count == 0 || kinds.Any(k => AssetTypeFor(k).IsInstanceOfType(asset))) { return null; }
 
         string expected = VirtualVenues.AvatarSlotKindExtensions.TargetsRenderers(kinds[0]) ? AssetTypeFor(kinds[0]).Name : "prefab";
         return $"\"{asset.name}\" is a {asset.GetType().Name}, but slot \"{slotId}\" is a {kinds[0]} slot and takes a {expected}.";
+    }
+
+    /// <summary>
+    /// The "Mount" and "Pet" slots aren't avatar slots: the runtime loads "Mount_&lt;id&gt;" / "Pet_&lt;id&gt;"
+    /// by that exact (case-sensitive) prefix and needs the matching SDK marker on the prefab root.
+    /// </summary>
+    private static string SpecialSlotMismatch(UnityEngine.Object asset, string slotId)
+    {
+        bool isMount = string.Equals(slotId, "Mount", StringComparison.OrdinalIgnoreCase);
+        bool isPet = string.Equals(slotId, "Pet", StringComparison.OrdinalIgnoreCase);
+        if (!isMount && !isPet) { return null; }
+
+        string canonical = isMount ? "Mount" : "Pet";
+        if (slotId != canonical) { return $"Slot \"{slotId}\" must be spelled exactly \"{canonical}\" - the runtime loads {canonical}_<name>."; }
+
+        var go = asset as GameObject;
+        bool hasMarker = go != null && (isMount
+            ? go.GetComponent<VirtualVenues.WorldCreator.Mount>() != null
+            // Pet marker by name (Pet or PetFollower) in the SDK namespace - FFXR has its own Pet class.
+            : go.GetComponents<MonoBehaviour>().Any(c => c != null
+                && c.GetType().Namespace == "VirtualVenues.WorldCreator"
+                && (c.GetType().Name == "Pet" || c.GetType().Name == "PetFollower")));
+        if (hasMarker) { return null; }
+        return $"\"{asset.name}\" is in the {canonical} slot but has no VirtualVenues {canonical} component on its root. Add it to the prefab root.";
     }
 
     /// <summary>One sub-foldout per avatar in this publish, listing the slots its cosmetics can target.</summary>
