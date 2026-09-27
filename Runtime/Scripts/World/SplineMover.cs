@@ -13,6 +13,8 @@ namespace VirtualVenues.WorldCreator
     /// every player sees the ride in the same place (the core project swaps in the shared network clock).
     /// Put this on a CHILD of the spline object, never on the spline itself (it would drag its own track).
     /// </summary>
+    // Movers run before KeepUpright (-40) and the player's platform probe (0), so a rider reads this frame's pose.
+    [DefaultExecutionOrder(-50)]
     public class SplineMover : MonoBehaviour
     {
         private static InstanceTracker<SplineMover> _tracker = new InstanceTracker<SplineMover>();

@@ -2,6 +2,27 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.10.0] - 2026-09-27
+
+### Changed
+- **Respawn Zone:** new **Affects Players** option (default on). Turn it off for a vehicle-only kill zone: riders are
+  dismounted and the vehicle goes home, but players on foot are not respawned.
+- **`KeepUpright`:** new **Carry Players** option (default on), so ferris-wheel pods carry the players standing in them.
+- `RotatingObject`, `SplineMover` and `AnimatedObject` now run before the player's platform probe (execution order
+  -50; `KeepUpright` -40), so riders no longer slide sideways on moving platforms.
+
+Needs the matching FutureFestXR player and server update, which also keeps riders glued to moving platforms as seen
+by other players.
+
+### Changed — Avatar Publisher
+- **Costumes** are listed under Avatar Prefabs with a Kind dropdown (Avatar / Costume, defaulting by the
+  `Costume_` name) and publish as cosmetics in the `Costume` slot.
+- Legacy `PetSO` / `MountData` assets publish into their own Pet / Mount category; SDK `Mount` / `PetFollower`
+  marker prefabs are still accepted in those slots.
+- Row icons: failed bakes retry, icons no longer go blank after a scene open or publish build, and custom icons
+  are kept even after their asset is removed.
+- Saved lists and custom icons are stored per project, so two projects on one machine no longer overwrite each other.
+
 ## [0.9.26] - 2026-09-27
 
 ### Added — world features ported from the old FutureFest SDK

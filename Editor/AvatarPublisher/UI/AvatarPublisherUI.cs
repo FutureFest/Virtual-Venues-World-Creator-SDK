@@ -157,13 +157,22 @@ public class AvatarPublisherUI : EditorWindow
     private const string ROSTER_STATUS_KEY = "AvatarPublisher_RosterStatus";
 
     // Row icons. _icons holds the baked (or custom-blitted) textures the window OWNS; a null value means the
-    // bake was attempted and failed, so a bad asset never reschedules forever. _customIcons are project
-    // references (never destroyed, never pruned — re-adding an asset gets its custom icon back).
+    // bake failed, retried up to MAX_BAKE_ATTEMPTS so a bad asset never reschedules forever. _customIcons are
+    // project references (never destroyed, never pruned — re-adding an asset gets its custom icon back).
     private readonly Dictionary<UnityEngine.Object, Texture2D> _icons = new Dictionary<UnityEngine.Object, Texture2D>();
     private readonly Dictionary<UnityEngine.Object, Texture2D> _customIcons = new Dictionary<UnityEngine.Object, Texture2D>();
+    private readonly Dictionary<UnityEngine.Object, int> _bakeAttempts = new Dictionary<UnityEngine.Object, int>();
     private bool _bakeScheduled;
     private const string CUSTOM_ICONS_KEY = "AvatarPublisher_CustomIcons"; // "assetGuid=iconGuid,..."
     private const int ICON_SIZE = 256;
+    private const int MAX_BAKE_ATTEMPTS = 3;
+
+    // Costumes are full avatar prefabs listed under Avatars, but they publish as cosmetics in the "Costume"
+    // slot: address Costume_<id>, which is what AvatarContainer.ChangeCostume loads. An avatar with no entry
+    // here defaults by name (Costume_*), so a creator only touches the dropdown to override that.
+    private const string COSTUME_SLOT = "Costume";
+    private readonly Dictionary<GameObject, bool> _avatarKinds = new Dictionary<GameObject, bool>(); // true = costume
+    private const string AVATAR_KINDS_KEY = "AvatarPublisher_AvatarKinds"; // "assetGuid=Costume|Avatar,..."
 
     private class BundleFileInfo
     {
@@ -184,6 +193,7 @@ public class AvatarPublisherUI : EditorWindow
 
     private class CosmeticMetadataEntry
     {
+        public string[] AvatarIds;
         public string Id = "";
         public string CategoryId = "";
         public string Name = "";
@@ -868,6 +878,7 @@ public class AvatarPublisherUI : EditorWindow
             _avatarPrefabs.Clear();
             _cosmeticAssets.Clear();
             _cosmeticSlotIds.Clear();
+            _avatarKinds.Clear();
             _unboundItems.Clear();
 
             var seenGuids = new HashSet<string>();
@@ -875,7 +886,8 @@ public class AvatarPublisherUI : EditorWindow
             {
                 if (a == null || (!string.IsNullOrEmpty(a.guid) && !seenGuids.Add(a.guid))) { continue; }
                 var prefab = LoadByGuid<GameObject>(a.guid);
-                if (prefab != null && IsValidAvatarPrefab(prefab, out _)) { _avatarPrefabs.Add(prefab); }
+                // Published as an avatar, so it stays one even if it's named Costume_*.
+                if (prefab != null && IsValidAvatarPrefab(prefab, out _)) { _avatarPrefabs.Add(prefab); _avatarKinds[prefab] = false; }
                 else { _unboundItems.Add(new UnboundItem { name = a.name ?? a.gameId ?? a.id, guid = a.guid, isAvatar = true }); }
             }
 
@@ -885,6 +897,18 @@ public class AvatarPublisherUI : EditorWindow
                 if (c == null || (!string.IsNullOrEmpty(c.guid) && !seenGuids.Add(c.guid))) { continue; }
                 string slotId = c.categoryId?.Trim() ?? "";
                 var asset = LoadByGuid<UnityEngine.Object>(c.guid);
+                // Costumes (and avatars an older version wrongly published as cosmetics) belong under Avatars.
+                if (slotId == COSTUME_SLOT || IsAvatarRooted(asset))
+                {
+                    var costume = asset as GameObject;
+                    if (costume != null && IsValidAvatarPrefab(costume, out _))
+                    {
+                        if (!_avatarPrefabs.Contains(costume)) { _avatarPrefabs.Add(costume); }
+                        _avatarKinds[costume] = true;
+                    }
+                    else { _unboundItems.Add(new UnboundItem { name = c.name ?? c.gameId ?? c.id, guid = c.guid, slotId = COSTUME_SLOT, isAvatar = true }); }
+                    continue;
+                }
                 if (asset != null && IsValidCosmeticAsset(asset, out _))
                 {
                     // Slot first, then add: CreateSlotControl auto-picks a slot for any asset without one.
@@ -941,9 +965,9 @@ public class AvatarPublisherUI : EditorWindow
     // Only the "Showing ..." text is persisted; loading / error / hint texts are transient.
     private void PersistLoadedState(string statusText)
     {
-        EditorPrefs.SetString(LOADED_CATALOG_KEY, _loadedCatalogId ?? "");
-        EditorPrefs.SetString(LOADED_SIGNATURE_KEY, _loadedSignature ?? "");
-        EditorPrefs.SetString(ROSTER_STATUS_KEY, statusText ?? "");
+        SetPref(LOADED_CATALOG_KEY, _loadedCatalogId ?? "");
+        SetPref(LOADED_SIGNATURE_KEY, _loadedSignature ?? "");
+        SetPref(ROSTER_STATUS_KEY, statusText ?? "");
         SetRosterStatus(statusText);
     }
 
@@ -1003,9 +1027,11 @@ public class AvatarPublisherUI : EditorWindow
         for (int i = 0; i < _avatarPrefabs.Count; i++)
         {
             int index = i;
+            DropdownField kind = null;
             var row = CreatePrefabRow(_avatarPrefabs[i], true, typeof(GameObject), newValue =>
             {
                 _avatarPrefabs[index] = (GameObject)newValue;
+                kind?.SetValueWithoutNotify(IsCostume((GameObject)newValue) ? COSTUME_SLOT : "Avatar");
                 // The cosmetic slot dropdowns list the slots THESE avatars declare, so they must rebuild.
                 UpdateCosmeticPrefabsUI();
             }, () =>
@@ -1013,6 +1039,19 @@ public class AvatarPublisherUI : EditorWindow
                 _avatarPrefabs.RemoveAt(index);
                 UpdateAvatarPrefabsUI();
             });
+            // Row reads [icon][asset][kind][X]. Avatar rows aren't rebuilt on an asset change, so read the
+            // list at event time rather than capturing the prefab.
+            kind = new DropdownField(new List<string> { "Avatar", COSTUME_SLOT }, IsCostume(_avatarPrefabs[i]) ? 1 : 0);
+            kind.tooltip = "Costume: a whole-avatar outfit players put on over their avatar (and take off again). It publishes as Costume_<name> in the Costume slot, not as a selectable avatar.";
+            kind.AddToClassList("slot-field");
+            kind.RegisterValueChangedCallback(evt =>
+            {
+                GameObject prefab = _avatarPrefabs[index];
+                if (prefab == null) { return; }
+                _avatarKinds[prefab] = evt.newValue == COSTUME_SLOT;
+                UpdateCosmeticPrefabsUI(); // costumes' slots drop out of the cosmetic slot options
+            });
+            row.Insert(2, kind);
             _avatarPrefabsContainer.Add(row);
         }
         foreach (UnboundItem item in _unboundItems)
@@ -1095,6 +1134,8 @@ public class AvatarPublisherUI : EditorWindow
             return field;
         }
 
+        if (!options.Contains("Pet")) options.Add("Pet");
+        if (!options.Contains("Mount")) options.Add("Mount");
         // An unknown stored value must stay selectable, or reopening the window would silently retarget it.
         if (!string.IsNullOrEmpty(current) && !options.Contains(current)) { options.Insert(0, current); }
 
@@ -1116,7 +1157,19 @@ public class AvatarPublisherUI : EditorWindow
     private string GetCosmeticSlotId(UnityEngine.Object cosmetic)
     {
         if (cosmetic == null) { return ""; }
+        string companion = CompanionCategory(cosmetic);
+        if (companion != null) return companion;
         return _cosmeticSlotIds.TryGetValue(cosmetic, out string slot) ? slot : "";
+    }
+
+    // Companion ScriptableObjects belong to multiplayer, not the standalone SDK.
+    // Resolve their serialized types without creating a reverse assembly dependency.
+    private static string CompanionCategory(UnityEngine.Object asset)
+    {
+        if (asset == null) return null;
+        if (asset.GetType().FullName == "FutureFest.Pets.PetSO") return "Pet";
+        if (asset.GetType().FullName == "FutureFest.Actions.MountData") return "Mount";
+        return null;
     }
 
     private void SetCosmeticSlotId(UnityEngine.Object cosmetic, string slotId)
@@ -1130,7 +1183,7 @@ public class AvatarPublisherUI : EditorWindow
     private List<string> CollectDeclaredSlotIds()
     {
         var seen = new List<string>();
-        foreach (var prefab in _avatarPrefabs)
+        foreach (var prefab in RealAvatars())
         {
             foreach (string slotId in DeclaredSlotIds(prefab))
             {
@@ -1163,7 +1216,7 @@ public class AvatarPublisherUI : EditorWindow
     /// <summary>The kinds every avatar in this publish declares for <paramref name="slotId"/>; empty when undeclared.</summary>
     private IEnumerable<VirtualVenues.AvatarSlotKind> DeclaredKindsOf(string slotId)
     {
-        return _avatarPrefabs.SelectMany(DeclaredSlots)
+        return RealAvatars().SelectMany(DeclaredSlots)
             .Where(s => string.Equals(s.slotId, slotId, StringComparison.OrdinalIgnoreCase))
             .Select(s => s.kind);
     }
@@ -1192,6 +1245,9 @@ public class AvatarPublisherUI : EditorWindow
     private string CosmeticKindMismatch(UnityEngine.Object asset, string slotId)
     {
         if (asset == null || string.IsNullOrEmpty(slotId)) { return null; }
+        // A legacy PetSO / MountData picks its own slot; an SDK marker prefab goes through SpecialSlotMismatch.
+        string companion = CompanionCategory(asset);
+        if (companion != null) { return slotId == companion ? null : $"This asset belongs to the {companion} category."; }
         string special = SpecialSlotMismatch(asset, slotId);
         if (special != null) { return special; }
         var kinds = DeclaredKindsOf(slotId).ToList();
@@ -1207,6 +1263,10 @@ public class AvatarPublisherUI : EditorWindow
     /// </summary>
     private static string SpecialSlotMismatch(UnityEngine.Object asset, string slotId)
     {
+        if (string.Equals(slotId, COSTUME_SLOT, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"\"{asset.name}\": costumes are whole avatars. Add it under Avatar Prefabs and set Kind to Costume.";
+        }
         bool isMount = string.Equals(slotId, "Mount", StringComparison.OrdinalIgnoreCase);
         bool isPet = string.Equals(slotId, "Pet", StringComparison.OrdinalIgnoreCase);
         if (!isMount && !isPet) { return null; }
@@ -1236,9 +1296,8 @@ public class AvatarPublisherUI : EditorWindow
         }
         _avatarSlotsSummary.Clear();
 
-        foreach (var prefab in _avatarPrefabs)
+        foreach (var prefab in RealAvatars())
         {
-            if (prefab == null) { continue; }
             var slots = DeclaredSlotIds(prefab).Distinct().ToList();
             var foldout = new Foldout
             {
@@ -1378,9 +1437,24 @@ public class AvatarPublisherUI : EditorWindow
     {
         if (asset == null) { return; }
         if (_icons.TryGetValue(asset, out Texture2D old) && old != null) { DestroyImmediate(old); }
-        _icons[asset] = _customIcons.TryGetValue(asset, out Texture2D custom) && custom != null
+        Texture2D tex = _customIcons.TryGetValue(asset, out Texture2D custom) && custom != null
             ? AssetThumbnailBaker.ToReadableSquare(custom, ICON_SIZE)
             : AssetThumbnailBaker.BakeAsset(asset, ICON_SIZE);
+        // Ours, not the scene's: without this, an UnloadUnusedAssets (scene open, the publish build) frees it
+        // out from under _icons and the row goes blank.
+        if (tex != null) { tex.hideFlags = HideFlags.HideAndDontSave; _bakeAttempts.Remove(asset); }
+        else { _bakeAttempts[asset] = _bakeAttempts.TryGetValue(asset, out int n) ? n + 1 : 1; }
+        _icons[asset] = tex;
+    }
+
+    // Missing, destroyed behind our back (fake-null: the key's texture was unloaded), or a failed bake with
+    // retries left — a bake right after a project open can fail while imports are still running.
+    private bool NeedsBake(UnityEngine.Object asset)
+    {
+        if (!_icons.TryGetValue(asset, out Texture2D tex)) { return true; }
+        if (tex != null) { return false; }
+        if (!ReferenceEquals(tex, null)) { return true; }
+        return !_bakeAttempts.TryGetValue(asset, out int n) || n < MAX_BAKE_ATTEMPTS;
     }
 
     private IEnumerable<UnityEngine.Object> ListedAssets()
@@ -1400,7 +1474,7 @@ public class AvatarPublisherUI : EditorWindow
         }
         RefreshIconImages(); // a swapped-out asset's row may still show a destroyed texture
 
-        if (_bakeScheduled || !listed.Any(a => !_icons.ContainsKey(a))) { return; }
+        if (_bakeScheduled || !listed.Any(NeedsBake)) { return; }
         _bakeScheduled = true;
         EditorApplication.delayCall += DeferredBakeIcons;
     }
@@ -1408,8 +1482,16 @@ public class AvatarPublisherUI : EditorWindow
     private void DeferredBakeIcons()
     {
         _bakeScheduled = false;
-        if (this == null || _isPublishing) { return; } // publishing switches the build target; bake after
-        UnityEngine.Object next = ListedAssets().FirstOrDefault(a => !_icons.ContainsKey(a));
+        // Publishing switches the build target; the publish's finally re-arms us.
+        if (this == null || _isPublishing) { return; }
+        // Right after a project open / recompile the preview renderer bakes blanks; wait it out.
+        if (EditorApplication.isCompiling || EditorApplication.isUpdating)
+        {
+            _bakeScheduled = true;
+            EditorApplication.delayCall += DeferredBakeIcons;
+            return;
+        }
+        UnityEngine.Object next = ListedAssets().FirstOrDefault(NeedsBake);
         if (next == null) { return; }
         BakeIcon(next);
         RefreshIconImages();
@@ -1426,6 +1508,7 @@ public class AvatarPublisherUI : EditorWindow
     {
         foreach (Texture2D tex in _icons.Values) { if (tex != null) { DestroyImmediate(tex); } }
         _icons.Clear();
+        _bakeAttempts.Clear();
     }
 
     // Upload object name: the asset GUID is hex-only and unique, where sanitised display names can collide
@@ -1496,6 +1579,7 @@ public class AvatarPublisherUI : EditorWindow
             if (item.isAvatar)
             {
                 _avatarPrefabs.Add((GameObject)asset);
+                if (item.slotId == COSTUME_SLOT) { _avatarKinds[(GameObject)asset] = true; }
                 UpdateAvatarPrefabsUI();
             }
             else
@@ -1603,11 +1687,44 @@ public class AvatarPublisherUI : EditorWindow
         return true;
     }
 
+    // A VirtualVenues Avatar on the root = a whole avatar (or costume), never a cosmetic.
+    private static bool IsAvatarRooted(UnityEngine.Object asset)
+    {
+        return asset is GameObject go && go.GetComponent<VirtualVenues.Avatar>() != null;
+    }
+
+    private bool IsCostume(GameObject prefab)
+    {
+        if (prefab == null) { return false; }
+        return _avatarKinds.TryGetValue(prefab, out bool costume)
+            ? costume
+            : prefab.name.StartsWith(COSTUME_SLOT + "_", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private IEnumerable<GameObject> RealAvatars()
+    {
+        return _avatarPrefabs.Where(p => p != null && !IsCostume(p));
+    }
+
+    // Everything that publishes into cosmetics[]: the Cosmetics list plus the Avatars rows set to Costume.
+    private IEnumerable<(UnityEngine.Object asset, string slotId)> PublishedCosmetics()
+    {
+        return _cosmeticAssets.Where(a => a != null).Select(a => (a, GetCosmeticSlotId(a)))
+            .Concat(_avatarPrefabs.Where(IsCostume).Select(p => ((UnityEngine.Object)p, COSTUME_SLOT)));
+    }
+
     private static bool IsValidCosmeticAsset(UnityEngine.Object asset, out string reason)
     {
+        if (CompanionCategory(asset) != null)
+        {
+            reason = AssetDatabase.IsMainAsset(asset) ? null : "Use a standalone pet or mount asset.";
+            return reason == null;
+        }
         if (asset is GameObject go)
         {
-            reason = IsProjectPrefab(go) ? null : "Only project prefabs can be added (not scene objects).";
+            reason = !IsProjectPrefab(go) ? "Only project prefabs can be added (not scene objects)."
+                : IsAvatarRooted(go) ? $"\"{go.name}\" is an avatar. Add it under Avatar Prefabs instead (set Kind to Costume for a costume)."
+                : null;
             return reason == null;
         }
         if (asset is Material || asset is Texture2D)
@@ -1618,7 +1735,7 @@ public class AvatarPublisherUI : EditorWindow
                 : $"\"{asset.name}\" is embedded in another asset. Extract the {asset.GetType().Name} from the model into its own file first.";
             return reason == null;
         }
-        reason = "Cosmetics must be a project prefab, a Material, or a Texture2D.";
+        reason = "Choose a prefab, Material, Texture2D, PetSO, or MountData asset.";
         return false;
     }
 
@@ -1731,21 +1848,46 @@ public class AvatarPublisherUI : EditorWindow
         string cosmeticGuids = SerializePrefabGuids(_cosmeticAssets);
         string cosmeticSlots = string.Join(",", _cosmeticAssets
             .Where(p => p != null && !string.IsNullOrEmpty(GetCosmeticSlotId(p)))
-            .Select(p => $"{AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(p))}={GetCosmeticSlotId(p)}"));
-        EditorPrefs.SetString(AVATAR_PREFAB_GUIDS_KEY, avatarGuids);
-        EditorPrefs.SetString(COSMETIC_PREFAB_GUIDS_KEY, cosmeticGuids);
-        EditorPrefs.SetString(COSMETIC_SLOT_IDS_KEY, cosmeticSlots);
-        EditorPrefs.SetString(UNBOUND_ITEMS_KEY, JsonUtility.ToJson(new UnboundItemList { items = _unboundItems }));
-        // Custom icons of LISTED assets only (unlisted ones stay in memory for re-adds, but never pile up in prefs).
+            .Select(p => $"{AssetGuid(p)}={GetCosmeticSlotId(p)}"));
+        string avatarKinds = string.Join(",", _avatarKinds
+            .Where(kv => kv.Key != null && _avatarPrefabs.Contains(kv.Key))
+            .Select(kv => $"{AssetGuid(kv.Key)}={(kv.Value ? COSTUME_SLOT : "Avatar")}"));
+        SetPref(AVATAR_PREFAB_GUIDS_KEY, avatarGuids);
+        SetPref(COSMETIC_PREFAB_GUIDS_KEY, cosmeticGuids);
+        SetPref(COSMETIC_SLOT_IDS_KEY, cosmeticSlots);
+        SetPref(AVATAR_KINDS_KEY, avatarKinds);
+        SetPref(UNBOUND_ITEMS_KEY, JsonUtility.ToJson(new UnboundItemList { items = _unboundItems }));
+        // EVERY custom icon, listed or not: pruning to the listed assets lost an icon for good the moment its
+        // asset was removed or a catalog without it was loaded.
+        SetPref(CUSTOM_ICONS_KEY, string.Join(",", _customIcons
+            .Where(kv => kv.Key != null && kv.Value != null)
+            .Select(kv => $"{AssetGuid(kv.Key)}={AssetGuid(kv.Value)}")));
+        // A custom icon or a costume ships, so each counts as an edit — appended only when present, so
+        // signatures persisted before they existed keep matching.
         var listed = new HashSet<UnityEngine.Object>(ListedAssets());
-        string customIcons = string.Join(",", _customIcons
+        string listedIcons = string.Join(",", _customIcons
             .Where(kv => kv.Key != null && kv.Value != null && listed.Contains(kv.Key))
-            .Select(kv => $"{AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(kv.Key))}={AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(kv.Value))}"));
-        EditorPrefs.SetString(CUSTOM_ICONS_KEY, customIcons);
-        // A custom icon ships, so it counts as an edit — appended only when present, so signatures persisted
-        // before icons existed keep matching.
+            .Select(kv => $"{AssetGuid(kv.Key)}={AssetGuid(kv.Value)}"));
+        string costumes = SerializePrefabGuids(_avatarPrefabs.Where(IsCostume));
         string signature = $"{avatarGuids}|{cosmeticGuids}|{cosmeticSlots}";
-        return customIcons.Length > 0 ? $"{signature}|{customIcons}" : signature;
+        if (listedIcons.Length > 0) { signature += $"|{listedIcons}"; }
+        if (costumes.Length > 0) { signature += $"|costumes:{costumes}"; }
+        return signature;
+    }
+
+    private static string AssetGuid(UnityEngine.Object asset)
+    {
+        return AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(asset));
+    }
+
+    // EditorPrefs are per machine, but these lists and icons are per project: without the scope, opening the
+    // publisher in VVCC overwrote FFXR's saved lists and custom icons (and back). An unscoped value from before
+    // the scoping is read once as the fallback so nobody loses their current lists.
+    private static string ScopedKey(string key) => $"{key}_{PlayerSettings.productGUID}";
+    private static void SetPref(string key, string value) => EditorPrefs.SetString(ScopedKey(key), value);
+    private static string GetPref(string key)
+    {
+        return EditorPrefs.HasKey(ScopedKey(key)) ? EditorPrefs.GetString(ScopedKey(key)) : EditorPrefs.GetString(key, "");
     }
 
     private static string SerializePrefabGuids(IEnumerable<UnityEngine.Object> assets)
@@ -1762,23 +1904,38 @@ public class AvatarPublisherUI : EditorWindow
 
     private void RestorePrefabsFromGuids()
     {
-        RestorePrefabList(_avatarPrefabs, EditorPrefs.GetString(AVATAR_PREFAB_GUIDS_KEY, ""));
-        RestorePrefabList(_cosmeticAssets, EditorPrefs.GetString(COSMETIC_PREFAB_GUIDS_KEY, ""));
-        RestoreCosmeticSlotIds(EditorPrefs.GetString(COSMETIC_SLOT_IDS_KEY, ""));
+        RestorePrefabList(_avatarPrefabs, GetPref(AVATAR_PREFAB_GUIDS_KEY));
+        RestorePrefabList(_cosmeticAssets, GetPref(COSMETIC_PREFAB_GUIDS_KEY));
+        RestoreCosmeticSlotIds(GetPref(COSMETIC_SLOT_IDS_KEY));
+        _avatarKinds.Clear();
+        foreach (string pair in GetPref(AVATAR_KINDS_KEY).Split(','))
+        {
+            string[] parts = pair.Split('=');
+            if (parts.Length != 2) { continue; }
+            var prefab = LoadByGuid<GameObject>(parts[0]);
+            if (prefab != null) { _avatarKinds[prefab] = parts[1] == COSTUME_SLOT; }
+        }
+        // Saved state from before the avatar guard (VVCC's costumes sat in Cosmetics): move them to Avatars.
+        foreach (GameObject stray in _cosmeticAssets.Where(IsAvatarRooted).Cast<GameObject>().ToList())
+        {
+            _cosmeticAssets.Remove(stray);
+            if (!_avatarPrefabs.Contains(stray)) { _avatarPrefabs.Add(stray); }
+            _avatarKinds[stray] = true;
+        }
         // Placeholders + loaded-catalog state must be read BEFORE the rebuild below, which re-saves them.
         _unboundItems.Clear();
-        string unboundJson = EditorPrefs.GetString(UNBOUND_ITEMS_KEY, "");
+        string unboundJson = GetPref(UNBOUND_ITEMS_KEY);
         if (!string.IsNullOrEmpty(unboundJson))
         {
             try { _unboundItems.AddRange(JsonUtility.FromJson<UnboundItemList>(unboundJson)?.items ?? new List<UnboundItem>()); }
             catch (Exception ex) { Debug.LogWarning($"[AvatarPublisher] Could not restore placeholder rows: {ex.Message}"); }
         }
-        _loadedCatalogId = EditorPrefs.GetString(LOADED_CATALOG_KEY, "");
+        _loadedCatalogId = GetPref(LOADED_CATALOG_KEY);
         if (string.IsNullOrEmpty(_loadedCatalogId)) { _loadedCatalogId = null; }
-        _loadedSignature = EditorPrefs.GetString(LOADED_SIGNATURE_KEY, "");
-        SetRosterStatus(EditorPrefs.GetString(ROSTER_STATUS_KEY, ""));
+        _loadedSignature = GetPref(LOADED_SIGNATURE_KEY);
+        SetRosterStatus(GetPref(ROSTER_STATUS_KEY));
         _customIcons.Clear();
-        foreach (string pair in EditorPrefs.GetString(CUSTOM_ICONS_KEY, "").Split(','))
+        foreach (string pair in GetPref(CUSTOM_ICONS_KEY).Split(','))
         {
             string[] parts = pair.Split('=');
             if (parts.Length != 2) { continue; }
@@ -1830,7 +1987,9 @@ public class AvatarPublisherUI : EditorWindow
         foldout.RegisterCallback<DragUpdatedEvent>(evt =>
         {
             bool anyValid = DragAndDrop.objectReferences.Any(obj => ValidateAsset(obj, isAvatar, out _));
-            DragAndDrop.visualMode = anyValid ? DragAndDropVisualMode.Copy : DragAndDropVisualMode.Rejected;
+            // An avatar dropped on Cosmetics is still accepted as a drop, so the drop can say where it belongs.
+            bool explain = !isAvatar && DragAndDrop.objectReferences.Any(IsAvatarRooted);
+            DragAndDrop.visualMode = anyValid || explain ? DragAndDropVisualMode.Copy : DragAndDropVisualMode.Rejected;
             evt.StopPropagation();
         });
 
@@ -1846,10 +2005,11 @@ public class AvatarPublisherUI : EditorWindow
 
             int added = 0;
             int rejected = 0;
+            string rejectReason = null;
             foreach (var obj in DragAndDrop.objectReferences)
             {
                 if (obj == null) { continue; }
-                if (!ValidateAsset(obj, isAvatar, out _)) { rejected++; continue; }
+                if (!ValidateAsset(obj, isAvatar, out string reason)) { rejected++; rejectReason = reason; continue; }
 
                 string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(obj));
                 if (string.IsNullOrEmpty(guid) || seenGuids.Contains(guid)) { continue; }
@@ -1867,11 +2027,9 @@ public class AvatarPublisherUI : EditorWindow
                 // Keep the foldout open so the user sees what they just dropped.
                 foldout.value = true;
             }
-            else if (rejected > 0)
+            if (rejected > 0)
             {
-                ShowPrefabsError(isAvatar
-                    ? "Dropped items must be project prefabs with a VirtualVenues Avatar component."
-                    : "Dropped items must be project prefabs, Materials or Texture2Ds.");
+                ShowPrefabsError(rejected == 1 ? rejectReason : $"{rejected} dropped item(s) were skipped. Last one: {rejectReason}");
             }
             evt.StopPropagation();
         });
@@ -1880,10 +2038,8 @@ public class AvatarPublisherUI : EditorWindow
     private List<AvatarMetadataEntry> BuildAvatarMetadataFromPrefabs()
     {
         var entries = new List<AvatarMetadataEntry>();
-        foreach (var prefab in _avatarPrefabs)
+        foreach (var prefab in RealAvatars()) // costumes publish as cosmetics
         {
-            if (prefab == null) { continue; }
-
             string assetPath = AssetDatabase.GetAssetPath(prefab);
             string guid = AssetDatabase.AssetPathToGUID(assetPath);
 
@@ -1902,20 +2058,20 @@ public class AvatarPublisherUI : EditorWindow
     private List<CosmeticMetadataEntry> BuildCosmeticMetadataFromPrefabs()
     {
         var entries = new List<CosmeticMetadataEntry>();
-        foreach (var prefab in _cosmeticAssets)
+        foreach (var (prefab, slotId) in PublishedCosmetics())
         {
-            if (prefab == null) { continue; }
-
             string assetPath = AssetDatabase.GetAssetPath(prefab);
             string guid = AssetDatabase.AssetPathToGUID(assetPath);
 
-            string slotId = GetCosmeticSlotId(prefab);
             // gameId is the UNPREFIXED asset id: the runtime rebuilds the address as {slotId}_{gameId},
             // so publishing the prefixed name would make it request Hat_Hat_Halo.
             AvatarCatalogBuilder.ResolveCosmeticAddress(prefab.name, slotId, out _, out string assetId);
 
             entries.Add(new CosmeticMetadataEntry
             {
+                AvatarIds = CompanionCategory(prefab) != null ? null : _avatarPrefabs
+                    .Where(avatar => avatar != null && DeclaredSlotIds(avatar).Contains(slotId))
+                    .Select(avatar => avatar.name).ToArray(),
                 Id = assetId,
                 CategoryId = slotId,
                 Name = assetId,
@@ -2131,6 +2287,9 @@ public class AvatarPublisherUI : EditorWindow
                 },
                 entry.CategoryId,
                 categoryId => _cosmeticEntries[index].CategoryId = categoryId);
+
+            entryElement.Add(CreateMetadataFieldRow("Avatar IDs:", string.Join(",", entry.AvatarIds ?? new string[0]), value =>
+                _cosmeticEntries[index].AvatarIds = value.Split(',').Select(id => id.Trim()).Where(id => id.Length > 0).ToArray()));
 
             _cosmeticsContainer.Add(entryElement);
         }
@@ -2729,8 +2888,7 @@ public class AvatarPublisherUI : EditorWindow
             string versionId = AddressablesBuildManager.GenerateVersionId();
 
             // Collect prefabs
-            var avatarPrefabs = _avatarPrefabs.Where(p => p != null).ToList();
-            var cosmeticPrefabs = _cosmeticAssets.Where(p => p != null).ToList();
+            var avatarPrefabs = RealAvatars().ToList();
 
             // For auto build, we need the contentBaseUrl before building so Addressables
             // bakes the correct remote load path. Call upload-urls first with a placeholder
@@ -2759,9 +2917,8 @@ public class AvatarPublisherUI : EditorWindow
             AddressablesBuildManager.SetRemoteLoadPath(contentBaseUrl);
 
             // Setup asset group
-            AddressablesBuildManager.SetupAssetGroup(avatarPrefabs, cosmeticPrefabs
-                .Where(p => p != null)
-                .Select(p => new AvatarCatalogBuilder.CosmeticEntry(p, GetCosmeticSlotId(p)))
+            AddressablesBuildManager.SetupAssetGroup(avatarPrefabs, PublishedCosmetics()
+                .Select(c => new AvatarCatalogBuilder.CosmeticEntry(c.asset, c.slotId))
                 .ToList());
 
             UpdateProgress(0.1f, "Building Addressables...");
@@ -2850,6 +3007,7 @@ public class AvatarPublisherUI : EditorWindow
                 }).ToArray(),
                 cosmetics = cosmeticMetadata.Select(e => new CosmeticMetadata
                 {
+                    avatarIds = e.AvatarIds,
                     id = e.Id,
                     categoryId = e.CategoryId,
                     name = e.Name,
@@ -2910,6 +3068,7 @@ public class AvatarPublisherUI : EditorWindow
         {
             ReleaseAssemblyLock();
             _isPublishing = false;
+            ScheduleIconBakes(); // DeferredBakeIcons stood down while publishing; nothing else re-arms it
             _publishButton.SetEnabled(true);
             _progressSection.style.display = DisplayStyle.None;
         }
@@ -2984,6 +3143,7 @@ public class AvatarPublisherUI : EditorWindow
                 }).ToArray(),
                 cosmetics = _cosmeticEntries.Select(e => new CosmeticMetadata
                 {
+                    avatarIds = e.AvatarIds,
                     id = e.Id,
                     categoryId = e.CategoryId,
                     name = e.Name,
@@ -3034,6 +3194,7 @@ public class AvatarPublisherUI : EditorWindow
         {
             ReleaseAssemblyLock();
             _isPublishing = false;
+            ScheduleIconBakes(); // DeferredBakeIcons stood down while publishing; nothing else re-arms it
             _publishButton.SetEnabled(true);
             _progressSection.style.display = DisplayStyle.None;
         }

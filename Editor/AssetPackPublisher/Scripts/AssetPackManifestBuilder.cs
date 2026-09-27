@@ -122,6 +122,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
     public class MfRespawnParams
     {
         public bool affectsVehicles;
+        public bool affectsPlayers;
     }
 
     [Serializable]
@@ -397,6 +398,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 else if (data is RespawnZoneData respawn)
                 {
                     c.trigger.respawn.affectsVehicles = respawn.AffectsVehicles;
+                    c.trigger.respawn.affectsPlayers = respawn.AffectsPlayers;
                 }
                 list.Add(c);
             }
@@ -515,7 +517,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                     area = new MfAreaParams { areaId = string.Empty, prompt = string.Empty, targetRoomId = string.Empty },
                     bounce = new MfBounceParams { force = 0f },
                     push = new MfPushParams { initialForce = 0f, force = 0f },
-                    respawn = new MfRespawnParams { affectsVehicles = false },
+                    respawn = new MfRespawnParams { affectsVehicles = false, affectsPlayers = true },
                 },
                 stageMedia = new MfStageMediaParams
                 {

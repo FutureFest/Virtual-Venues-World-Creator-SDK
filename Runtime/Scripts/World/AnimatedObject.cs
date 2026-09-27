@@ -10,6 +10,8 @@ namespace VirtualVenues.WorldCreator
     /// every client shows the same pose. <see cref="CarryPlayers"/> lets players ride it (core adds the platform).
     /// For a continuous spin use <see cref="RotatingObject"/>.
     /// </summary>
+    // Movers run before KeepUpright (-40) and the player's platform probe (0), so a rider reads this frame's pose.
+    [DefaultExecutionOrder(-50)]
     public class AnimatedObject : MonoBehaviour
     {
         public enum AnimationMode { Move, Rotate, Scale } // append only

@@ -10,19 +10,29 @@ namespace VirtualVenues.WorldCreator
     {
         [Tooltip("Where players are sent. Empty = a world spawn point.")]
         [SerializeField] private Transform _respawnPoint = null;
+        [Tooltip("Players who enter are sent to the respawn point. Off = a vehicle-only kill zone.")]
+        [SerializeField] private bool _affectsPlayers = true;
         [Tooltip("Vehicles that enter drop their riders and return to where they started.")]
         [SerializeField] private bool _affectsVehicles = true;
 
         public override TriggerZoneType ZoneType => TriggerZoneType.Respawn;
 
         public Transform RespawnPoint => _respawnPoint;
+        public bool AffectsPlayers => _affectsPlayers;
         public bool AffectsVehicles => _affectsVehicles;
 
         /// <summary>Initializes this zone from layout data. Safe to call after Awake/AddComponent.</summary>
         public void Configure(Transform respawnPoint, bool affectsVehicles)
         {
+            Configure(respawnPoint, affectsVehicles, true);
+        }
+
+        /// <summary>Initializes this zone from layout data. Safe to call after Awake/AddComponent.</summary>
+        public void Configure(Transform respawnPoint, bool affectsVehicles, bool affectsPlayers)
+        {
             _respawnPoint = respawnPoint;
             _affectsVehicles = affectsVehicles;
+            _affectsPlayers = affectsPlayers;
             RaiseChanged();
         }
 

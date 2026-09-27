@@ -9,6 +9,8 @@ namespace VirtualVenues.WorldCreator
     /// Provides runtime preview when used standalone (e.g., in WorldCreatorSDK package).
     /// In production, core systems replace this with NetworkedRotation for proper synchronization.
     /// </summary>
+    // Movers run before KeepUpright (-40) and the player's platform probe (0), so a rider reads this frame's pose.
+    [DefaultExecutionOrder(-50)]
     public class RotatingObject : MonoBehaviour
     {
         [Header("Rotation Settings")]

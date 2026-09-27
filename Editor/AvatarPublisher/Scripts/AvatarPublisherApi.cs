@@ -51,6 +51,7 @@ namespace AvatarPublisher
     [Serializable]
     public class CosmeticMetadata
     {
+        public string[] avatarIds;
         public string id;
         public string categoryId;
         public string name;
