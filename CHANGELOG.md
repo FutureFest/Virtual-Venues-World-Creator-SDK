@@ -2,6 +2,22 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.9.25] - 2026-09-27
+
+### Added — publish additive scenes with a world
+
+The World Publisher has an **Additional scenes** list under the scene picker. Every listed scene is built into
+the same world bundle as the main scene (UMS and UPC), so a world can be split into a main scene plus
+additively-loaded scenes (e.g. booths, art galleries).
+
+- The main scene stays the **active** scene at runtime (its lighting, skybox and fog win). The player finds it
+  by matching its file name against the bundle name `world_upc_<main scene>_<yyMMdd>_<vv>`; this needs the
+  matching FutureFestXR player update (`WorldContentLoader`). Older players still load every scene, but may
+  make the last-loaded one active.
+- The list is remembered per main scene.
+- Bundle names are now cleared from the published scenes after every publish (success or failure). Before,
+  a scene kept its name and was rebuilt into later, unrelated `BuildAssetBundles` runs.
+
 ## [0.9.22] - 2026-09-17
 
 ### Added — load a published catalog into the publish lists

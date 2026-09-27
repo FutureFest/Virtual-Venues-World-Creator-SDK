@@ -36,6 +36,11 @@
                     <uie:ObjectField name="scene-selector" type="UnityEditor.SceneAsset, UnityEditor" allow-scene-objects="false" />
                     <ui:Button name="use-active-scene-button" text="Use Active Scene" class="use-active-scene-button" />
                 </ui:VisualElement>
+                <ui:VisualElement name="additional-scenes-section" class="additional-scenes-section">
+                    <ui:Label text="Additional scenes (loaded additively; the main scene above stays active):" class="additional-scenes-label" />
+                    <ui:VisualElement name="additional-scenes-list" />
+                    <ui:Button name="add-scene-button" text="+ Add Scene" class="add-scene-button" />
+                </ui:VisualElement>
                 <ui:VisualElement class="button-section">
                     <ui:Button name="publish-button" text="Publish World Map" class="primary-button" />
                 </ui:VisualElement>

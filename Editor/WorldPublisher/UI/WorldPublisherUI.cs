@@ -37,6 +37,9 @@ public class WorldPublisherUI : EditorWindow
 
     private ObjectField _sceneSelector;
     private Button _useActiveSceneButton;
+    private VisualElement _additionalScenesList;
+    private Button _addSceneButton;
+    private readonly System.Collections.Generic.List<SceneAsset> _additionalScenes = new System.Collections.Generic.List<SceneAsset>();
     private Button _publishButton;
 
     private VisualElement _progressSection;
@@ -81,6 +84,7 @@ public class WorldPublisherUI : EditorWindow
 
     private const string VERSION_KEY = "WorldMapVersion_";
     private const string WORLD_NAME_KEY = "WorldPublisher_WorldName";
+    private const string ADDITIONAL_SCENES_KEY = "WorldPublisher_AdditionalScenes_"; // + main scene GUID -> "guid;guid"
 
     [MenuItem("VirtualVenues/World Publisher")]
     public static void ShowWindow()
@@ -170,6 +174,8 @@ public class WorldPublisherUI : EditorWindow
         _sceneSelector = root.Q<ObjectField>("scene-selector");
         _sceneSelector.objectType = typeof(SceneAsset);
         _useActiveSceneButton = root.Q<Button>("use-active-scene-button");
+        _additionalScenesList = root.Q<VisualElement>("additional-scenes-list");
+        _addSceneButton = root.Q<Button>("add-scene-button");
         _publishButton = root.Q<Button>("publish-button");
 
         _progressSection = root.Q<VisualElement>("progress-section");
@@ -189,6 +195,15 @@ public class WorldPublisherUI : EditorWindow
         _copyCodeButton.clicked += () => EditorGUIUtility.systemCopyBuffer = _userCodeField.value;
         _useActiveSceneButton.clicked += OnUseActiveSceneClicked;
         _publishButton.clicked += OnPublishButtonClicked;
+        _sceneSelector.RegisterValueChangedCallback(_ => LoadAdditionalScenes());
+        if (_addSceneButton != null)
+        {
+            _addSceneButton.clicked += () =>
+            {
+                _additionalScenes.Add(null);
+                RebuildAdditionalScenesUI();
+            };
+        }
 
         if (_setupFixButton != null) { _setupFixButton.clicked += OnSetupFixClicked; }
     }
@@ -246,7 +261,109 @@ public class WorldPublisherUI : EditorWindow
         // CheckAuth drives the world-list refresh (sync fast path + background), so no separate refresh here.
         CheckAuth();
         PrePopulateSceneSelection();
+        LoadAdditionalScenes();
         UpdateSetupBanner();
+    }
+
+    // ---- Additional (additive) scenes: published into the same bundle as the main scene ----
+
+    private string AdditionalScenesKey()
+    {
+        string mainPath = _sceneSelector?.value != null ? AssetDatabase.GetAssetPath(_sceneSelector.value) : null;
+        return string.IsNullOrEmpty(mainPath) ? null : ADDITIONAL_SCENES_KEY + AssetDatabase.AssetPathToGUID(mainPath);
+    }
+
+    private void LoadAdditionalScenes()
+    {
+        _additionalScenes.Clear();
+        string key = AdditionalScenesKey();
+        if (key != null)
+        {
+            foreach (string guid in EditorPrefs.GetString(key, "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                SceneAsset scene = AssetDatabase.LoadAssetAtPath<SceneAsset>(AssetDatabase.GUIDToAssetPath(guid));
+                if (scene != null) { _additionalScenes.Add(scene); }
+            }
+        }
+        RebuildAdditionalScenesUI();
+    }
+
+    private void SaveAdditionalScenes()
+    {
+        string key = AdditionalScenesKey();
+        if (key == null) { return; }
+        string guids = string.Join(";", _additionalScenes.Where(s => s != null)
+            .Select(s => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(s))));
+        EditorPrefs.SetString(key, guids);
+    }
+
+    private void RebuildAdditionalScenesUI()
+    {
+        if (_additionalScenesList == null) { return; }
+        _additionalScenesList.Clear();
+        for (int i = 0; i < _additionalScenes.Count; i++)
+        {
+            int index = i;
+            var row = new VisualElement();
+            row.AddToClassList("field-row");
+            var field = new ObjectField { objectType = typeof(SceneAsset), allowSceneObjects = false, value = _additionalScenes[i] };
+            field.RegisterValueChangedCallback(evt =>
+            {
+                _additionalScenes[index] = evt.newValue as SceneAsset;
+                SaveAdditionalScenes();
+            });
+            var remove = new Button(() =>
+            {
+                _additionalScenes.RemoveAt(index);
+                SaveAdditionalScenes();
+                RebuildAdditionalScenesUI();
+            }) { text = "✕" };
+            remove.AddToClassList("use-active-scene-button");
+            row.Add(field);
+            row.Add(remove);
+            _additionalScenesList.Add(row);
+        }
+    }
+
+    // Main scene first, then the distinct additional scenes (never the main scene twice).
+    private System.Collections.Generic.List<string> PublishScenePaths()
+    {
+        string main = AssetDatabase.GetAssetPath(_sceneSelector.value);
+        var paths = new System.Collections.Generic.List<string> { main };
+        foreach (SceneAsset scene in _additionalScenes)
+        {
+            string path = scene != null ? AssetDatabase.GetAssetPath(scene) : null;
+            if (!string.IsNullOrEmpty(path) && path.EndsWith(".unity") && !paths.Contains(path)) { paths.Add(path); }
+        }
+        return paths;
+    }
+
+    // Every published scene shares one bundle. The loader makes the main scene active by matching its file name
+    // against the bundle name ("world_upc_<main scene>_<yyMMdd>_<vv>"), so the naming convention is load-bearing.
+    private void AssignBundleName(string bundleName)
+    {
+        foreach (string path in PublishScenePaths())
+        {
+            AssetImporter importer = AssetImporter.GetAtPath(path);
+            if (importer == null)
+            {
+                throw new Exception($"Failed to get AssetImporter for scene: {path}. The scene may not be properly imported.");
+            }
+            importer.assetBundleName = bundleName;
+            Debug.Log($"Assigned asset bundle name {bundleName} to {path}");
+        }
+    }
+
+    // BuildAssetBundles builds every named asset in the project, so names must not outlive a publish.
+    private void ClearBundleNames()
+    {
+        if (_sceneSelector?.value == null) { return; }
+        foreach (string path in PublishScenePaths())
+        {
+            AssetImporter importer = AssetImporter.GetAtPath(path);
+            if (importer != null && !string.IsNullOrEmpty(importer.assetBundleName)) { importer.assetBundleName = string.Empty; }
+        }
+        AssetDatabase.RemoveUnusedAssetBundleNames();
     }
 
     private void SetVersionLabel()
@@ -759,15 +876,18 @@ public class WorldPublisherUI : EditorWindow
 
         // NMKR pre-publish validation. No-op for scenes without NMKR content;
         // blocks publishing when an NMKR Mint Interactable is misconfigured.
-        WorldNmkrValidator.Result nmkrResult = WorldNmkrValidator.Validate(_sceneSelector.value as SceneAsset);
-        if (!nmkrResult.Ok)
+        foreach (string scenePath in PublishScenePaths())
         {
-            EditorUtility.DisplayDialog(
-                "NMKR Configuration Errors",
-                "This world cannot be published until the following NMKR issues are fixed:\n\n- "
-                    + string.Join("\n- ", nmkrResult.Errors),
-                "OK");
-            return;
+            WorldNmkrValidator.Result nmkrResult = WorldNmkrValidator.Validate(AssetDatabase.LoadAssetAtPath<SceneAsset>(scenePath));
+            if (!nmkrResult.Ok)
+            {
+                EditorUtility.DisplayDialog(
+                    "NMKR Configuration Errors",
+                    $"This world cannot be published until the following NMKR issues in {Path.GetFileNameWithoutExtension(scenePath)} are fixed:\n\n- "
+                        + string.Join("\n- ", nmkrResult.Errors),
+                    "OK");
+                return;
+            }
         }
 
         StartPublishing();
@@ -887,17 +1007,9 @@ public class WorldPublisherUI : EditorWindow
 
             Debug.Log($"Building UMS bundle for scene: {assetPath}");
 
-            // Get and validate AssetImporter
-            AssetImporter importer = AssetImporter.GetAtPath(assetPath);
-            if (importer == null)
-            {
-                throw new Exception($"Failed to get AssetImporter for scene: {assetPath}. The scene may not be properly imported.");
-            }
-
-            // Assign bundle name
+            // Assign bundle name (main + additional scenes)
             string bundleName = "world_ums_" + _versionedBundleName;
-            importer.assetBundleName = bundleName;
-            Debug.Log($"Assigned asset bundle name: {bundleName}");
+            AssignBundleName(bundleName);
 
             // Ensure output directory exists
             string linuxOutputFolder = Path.Combine(_outputFolder, "UMS");
@@ -1001,17 +1113,9 @@ public class WorldPublisherUI : EditorWindow
 
             Debug.Log($"Building UPC bundle for scene: {assetPath}");
 
-            // Get and validate AssetImporter
-            AssetImporter importer = AssetImporter.GetAtPath(assetPath);
-            if (importer == null)
-            {
-                throw new Exception($"Failed to get AssetImporter for scene: {assetPath}. The scene may not be properly imported.");
-            }
-
-            // Assign bundle name
+            // Assign bundle name (main + additional scenes)
             string bundleName = "world_upc_" + _versionedBundleName;
-            importer.assetBundleName = bundleName;
-            Debug.Log($"Assigned asset bundle name: {bundleName}");
+            AssignBundleName(bundleName);
 
             // Ensure output directory exists
             string webglOutputFolder = Path.Combine(_outputFolder, "UPC");
@@ -1150,6 +1254,7 @@ public class WorldPublisherUI : EditorWindow
         EditorApplication.update -= ProcessPublishingStep;
         _progressSection.style.display = DisplayStyle.None;
         _publishButton.SetEnabled(true);
+        ClearBundleNames();
 
         // Restore original build target
         if (EditorUserBuildSettings.activeBuildTarget != _originalBuildTarget)

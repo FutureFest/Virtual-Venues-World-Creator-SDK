@@ -212,6 +212,26 @@ ObjectField {
     margin: 0;
 }
 
+/* Additional (additive) scenes */
+.additional-scenes-section {
+    margin: 4px 0 4px 90px;
+}
+
+.additional-scenes-label {
+    font-size: 11px;
+    color: var(--vv-text-muted);
+    white-space: normal;
+    margin-bottom: 2px;
+}
+
+.add-scene-button {
+    align-self: flex-start;
+    height: 20px;
+    margin: 2px 0 0 0;
+    padding: 0 10px;
+    font-size: 11px;
+}
+
 /* Buttons */
 .button-section {
     margin: 14px 0;
