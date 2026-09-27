@@ -16,6 +16,29 @@ namespace VirtualVenues.WorldCreator
         public bool drive;
     }
 
+    /// <summary>What a <see cref="Vehicle"/> is. Append only — the value is serialized.</summary>
+    public enum VehicleType
+    {
+        Car = 0,
+        Boat = 1,
+    }
+
+    /// <summary>How a <see cref="VehicleType.Boat"/> handles on water (needs a water surface in the world). Wheels are ignored.</summary>
+    [Serializable]
+    public class BoatStats
+    {
+        [Tooltip("Forward thrust (acceleration, m/s²).")]
+        [Min(0f)] public float enginePower = 11f;
+        [Tooltip("How quickly it turns.")]
+        [Min(0f)] public float turnPower = 5f;
+        [Tooltip("How strongly the water pushes it up.")]
+        [Min(0f)] public float buoyancy = 10f;
+        [Tooltip("Water drag along the boat's sideways (x), up (y) and forward (z) axes.")]
+        public Vector3 drag = new Vector3(2f, 3f, 1f);
+
+        public BoatStats Clone() { return (BoatStats)MemberwiseClone(); }
+    }
+
     /// <summary>How a <see cref="Vehicle"/> drives.</summary>
     [Serializable]
     public class VehicleStats
@@ -60,6 +83,10 @@ namespace VirtualVenues.WorldCreator
         [Tooltip("Physics wheel radius in metres.")]
         [Min(0.05f)] [SerializeField] private float _wheelRadius = 0.3f;
         [SerializeField] private VehicleStats _stats = new VehicleStats();
+        [Tooltip("Car drives on wheels; Boat floats and drives on water.")]
+        [SerializeField] private VehicleType _vehicleType = VehicleType.Car;
+        [Tooltip("Boat only.")]
+        [SerializeField] private BoatStats _boatStats = new BoatStats();
         [Header("Driver camera")]
         [Min(1f)] [SerializeField] private float _cameraDistance = 6f;
         [SerializeField] private float _cameraHeight = 2f;
@@ -72,6 +99,8 @@ namespace VirtualVenues.WorldCreator
         public VehicleWheel[] Wheels => _wheels;
         public float WheelRadius => _wheelRadius;
         public VehicleStats Stats => _stats;
+        public VehicleType VehicleType => _vehicleType;
+        public BoatStats BoatStats => _boatStats;
         public float CameraDistance => _cameraDistance;
         public float CameraHeight => _cameraHeight;
         public Vector3 DriverSeatOffset => _driverSeatOffset;
@@ -147,6 +176,14 @@ namespace VirtualVenues.WorldCreator
             OnChanged?.Invoke(this);
         }
 
+        /// <summary>Set the vehicle type (and boat handling) from external data. Null stats keep the current ones.</summary>
+        public void Configure(VehicleType vehicleType, BoatStats boatStats)
+        {
+            _vehicleType = vehicleType;
+            if (boatStats != null) { _boatStats = boatStats.Clone(); }
+            OnChanged?.Invoke(this);
+        }
+
         private void OnDrawGizmosSelected()
         {
             Gizmos.color = Color.cyan;
@@ -179,9 +216,17 @@ namespace VirtualVenues.WorldCreator
         {
             EditorHelpers.SpawnEditorObject("GoKart", Vector3.zero);
         }
+
+        // Example boat (Resources/JetSki.prefab): primitive hull, driver seat, trigger approach volume. Needs water.
+        [UnityEditor.MenuItem("GameObject/VirtualVenues/New Jet Ski", isValidateFunction: false, priority: 0)]
+        private static void CreateJetSki(UnityEditor.MenuCommand menuCommand)
+        {
+            EditorHelpers.SpawnEditorObject("JetSki", Vector3.zero);
+        }
 #endif
 
-        private static string BuildHierarchyKey(Transform t)
+        /// <summary>Scene name + sibling-index path: the same on every client for a baked scene object.</summary>
+        internal static string BuildHierarchyKey(Transform t)
         {
             StringBuilder sb = new StringBuilder();
             for (Transform c = t; c != null; c = c.parent)

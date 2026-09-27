@@ -2,6 +2,25 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.9.26] - 2026-09-27
+
+### Added — world features ported from the old FutureFest SDK
+
+Each is a data-only marker; the FutureFestXR player adds the behaviour and networking. All have an example
+prefab under GameObject > VirtualVenues.
+
+- **Trigger zones:** new zone types **Bounce**, **Push** and **Respawn** (`BounceZoneData`, `PushZoneData`,
+  `RespawnZoneData`), and **Swim** now has `SwimZoneData`. Respawn can also send vehicles home.
+- **`SplineMover`:** moves an object along a Unity spline (Loop / PingPong / Once) at constant speed, in sync
+  for every player; can carry players standing on it. Needs `com.unity.splines`.
+- **`KeepUpright`:** keeps an object level under a spinning parent (e.g. ferris wheel pods).
+- **`AnimatedObject`:** ping-pongs position, rotation or scale between two values; can carry players.
+- **`TriggerEvent`:** UnityEvents for the player who walks in and for everyone, with a cooldown / once option.
+- **`Vehicle`:** new **Boat** type with boat stats. Floats on Crest water, or on the top of a Swim Zone.
+- **`PhysicsObject`:** a server-simulated prop players can push; respawns when it falls or sits idle.
+
+Needs the matching FutureFestXR player and server update (ship UPC and UMS together).
+
 ## [0.9.25] - 2026-09-27
 
 ### Added — publish additive scenes with a world

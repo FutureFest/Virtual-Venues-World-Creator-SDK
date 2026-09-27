@@ -100,6 +100,28 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         public float radius;
         public MfVoiceParams voice;
         public MfAreaParams area;
+        public MfBounceParams bounce;
+        public MfPushParams push;
+        public MfRespawnParams respawn;
+    }
+
+    [Serializable]
+    public class MfBounceParams
+    {
+        public float force;
+    }
+
+    [Serializable]
+    public class MfPushParams
+    {
+        public float initialForce;
+        public float force;
+    }
+
+    [Serializable]
+    public class MfRespawnParams
+    {
+        public bool affectsVehicles;
     }
 
     [Serializable]
@@ -253,6 +275,9 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             if (node.GetComponentInChildren<Artist>(true) != null) { return true; }
             if (node.GetComponentInChildren<Seat>(true) != null) { return true; }
             if (node.GetComponentInChildren<Vehicle>(true) != null) { return true; }
+            if (node.GetComponentInChildren<AnimatedObject>(true) != null) { return true; }
+            if (node.GetComponentInChildren<PhysicsObject>(true) != null) { return true; }
+            if (node.GetComponentInChildren<TriggerEvent>(true) != null) { return true; }
             return false;
         }
 
@@ -360,6 +385,19 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                     c.trigger.area.prompt = area.Prompt;
                     c.trigger.area.targetRoomId = area.TargetRoomId;
                 }
+                else if (data is BounceZoneData bounce)
+                {
+                    c.trigger.bounce.force = bounce.Force;
+                }
+                else if (data is PushZoneData push)
+                {
+                    c.trigger.push.initialForce = push.InitialForce;
+                    c.trigger.push.force = push.Force;
+                }
+                else if (data is RespawnZoneData respawn)
+                {
+                    c.trigger.respawn.affectsVehicles = respawn.AffectsVehicles;
+                }
                 list.Add(c);
             }
 
@@ -430,6 +468,9 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 case TriggerZoneData.TriggerZoneType.Voice: return "Voice";
                 case TriggerZoneData.TriggerZoneType.Area: return "Area";
                 case TriggerZoneData.TriggerZoneType.Swim: return "Swim";
+                case TriggerZoneData.TriggerZoneType.Bounce: return "Bounce";
+                case TriggerZoneData.TriggerZoneType.Push: return "Push";
+                case TriggerZoneData.TriggerZoneType.Respawn: return "Respawn";
                 default: return string.Empty;
             }
         }
@@ -472,6 +513,9 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                     radius = 0f,
                     voice = new MfVoiceParams { conversationalDistance = 0f, audibleDistance = 0f },
                     area = new MfAreaParams { areaId = string.Empty, prompt = string.Empty, targetRoomId = string.Empty },
+                    bounce = new MfBounceParams { force = 0f },
+                    push = new MfPushParams { initialForce = 0f, force = 0f },
+                    respawn = new MfRespawnParams { affectsVehicles = false },
                 },
                 stageMedia = new MfStageMediaParams
                 {
