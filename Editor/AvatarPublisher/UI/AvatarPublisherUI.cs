@@ -1162,13 +1162,17 @@ public class AvatarPublisherUI : EditorWindow
         return _cosmeticSlotIds.TryGetValue(cosmetic, out string slot) ? slot : "";
     }
 
-    // Companion ScriptableObjects belong to multiplayer, not the standalone SDK.
-    // Resolve their serialized types without creating a reverse assembly dependency.
+    // SDK action assets name their own category. The legacy FutureFest ScriptableObjects belong to
+    // multiplayer, not the standalone SDK, so they're matched by type name without a reverse assembly dependency.
     private static string CompanionCategory(UnityEngine.Object asset)
     {
         if (asset == null) return null;
+        if (asset is VirtualVenues.WorldCreator.ActionContent action) return action.Category;
         if (asset.GetType().FullName == "FutureFest.Pets.PetSO") return "Pet";
         if (asset.GetType().FullName == "FutureFest.Actions.MountData") return "Mount";
+        if (asset.GetType().FullName == "FutureFest.Actions.DanceActionContentData") return "Dance";
+        if (asset.GetType().FullName == "FutureFest.Actions.VFXActionContentData") return "VFX";
+        if (asset.GetType().FullName == "FutureFest.Actions.SprayActionContentData") return "Spray";
         return null;
     }
 
@@ -1247,7 +1251,7 @@ public class AvatarPublisherUI : EditorWindow
         if (asset == null || string.IsNullOrEmpty(slotId)) { return null; }
         // A legacy PetSO / MountData picks its own slot; an SDK marker prefab goes through SpecialSlotMismatch.
         string companion = CompanionCategory(asset);
-        if (companion != null) { return slotId == companion ? null : $"This asset belongs to the {companion} category."; }
+        if (companion != null) { return slotId == companion ? ActionContentProblem(asset) : $"This asset belongs to the {companion} category."; }
         string special = SpecialSlotMismatch(asset, slotId);
         if (special != null) { return special; }
         var kinds = DeclaredKindsOf(slotId).ToList();
@@ -1255,6 +1259,26 @@ public class AvatarPublisherUI : EditorWindow
 
         string expected = VirtualVenues.AvatarSlotKindExtensions.TargetsRenderers(kinds[0]) ? AssetTypeFor(kinds[0]).Name : "prefab";
         return $"\"{asset.name}\" is a {asset.GetType().Name}, but slot \"{slotId}\" is a {kinds[0]} slot and takes a {expected}.";
+    }
+
+    /// <summary>What an SDK action asset is missing for the runtime to play it; null when it's complete.</summary>
+    private static string ActionContentProblem(UnityEngine.Object asset)
+    {
+        switch (asset)
+        {
+            case VirtualVenues.WorldCreator.DanceAction dance:
+                return dance.OverrideController == null ? $"\"{asset.name}\" needs an Override Controller." : null;
+            case VirtualVenues.WorldCreator.VfxAction vfx:
+                if (vfx.VFXPrefab == null) { return $"\"{asset.name}\" needs a VFX Prefab."; }
+                return vfx.VFXPrefab.GetComponent<ParticleSystem>() == null ? $"\"{asset.name}\": the VFX Prefab needs a ParticleSystem on its root." : null;
+            case VirtualVenues.WorldCreator.SprayAction spray:
+                if (spray.Decal == null) { return $"\"{asset.name}\" needs a Decal material."; }
+                // Sprays draw through a URP DecalProjector; any other shader renders nothing (or pink) in the player.
+                return spray.Decal.shader == null || spray.Decal.shader.name != "Shader Graphs/Decal"
+                    ? $"\"{asset.name}\": the Decal material must use the \"Shader Graphs/Decal\" shader." : null;
+            default:
+                return null;
+        }
     }
 
     /// <summary>
@@ -1717,7 +1741,7 @@ public class AvatarPublisherUI : EditorWindow
     {
         if (CompanionCategory(asset) != null)
         {
-            reason = AssetDatabase.IsMainAsset(asset) ? null : "Use a standalone pet or mount asset.";
+            reason = AssetDatabase.IsMainAsset(asset) ? null : "Use a standalone action data asset.";
             return reason == null;
         }
         if (asset is GameObject go)
@@ -1735,7 +1759,7 @@ public class AvatarPublisherUI : EditorWindow
                 : $"\"{asset.name}\" is embedded in another asset. Extract the {asset.GetType().Name} from the model into its own file first.";
             return reason == null;
         }
-        reason = "Choose a prefab, Material, Texture2D, PetSO, or MountData asset.";
+        reason = "Choose a prefab, Material, Texture2D, or a Dance / VFX / Spray action asset (Create > Virtual Venues > Actions).";
         return false;
     }
 

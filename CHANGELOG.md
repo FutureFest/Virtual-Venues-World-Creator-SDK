@@ -2,6 +2,19 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.10.1] - 2026-09-27
+
+### Added
+- **Hotbar actions:** Create > Virtual Venues > Actions > **Dance** (Animator Override Controller), **VFX** (prefab
+  with a ParticleSystem on its root + emit amount) and **Spray** (decal material using `Shader Graphs/Decal`), each
+  with a hotbar icon. Publish them with the Avatar Publisher; they pick their own Dance / VFX / Spray category.
+
+### Changed — Avatar Publisher
+- Action assets are validated on drop and before publish (missing controller / prefab / ParticleSystem, non-Decal
+  spray material), and use their icon sprite as the row thumbnail.
+
+Needs the matching FutureFestXR player update to play SDK-authored actions.
+
 ## [0.10.0] - 2026-09-27
 
 ### Changed

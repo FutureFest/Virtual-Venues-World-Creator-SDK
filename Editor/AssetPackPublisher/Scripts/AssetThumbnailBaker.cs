@@ -96,6 +96,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             if (asset is GameObject go) { return BakeTexture(go, size); }
             if (asset is Material mat) { return BakeMaterial(mat, size); }
             if (asset is Texture tex) { return ToReadableSquare(tex, size); }
+            if (asset is VirtualVenues.WorldCreator.ActionContent action && action.Icon != null) { return ToReadableSquare(action.Icon.texture, size); }
             return null;
         }
 
