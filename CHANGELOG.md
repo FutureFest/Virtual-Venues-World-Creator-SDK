@@ -2,6 +2,16 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.10.2] - 2026-09-27
+
+### Fixed — World Publisher
+- Waits for scripts to recompile (and the domain reload to finish) after each platform switch before building that
+  platform's bundle. Fixes "script class layout is incompatible between the editor and the player" in projects with
+  serialized fields inside platform `#if` blocks (e.g. PixelCrushers), which failed when publishing from WebGL.
+- Publishing resumes across the domain reload; scene list is frozen for the whole publish.
+- Build failures now show the real Console error (layout mismatch / compile error) instead of "Build Support is not
+  installed". Blocks publishing while scripts have compile errors. No modal error dialog in batch mode.
+
 ## [0.10.1] - 2026-09-27
 
 ### Added

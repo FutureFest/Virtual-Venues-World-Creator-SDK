@@ -55,21 +55,26 @@ public class WorldPublisherUI : EditorWindow
     private Button _setupFixButton;
 
     // State
-    private bool _isPublishing = false;
     private bool _loggedIn = false;
 
     // Bumped on sign-out and at the top of CheckAuth so a background refresh continuation can detect a
     // stale auth context and bail before mutating UI. Mirrors BuildUploaderUI.
     private int _authGen = 0;
-    private int _currentStep = 0;
-    private string _versionedBundleName;
     private string _outputFolder = "Assets/WorldMapAssetBundles";
-    private string _umsFilePath;
-    private string _upcFilePath;
-    private string _umsFileName;
-    private string _upcFileName;
-    private BuildTarget _originalBuildTarget;
-    private BuildTargetGroup _originalBuildTargetGroup;
+
+    // Publish state is serialized so the step machine survives the domain reload each platform switch triggers.
+    [SerializeField] private bool _isPublishing = false;
+    [SerializeField] private int _currentStep = 0;
+    [SerializeField] private string _versionedBundleName;
+    [SerializeField] private string _umsFilePath;
+    [SerializeField] private string _upcFilePath;
+    [SerializeField] private BuildTarget _originalBuildTarget;
+    [SerializeField] private BuildTargetGroup _originalBuildTargetGroup;
+    [SerializeField] private System.Collections.Generic.List<string> _publishScenes = new System.Collections.Generic.List<string>();
+    [SerializeField] private bool _awaitingReload = false;
+    [SerializeField] private double _switchTime;
+    private const double RELOAD_TIMEOUT_SECONDS = 120;
+    private const string PUBLISHING_SESSION_KEY = "WorldPublisher_Publishing";
 
     // Auth state
     private Credentials _credentials = null;
@@ -79,7 +84,7 @@ public class WorldPublisherUI : EditorWindow
     private World[] _worlds = Array.Empty<World>();
     private string _editingWorldId = null;
     private string _editingWorldName = null;
-    private string _publishWorldName = string.Empty;
+    [SerializeField] private string _publishWorldName = string.Empty;
     private string _lastPublishedWorldId = null;
 
     private const string VERSION_KEY = "WorldMapVersion_";
@@ -97,11 +102,19 @@ public class WorldPublisherUI : EditorWindow
     private void OnEnable()
     {
         AuthManager.AuthStateChanged += OnAuthStateChanged;
+
+        // OnEnable after a publish started means a domain reload happened: resume the step machine.
+        // SessionState dies with the editor, so a window restored after a restart/crash doesn't resume a stale publish.
+        _awaitingReload = false;
+        if (!SessionState.GetBool(PUBLISHING_SESSION_KEY, false)) { _isPublishing = false; }
+        EditorApplication.update -= ProcessPublishingStep;
+        if (_isPublishing) { EditorApplication.update += ProcessPublishingStep; }
     }
 
     private void OnDisable()
     {
         AuthManager.AuthStateChanged -= OnAuthStateChanged;
+        EditorApplication.update -= ProcessPublishingStep;
     }
 
     private void OnAuthStateChanged()
@@ -263,6 +276,13 @@ public class WorldPublisherUI : EditorWindow
         PrePopulateSceneSelection();
         LoadAdditionalScenes();
         UpdateSetupBanner();
+
+        // Rebuilt mid-publish after a domain reload: keep the progress visible and publish locked.
+        if (_isPublishing)
+        {
+            _progressSection.style.display = DisplayStyle.Flex;
+            _publishButton.SetEnabled(false);
+        }
     }
 
     // ---- Additional (additive) scenes: published into the same bundle as the main scene ----
@@ -325,9 +345,11 @@ public class WorldPublisherUI : EditorWindow
         }
     }
 
-    // Main scene first, then the distinct additional scenes (never the main scene twice).
+    // Main scene first, then the distinct additional scenes (never the main scene twice). Frozen while publishing:
+    // a domain reload re-runs PrePopulateSceneSelection, which can change the selector.
     private System.Collections.Generic.List<string> PublishScenePaths()
     {
+        if (_isPublishing && _publishScenes.Count > 0) { return _publishScenes; }
         string main = AssetDatabase.GetAssetPath(_sceneSelector.value);
         var paths = new System.Collections.Generic.List<string> { main };
         foreach (SceneAsset scene in _additionalScenes)
@@ -357,7 +379,7 @@ public class WorldPublisherUI : EditorWindow
     // BuildAssetBundles builds every named asset in the project, so names must not outlive a publish.
     private void ClearBundleNames()
     {
-        if (_sceneSelector?.value == null) { return; }
+        if (_publishScenes.Count == 0 && _sceneSelector?.value == null) { return; }
         foreach (string path in PublishScenePaths())
         {
             AssetImporter importer = AssetImporter.GetAtPath(path);
@@ -919,8 +941,19 @@ public class WorldPublisherUI : EditorWindow
             return;
         }
 
+        if (EditorUtility.scriptCompilationFailed)
+        {
+            EditorUtility.DisplayDialog("Error", "Scripts have compile errors. Fix the Console errors before publishing.", "OK");
+            return;
+        }
+
+        _publishScenes = PublishScenePaths();
         _isPublishing = true;
+        SessionState.SetBool(PUBLISHING_SESSION_KEY, true);
         _currentStep = 0;
+        _awaitingReload = false;
+        _umsFilePath = null;
+        _upcFilePath = null;
         _versionedBundleName = GenerateVersionedBundleName(assetPath);
 
         // Save original build target to restore after publishing
@@ -933,29 +966,46 @@ public class WorldPublisherUI : EditorWindow
         _publishButton.SetEnabled(false);
 
         Debug.Log("Starting world map publishing process.");
+        EditorApplication.update -= ProcessPublishingStep;
         EditorApplication.update += ProcessPublishingStep;
     }
 
+    // Each platform is a switch step then a build step: the build waits (across ticks and the domain reload the
+    // switch causes) until scripts are compiled for that platform. OnEnable re-hooks this after the reload.
     private void ProcessPublishingStep()
     {
         try
         {
             switch (_currentStep)
             {
-                case 0: // Build UMS
-                    BuildUMSBundle();
+                case 0:
+                    UpdateProgress(0.2f, "Switching to Linux platform...");
+                    SwitchTo(BuildTargetGroup.Standalone, BuildTarget.StandaloneLinux64);
                     _currentStep++;
                     break;
-                case 1: // Build UPC
-                    BuildUPCBundle();
+                case 1:
+                    if (!ReadyToBuild(BuildTarget.StandaloneLinux64)) { return; }
+                    UpdateProgress(0.25f, "Building UMS asset bundle for Linux...");
+                    _umsFilePath = BuildBundle(BuildTarget.StandaloneLinux64, "ums", "UMS");
                     _currentStep++;
                     break;
-                case 2: // Refresh
+                case 2:
+                    UpdateProgress(0.4f, "Switching to WebGL platform...");
+                    SwitchTo(BuildTargetGroup.WebGL, BuildTarget.WebGL);
+                    _currentStep++;
+                    break;
+                case 3:
+                    if (!ReadyToBuild(BuildTarget.WebGL)) { return; }
+                    UpdateProgress(0.45f, "Building UPC asset bundle for WebGL...");
+                    _upcFilePath = BuildBundle(BuildTarget.WebGL, "upc", "UPC");
+                    _currentStep++;
+                    break;
+                case 4:
                     UpdateProgress(0.5f, "Refreshing AssetDatabase...");
                     AssetDatabase.Refresh();
                     _currentStep++;
                     break;
-                case 3: // Upload
+                case 5:
                     UpdateProgress(0.6f, "Starting upload to cloud...");
                     UploadBundles(_umsFilePath, _upcFilePath);
                     _currentStep++;
@@ -964,223 +1014,109 @@ public class WorldPublisherUI : EditorWindow
         }
         catch (Exception ex)
         {
-            // Build methods already handle their own errors via FinishWithError
-            // This catch prevents the update loop from continuing on exception
-            EditorApplication.update -= ProcessPublishingStep;
-            Debug.LogError($"Publishing process failed at step {_currentStep}: {ex.Message}");
+            FinishWithError($"Publishing failed at step {_currentStep}:\n\n{ex.Message}");
         }
     }
 
-    private void BuildUMSBundle()
+    private void SwitchTo(BuildTargetGroup group, BuildTarget target)
     {
-        UpdateProgress(0.2f, "Switching to Linux platform...");
+        if (EditorUserBuildSettings.activeBuildTarget == target) { return; }
 
-        // Switch to Linux platform for UMS build
-        if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.StandaloneLinux64)
+        Debug.Log($"Switching build target to {target}...");
+        // Set before switching: OnEnable (after the reload) clears it.
+        _awaitingReload = true;
+        _switchTime = EditorApplication.timeSinceStartup;
+        if (!EditorUserBuildSettings.SwitchActiveBuildTarget(group, target))
         {
-            Debug.Log("Switching build target to StandaloneLinux64 for UMS bundle...");
-            bool switchResult = EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Standalone, BuildTarget.StandaloneLinux64);
-            if (!switchResult)
-            {
-                throw new Exception(
-                    "Failed to switch build target to Linux.\n\n" +
-                    "Possible causes:\n" +
-                    "1. Linux Build Support is not installed in Unity Hub\n\n" +
-                    "To fix:\n" +
-                    "- Install Linux Build Support (Mono) via Unity Hub -> Installs -> Add Modules"
-                );
-            }
-            Debug.Log("Successfully switched to StandaloneLinux64");
-        }
-
-        UpdateProgress(0.25f, "Building UMS asset bundle for Linux...");
-
-        try
-        {
-            string assetPath = AssetDatabase.GetAssetPath(_sceneSelector.value);
-
-            // Validate scene path
-            if (string.IsNullOrEmpty(assetPath))
-            {
-                throw new Exception("Scene asset path is null or empty. Cannot build bundle.");
-            }
-
-            Debug.Log($"Building UMS bundle for scene: {assetPath}");
-
-            // Assign bundle name (main + additional scenes)
-            string bundleName = "world_ums_" + _versionedBundleName;
-            AssignBundleName(bundleName);
-
-            // Ensure output directory exists
-            string linuxOutputFolder = Path.Combine(_outputFolder, "UMS");
-            if (!Directory.Exists(linuxOutputFolder))
-            {
-                Directory.CreateDirectory(linuxOutputFolder);
-                Debug.Log($"Created output directory: {linuxOutputFolder}");
-            }
-
-            // Build the asset bundle
-            Debug.Log($"Building asset bundles for StandaloneLinux64 target...");
-            AssetBundleManifest manifest = BuildPipeline.BuildAssetBundles(
-                linuxOutputFolder,
-                BuildAssetBundleOptions.None,
-                BuildTarget.StandaloneLinux64);
-
-            // Validate build succeeded
-            if (manifest == null)
-            {
-                throw new Exception(
-                    "Asset bundle build failed. BuildPipeline returned null manifest.\n\n" +
-                    "Possible causes:\n" +
-                    "1. Linux Build Support is not installed in Unity Hub\n" +
-                    "2. Scene is empty or has no content to bundle\n" +
-                    "3. Asset bundle name assignment failed\n\n" +
-                    "To fix:\n" +
-                    "- Install Linux Build Support via Unity Hub -> Installs -> Add Modules\n" +
-                    "- Ensure the scene contains GameObjects/content\n" +
-                    "- Check Unity Console for additional errors"
-                );
-            }
-
-            // Verify the specific bundle was created
-            _umsFileName = $"world_ums_{_versionedBundleName}".ToLower();
-            _umsFilePath = Path.Combine(linuxOutputFolder, _umsFileName);
-
-            if (!File.Exists(_umsFilePath))
-            {
-                // List what WAS created for debugging
-                string[] createdBundles = Directory.GetFiles(linuxOutputFolder, "*", SearchOption.TopDirectoryOnly)
-                    .Where(f => !f.EndsWith(".manifest") && !f.EndsWith(".meta"))
-                    .Select(Path.GetFileName)
-                    .ToArray();
-
-                throw new FileNotFoundException(
-                    $"UMS bundle build completed but expected file was not created.\n\n" +
-                    $"Expected file: {_umsFilePath}\n" +
-                    $"Expected filename: {_umsFileName}\n\n" +
-                    $"Bundles found in directory:\n{string.Join("\n", createdBundles)}\n\n" +
-                    "This may indicate:\n" +
-                    "- Scene is empty (no content to bundle)\n" +
-                    "- File naming mismatch\n" +
-                    "- Build completed with warnings that prevented bundle creation"
-                );
-            }
-
-            FileInfo bundleInfo = new FileInfo(_umsFilePath);
-            Debug.Log($"UMS bundle created successfully: {_umsFileName} ({bundleInfo.Length / 1024} KB)");
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"UMS Bundle Build Failed: {ex.Message}");
-            FinishWithError($"UMS Bundle Build Failed:\n\n{ex.Message}");
-            throw; // Re-throw to stop the publishing process
+            _awaitingReload = false;
+            throw new Exception(
+                $"Failed to switch build target to {target}.\n\n" +
+                "Install its Build Support module via Unity Hub -> Installs -> Add Modules.");
         }
     }
 
-    private void BuildUPCBundle()
+    // Building before the recompile + domain reload finishes makes the player serialization layout differ from the
+    // editor's (fields inside #if UNITY_WEBGL etc.) and the bundle build fails.
+    private bool ReadyToBuild(BuildTarget target)
     {
-        UpdateProgress(0.4f, "Switching to WebGL platform...");
-
-        // Switch to WebGL platform for UPC build
-        if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.WebGL)
+        if (EditorApplication.isCompiling || EditorApplication.isUpdating) { return false; }
+        if (EditorUtility.scriptCompilationFailed) { throw new Exception($"Scripts failed to compile for {target}. Fix the Console errors and publish again."); }
+        if (_awaitingReload)
         {
-            Debug.Log("Switching build target to WebGL for UPC bundle...");
-            bool switchResult = EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.WebGL, BuildTarget.WebGL);
-            if (!switchResult)
-            {
-                throw new Exception(
-                    "Failed to switch build target to WebGL.\n\n" +
-                    "Possible causes:\n" +
-                    "1. WebGL Build Support is not installed in Unity Hub\n\n" +
-                    "To fix:\n" +
-                    "- Install WebGL Build Support via Unity Hub -> Installs -> Add Modules"
-                );
-            }
-            Debug.Log("Successfully switched to WebGL");
+            // ponytail: assumes every target switch recompiles + reloads; the timeout covers a switch that doesn't.
+            if (EditorApplication.timeSinceStartup - _switchTime < RELOAD_TIMEOUT_SECONDS) { return false; }
+            Debug.LogWarning($"No script reload seen {RELOAD_TIMEOUT_SECONDS}s after switching to {target}; building anyway.");
+            _awaitingReload = false;
         }
+        if (EditorUserBuildSettings.activeBuildTarget != target) { throw new Exception($"Active build target is {EditorUserBuildSettings.activeBuildTarget}, expected {target}."); }
+        return true;
+    }
 
-        UpdateProgress(0.45f, "Building UPC asset bundle for WebGL...");
+    // Builds the world bundle for one platform and returns its file path.
+    private string BuildBundle(BuildTarget target, string prefix, string subfolder)
+    {
+        string bundleName = $"world_{prefix}_{_versionedBundleName}";
+        AssignBundleName(bundleName);
 
+        string outputFolder = Path.Combine(_outputFolder, subfolder);
+        Directory.CreateDirectory(outputFolder);
+
+        Debug.Log($"Building asset bundles for {target}...");
+        var errors = new System.Collections.Generic.List<string>();
+        Application.LogCallback capture = (message, stack, type) =>
+        {
+            if (type == LogType.Error || type == LogType.Exception) { errors.Add(message); }
+        };
+        AssetBundleManifest manifest;
+        Application.logMessageReceived += capture;
         try
         {
-            string assetPath = AssetDatabase.GetAssetPath(_sceneSelector.value);
-
-            // Validate scene path
-            if (string.IsNullOrEmpty(assetPath))
-            {
-                throw new Exception("Scene asset path is null or empty. Cannot build bundle.");
-            }
-
-            Debug.Log($"Building UPC bundle for scene: {assetPath}");
-
-            // Assign bundle name (main + additional scenes)
-            string bundleName = "world_upc_" + _versionedBundleName;
-            AssignBundleName(bundleName);
-
-            // Ensure output directory exists
-            string webglOutputFolder = Path.Combine(_outputFolder, "UPC");
-            if (!Directory.Exists(webglOutputFolder))
-            {
-                Directory.CreateDirectory(webglOutputFolder);
-                Debug.Log($"Created output directory: {webglOutputFolder}");
-            }
-
-            // Build the asset bundle
-            Debug.Log($"Building asset bundles for WebGL target...");
-            AssetBundleManifest manifest = BuildPipeline.BuildAssetBundles(
-                webglOutputFolder,
-                BuildAssetBundleOptions.None,
-                BuildTarget.WebGL);
-
-            // Validate build succeeded
-            if (manifest == null)
-            {
-                throw new Exception(
-                    "Asset bundle build failed. BuildPipeline returned null manifest.\n\n" +
-                    "Possible causes:\n" +
-                    "1. WebGL Build Support is not installed in Unity Hub\n" +
-                    "2. Scene is empty or has no content to bundle\n" +
-                    "3. Asset bundle name assignment failed\n\n" +
-                    "To fix:\n" +
-                    "- Install WebGL Build Support via Unity Hub -> Installs -> Add Modules\n" +
-                    "- Ensure the scene contains GameObjects/content\n" +
-                    "- Check Unity Console for additional errors"
-                );
-            }
-
-            // Verify the specific bundle was created
-            _upcFileName = $"world_upc_{_versionedBundleName}".ToLower();
-            _upcFilePath = Path.Combine(webglOutputFolder, _upcFileName);
-
-            if (!File.Exists(_upcFilePath))
-            {
-                // List what WAS created for debugging
-                string[] createdBundles = Directory.GetFiles(webglOutputFolder, "*", SearchOption.TopDirectoryOnly)
-                    .Where(f => !f.EndsWith(".manifest") && !f.EndsWith(".meta"))
-                    .Select(Path.GetFileName)
-                    .ToArray();
-
-                throw new FileNotFoundException(
-                    $"UPC bundle build completed but expected file was not created.\n\n" +
-                    $"Expected file: {_upcFilePath}\n" +
-                    $"Expected filename: {_upcFileName}\n\n" +
-                    $"Bundles found in directory:\n{string.Join("\n", createdBundles)}\n\n" +
-                    "This may indicate:\n" +
-                    "- Scene is empty (no content to bundle)\n" +
-                    "- File naming mismatch\n" +
-                    "- Build completed with warnings that prevented bundle creation"
-                );
-            }
-
-            FileInfo bundleInfo = new FileInfo(_upcFilePath);
-            Debug.Log($"UPC bundle created successfully: {_upcFileName} ({bundleInfo.Length / 1024} KB)");
+            manifest = BuildPipeline.BuildAssetBundles(outputFolder, BuildAssetBundleOptions.None, target);
         }
-        catch (Exception ex)
+        finally
         {
-            Debug.LogError($"UPC Bundle Build Failed: {ex.Message}");
-            FinishWithError($"UPC Bundle Build Failed:\n\n{ex.Message}");
-            throw; // Re-throw to stop the publishing process
+            Application.logMessageReceived -= capture;
         }
+
+        if (manifest == null)
+        {
+            throw new Exception($"{subfolder} bundle build failed for {target}.\n\n{DescribeBuildErrors(errors, target)}");
+        }
+
+        string fileName = bundleName.ToLower();
+        string filePath = Path.Combine(outputFolder, fileName);
+        if (!File.Exists(filePath))
+        {
+            // List what WAS created for debugging
+            string[] createdBundles = Directory.GetFiles(outputFolder, "*", SearchOption.TopDirectoryOnly)
+                .Where(f => !f.EndsWith(".manifest") && !f.EndsWith(".meta"))
+                .Select(Path.GetFileName)
+                .ToArray();
+
+            throw new FileNotFoundException(
+                $"{subfolder} bundle build completed but expected file was not created.\n\n" +
+                $"Expected file: {filePath}\n\n" +
+                $"Bundles found in directory:\n{string.Join("\n", createdBundles)}\n\n" +
+                "This may indicate:\n" +
+                "- Scene is empty (no content to bundle)\n" +
+                "- File naming mismatch\n" +
+                "- Build completed with warnings that prevented bundle creation"
+            );
+        }
+
+        Debug.Log($"{subfolder} bundle created successfully: {fileName} ({new FileInfo(filePath).Length / 1024} KB)");
+        return filePath;
+    }
+
+    private static string DescribeBuildErrors(System.Collections.Generic.List<string> errors, BuildTarget target)
+    {
+        if (errors.Any(e => e.Contains("script class layout is incompatible") || e.Contains("has an extra field")))
+        {
+            return $"The editor's scripts were not compiled for {target} (script class layout mismatch).\n" +
+                   "Publish again. If it repeats, look for [SerializeField] fields inside platform #if blocks.";
+        }
+        if (errors.Count > 0) { return $"First error:\n{errors[0]}\n\nSee the Console for the full log."; }
+        return "No error was logged. Make sure the scene has content, then check the Console.";
     }
 
     private async void UploadBundles(string umsBundlePath, string upcBundlePath)
@@ -1250,11 +1186,14 @@ public class WorldPublisherUI : EditorWindow
 
     private void CleanupPublishingProcess()
     {
-        _isPublishing = false;
         EditorApplication.update -= ProcessPublishingStep;
-        _progressSection.style.display = DisplayStyle.None;
-        _publishButton.SetEnabled(true);
-        ClearBundleNames();
+        ClearBundleNames(); // before _isPublishing = false so it clears the frozen scene list
+        _isPublishing = false;
+        SessionState.EraseBool(PUBLISHING_SESSION_KEY);
+        _awaitingReload = false;
+        _publishScenes.Clear();
+        if (_progressSection != null) { _progressSection.style.display = DisplayStyle.None; }
+        if (_publishButton != null) { _publishButton.SetEnabled(true); }
 
         // Restore original build target
         if (EditorUserBuildSettings.activeBuildTarget != _originalBuildTarget)
@@ -1267,12 +1206,15 @@ public class WorldPublisherUI : EditorWindow
     private void FinishWithError(string errorMessage)
     {
         Debug.LogError(errorMessage);
-        EditorUtility.DisplayDialog("Error", errorMessage, "OK");
         CleanupPublishingProcess();
+        // A modal blocks the main thread, so skip it where nobody can click OK.
+        if (!Application.isBatchMode) { EditorUtility.DisplayDialog("Error", errorMessage, "OK"); }
     }
 
     private void UpdateProgress(float value, string message)
     {
+        // A tick can run after a domain reload before CreateGUI rebuilds the UI.
+        if (_progressBar == null || _progressMessage == null) { return; }
         _progressBar.value = value * 100; // ProgressBar expects 0-100
         _progressMessage.text = message;
     }
