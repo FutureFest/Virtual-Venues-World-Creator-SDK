@@ -2,6 +2,14 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.10.3] - 2026-09-29
+
+### Added — Rides
+- **SplineTrack:** add it next to a `SplineContainer` to get coaster rails + ties along the spline (gauge, rail
+  radius, tie spacing, height offset for carts whose wheels sit below their pivot). The mesh is rebuilt on load (never saved) and updates live while you drag knots.
+- GameObject > VirtualVenues > **New Roller Coaster**: a banked, hilly track with 3 carts that sit on the rails.
+- Coasters: turn **Keep Upright** off on the carts' `SplineMover`, or they stay level and float off sloped rails.
+
 ## [0.10.2] - 2026-09-27
 
 ### Fixed — World Publisher

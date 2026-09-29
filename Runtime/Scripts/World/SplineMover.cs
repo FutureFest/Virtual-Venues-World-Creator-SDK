@@ -32,7 +32,7 @@ namespace VirtualVenues.WorldCreator
         [Range(0f, 1f)] [SerializeField] private float _startOffset = 0f;
         [Tooltip("Turn to face along the track. Off = keep the authored rotation.")]
         [SerializeField] private bool _alignToSpline = true;
-        [Tooltip("With Align: only turn left/right, never tilt with slopes or banking (boats, platforms).")]
+        [Tooltip("With Align: only turn left/right, never tilt with slopes or banking (boats, platforms). Off for coasters.")]
         [SerializeField] private bool _keepUpright = true;
         [Tooltip("Players standing on it move with it.")]
         [SerializeField] private bool _carryPlayers = true;
@@ -142,6 +142,13 @@ namespace VirtualVenues.WorldCreator
         private static void CreateSplineRide(UnityEditor.MenuCommand menuCommand)
         {
             EditorHelpers.SpawnEditorObject("SplineRide", Vector3.zero);
+        }
+
+        // Example coaster (Resources/SplineCoaster.prefab): a SplineTrack with carts that tilt with the rails.
+        [UnityEditor.MenuItem("GameObject/VirtualVenues/New Roller Coaster", isValidateFunction: false, priority: 0)]
+        private static void CreateRollerCoaster(UnityEditor.MenuCommand menuCommand)
+        {
+            EditorHelpers.SpawnEditorObject("SplineCoaster", Vector3.zero);
         }
 #endif
     }
