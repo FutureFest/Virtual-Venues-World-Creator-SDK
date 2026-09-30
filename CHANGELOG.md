@@ -2,6 +2,49 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.10.4] - 2026-09-30
+
+### Added
+- Example scene `Runtime/Examples/RollerCoaster/RollerCoasterExample.unity`: lift hill, drop, banked turns and a
+  camelback on a `SplineTrack`, with supports, a 3-car train parked at the station, and a spawn point. The ride
+  uses `SplineRide`: station stop, lift chain, booster, brake run, and a "Drop" event that fires a particle burst.
+- **SplineRide** (add next to a `SplineContainer`): ride physics for the carts on that track.
+  - Gravity: carts speed up downhill and slow down uphill (friction and drag tunable; turn it off for boats/trams).
+  - **Track sections** in metres along the track: **Lift** (chain speed uphill), **Booster** (pushes up to a speed),
+    **Brake** (slows to a speed) and **Station** (stops, waits, launches). Drawn in colour on the track in the Scene
+    view; drag their handles along the track.
+  - **Track events**: points that fire when the train passes — an Animator trigger and/or a UnityEvent
+    (play a sound, burst particles, open a gate).
+  - The lap is simulated once on load and carts read it off the shared clock, so every player sees the train in
+    the same place with no network traffic. Carts can't be pushed and don't roll back.
+  - The inspector shows lap time, top speed, and warnings (train stalls, hits a station too fast).
+- `SplineTrack` **Parts**: turn the left rail, right rail and ties on or off, and give each its own material
+  (empty = the Mesh Renderer's material, so existing tracks look the same).
+- `SplineTrack` **Supports**: generated posts from the track down to a ground height (spacing, thickness, minimum
+  height, own material; off by default). The example's hand-placed supports are replaced by them.
+  - Posts stop on the first solid collider below them, so a tunnel or building with a collider keeps posts out
+    (no setup). Posts re-cast live in the editor when colliders move.
+  - **Track Support Blocker** (GameObject > VirtualVenues > Support Blocker, or the track inspector's
+    **Create Support Blocker** button): makes a trigger stop posts (an invisible no-post zone), or with
+    **Let Supports Through** lets posts ignore a collider (fences, lamps). Orange/green box in the Scene view.
+  - Track on its side or upside down (**Arch Tilt**, default 90°) gets an **arch** instead of a post: two legs
+    **Arch Width** apart (default 5 m), a crossbeam above the track and a hanger down to it — nothing runs through
+    the rails.
+  - `SplineTrack.RebuildAll()` and `StopsSupports(Collider)` for scripts; guide in `Documentation~/Rides.md`.
+- Track points show as numbered dots in the Scene view when a track is selected; click one to move, rotate or
+  bend it with Unity's spline handles.
+- Example scene: a second, gentle **platform coaster** — open decks players stand on (Carry Players), a 10 s
+  boarding stop, booster and brakes, with its own boarding platform and spawn point.
+- `SplineTrack` / `SplineRide` inspectors: **Edit Track Shape** button opens Unity's spline tools — move and rotate
+  track points (roll = banking) and drag tangent handles to bend the curve. Rails and ride timing update live.
+- Tooltips on every track, ride and cart setting; section rows are labelled by type ("Lift (22–55 m)").
+- `SplineMover`: **Gap Metres** (trailing cars ride a fixed distance behind the lead car — give every car of a
+  train the same Start Offset) and **Fire Events** (on for the lead car only). Duration is ignored on a
+  `SplineRide` track. The New Roller Coaster prefab now has a station, lift and brakes.
+- Test player (`TestPlayerInteractor`): offline stand-in for the player's interactions — nearest-Interactable
+  prompt + E, Seats (with a Sitting animation), Trigger Events, riding carry-platform movers and a simple Vehicle
+  drive — so creators can try rides in their own project.
+
 ## [0.10.3] - 2026-09-29
 
 ### Added — Rides

@@ -25,11 +25,16 @@ namespace VirtualVenues.WorldCreator
 
         [Tooltip("The track. Empty = the nearest SplineContainer above this object.")]
         [SerializeField] private SplineContainer _spline = null;
-        [Tooltip("Seconds for one lap (PingPong: one way).")]
+        [Tooltip("Seconds for one lap (PingPong: one way). Ignored when the track has a SplineRide (physics sets the lap time).")]
         [Min(0.1f)] [SerializeField] private float _duration = 20f;
+        [Tooltip("Loop: go round and round. PingPong: go to the end and back (not on a SplineRide track). Once: ride to the end and stop.")]
         [SerializeField] private SplineLoopMode _loopMode = SplineLoopMode.Loop;
-        [Tooltip("Where on the track the ride starts, 0-1. Spread several carts on one track with this.")]
+        [Tooltip("Where on the track the ride starts, 0-1. Spread several carts on one track with this. With a SplineRide it's a fraction of the lap time: give every car of one train the same value and use Gap Metres.")]
         [Range(0f, 1f)] [SerializeField] private float _startOffset = 0f;
+        [Tooltip("With a SplineRide: metres behind the train's lead car (0 = the lead car).")]
+        [Min(0f)] [SerializeField] private float _gapMetres = 0f;
+        [Tooltip("With a SplineRide: this car fires the track events. Leave on for the lead car only.")]
+        [SerializeField] private bool _fireEvents = true;
         [Tooltip("Turn to face along the track. Off = keep the authored rotation.")]
         [SerializeField] private bool _alignToSpline = true;
         [Tooltip("With Align: only turn left/right, never tilt with slopes or banking (boats, platforms). Off for coasters.")]
@@ -39,11 +44,23 @@ namespace VirtualVenues.WorldCreator
 
         private double _enableTime = 0d;
         private bool _warned = false;
+        private bool _pingPongWarned = false;
+        private SplineContainer _rideFor = null;
+        private SplineRide _ride = null;
+        // Last frame's ride position, for firing track events. Cleared on enable.
+        private bool _hasPrev = false;
+        private double _prevTime = 0d;
+        private float _prevMetres = 0f;
+
+        /// <summary>A clock jump bigger than this (seconds) repositions the cart without firing the events it skipped.</summary>
+        public const double MaxEventStep = 2d;
 
         public SplineContainer Spline => _spline;
         public float Duration => _duration;
         public SplineLoopMode LoopMode => _loopMode;
         public float StartOffset => _startOffset;
+        public float GapMetres => _gapMetres;
+        public bool FireEvents => _fireEvents;
         public bool AlignToSpline => _alignToSpline;
         public bool KeepUpright => _keepUpright;
         public bool CarryPlayers => _carryPlayers;
@@ -66,6 +83,7 @@ namespace VirtualVenues.WorldCreator
         {
             // Once is local-only, so it keeps local time: the shared Clock can swap domains mid-ride (on connect).
             _enableTime = Time.timeAsDouble;
+            _hasPrev = false;
         }
 
         private void OnDestroy()
@@ -106,7 +124,10 @@ namespace VirtualVenues.WorldCreator
             SplineContainer spline = ResolveSpline();
             if (spline == null) { return; }
 
-            float t = EvaluateT(time, _duration, _startOffset, _loopMode, out bool reverse);
+            bool reverse = false;
+            float t = _ride != null && _ride.isActiveAndEnabled && _ride.LapTime > 0d
+                ? RideT(_ride, time)
+                : EvaluateT(time, _duration, _startOffset, _loopMode, out reverse);
             if (!spline.Evaluate(t, out var position, out var tangent, out var up)) { return; }
 
             Vector3 forward = (Vector3)tangent;
@@ -120,10 +141,50 @@ namespace VirtualVenues.WorldCreator
             transform.position = position;
         }
 
+        // Physics ride: where the train is at this time, from the ride's baked time → metres table.
+        private float RideT(SplineRide ride, double time)
+        {
+            double lap = ride.LapTime;
+            double rideTime;
+            if (_loopMode == SplineLoopMode.Once)
+            {
+                rideTime = Math.Min(Math.Max(time + _startOffset * lap, 0d), lap);
+            }
+            else
+            {
+                if (_loopMode == SplineLoopMode.PingPong && !_pingPongWarned)
+                {
+                    _pingPongWarned = true;
+                    Debug.LogWarning($"SplineMover '{name}': PingPong isn't supported on a SplineRide track; looping instead.", this);
+                }
+                double laps = time / lap + _startOffset;
+                rideTime = (laps - Math.Floor(laps)) * lap;
+            }
+
+            float metres = ride.MetresAt(rideTime) - _gapMetres;
+            metres = ride.Closed && _loopMode != SplineLoopMode.Once ? Mathf.Repeat(metres, ride.Length) : Mathf.Max(0f, metres);
+
+            if (_fireEvents)
+            {
+                // Resync on time, not distance: the local → network clock swap on connect jumps the train anywhere.
+                bool resync = !_hasPrev || time < _prevTime || time - _prevTime > MaxEventStep;
+                if (!resync) { ride.FirePassed(_prevMetres, metres, this); }
+                _hasPrev = true;
+                _prevTime = time;
+                _prevMetres = metres;
+            }
+            return ride.ToNormalized(metres);
+        }
+
         private SplineContainer ResolveSpline()
         {
             if (_spline == null) { _spline = GetComponentInParent<SplineContainer>(); }
             bool ownTrack = _spline != null && _spline.transform.IsChildOf(transform);
+            if (_spline != _rideFor)
+            {
+                _rideFor = _spline;
+                _ride = _spline != null ? _spline.GetComponent<SplineRide>() : null;
+            }
             if (_spline != null && !ownTrack && _spline.Spline != null && _spline.Spline.Count > 1) { return _spline; }
 
             if (!_warned)

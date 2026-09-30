@@ -59,8 +59,6 @@ namespace VirtualVenues.WorldCreator
 
         public void OnLocalInteract()
         {
-            Debug.Log("OnLocalInteract called");
-
             _onLocalInteract?.Invoke();
         }
 

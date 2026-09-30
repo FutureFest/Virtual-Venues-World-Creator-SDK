@@ -7,7 +7,9 @@
         "Unity.Addressables.Editor",
         "Unity.Addressables",
         "Unity.RenderPipelines.Core.Runtime",
-        "Unity.RenderPipelines.Universal.Runtime"
+        "Unity.RenderPipelines.Universal.Runtime",
+        "Unity.Splines",
+        "Unity.Splines.Editor"
     ],
     "includePlatforms": [
         "Editor"

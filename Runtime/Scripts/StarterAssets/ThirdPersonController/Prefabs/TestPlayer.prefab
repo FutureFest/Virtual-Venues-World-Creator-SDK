@@ -116,5 +116,25 @@ PrefabInstance:
     m_RemovedGameObjects:
     - {fileID: 7888303496483045073, guid: 6ea0b04d5e26dd44d95e475d4332038a, type: 3}
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 974238578668270704, guid: 6ea0b04d5e26dd44d95e475d4332038a, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 7074110162466517664}
   m_SourcePrefab: {fileID: 100100000, guid: 6ea0b04d5e26dd44d95e475d4332038a, type: 3}
+--- !u!1 &351480384821665387 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 974238578668270704, guid: 6ea0b04d5e26dd44d95e475d4332038a, type: 3}
+  m_PrefabInstance: {fileID: 677093963715373595}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &7074110162466517664
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 351480384821665387}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 01fe3e6603356b4469a5b36d619a48b3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: com.virtualvenues.sdk.runtime::VirtualVenues.WorldCreator.TestPlayerInteractor

@@ -49,7 +49,9 @@ MonoBehaviour:
   _spline: {fileID: 8047138403975951816}
   _duration: 30
   _loopMode: 0
-  _startOffset: 0.044
+  _startOffset: 0
+  _gapMetres: 0
+  _fireEvents: 1
   _alignToSpline: 1
   _keepUpright: 0
   _carryPlayers: 0
@@ -246,6 +248,7 @@ GameObject:
   - component: {fileID: 6534570548981368784}
   - component: {fileID: 7891863229486133766}
   - component: {fileID: 8671919979577355418}
+  - component: {fileID: 6376722395303184731}
   m_Layer: 0
   m_Name: SplineCoaster
   m_TagString: Untagged
@@ -546,6 +549,44 @@ MonoBehaviour:
   _step: 0.5
   _tieSpacing: 1
   _tieSize: {x: 1.5, y: 0.08, z: 0.2}
+  _heightOffset: 0
+--- !u!114 &6376722395303184731
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 747860687592664908}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5c5f3043d61e82b4fbd10044a4cabe2f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: com.virtualvenues.sdk.runtime::VirtualVenues.WorldCreator.SplineRide
+  _useGravity: 1
+  _cruiseSpeed: 8
+  _gravity: 9.81
+  _friction: 0.02
+  _drag: 0.001
+  _sections:
+  - _type: 0
+    _start: 0
+    _end: 14
+    _speed: 3
+    _force: 4
+    _holdSeconds: 5
+  - _type: 2
+    _start: 98
+    _end: 111
+    _speed: 2
+    _force: 3
+    _holdSeconds: 5
+  - _type: 3
+    _start: 112
+    _end: 119
+    _speed: 3
+    _force: 2
+    _holdSeconds: 4
+  _events: []
 --- !u!1 &2775863174861360017
 GameObject:
   m_ObjectHideFlags: 0
@@ -595,7 +636,9 @@ MonoBehaviour:
   _spline: {fileID: 8047138403975951816}
   _duration: 30
   _loopMode: 0
-  _startOffset: 0.022
+  _startOffset: 0
+  _gapMetres: 2.7
+  _fireEvents: 0
   _alignToSpline: 1
   _keepUpright: 0
   _carryPlayers: 0
@@ -649,6 +692,8 @@ MonoBehaviour:
   _duration: 30
   _loopMode: 0
   _startOffset: 0
+  _gapMetres: 5.4
+  _fireEvents: 0
   _alignToSpline: 1
   _keepUpright: 0
   _carryPlayers: 0

@@ -109,7 +109,7 @@ Create interactive objects in your world.
 3. **Add a Stage**: `GameObject > VirtualVenues > New Stage`
 4. **Add SpawnPoints**: `GameObject > VirtualVenues > Spawn Point` (add multiple for variety)
 5. **Add Fixtures**: Click the "+" button on the Stage gizmo to add lighting
-6. **Test locally**: Add `TestPlayerSpawner` prefab from `Runtime/Resources/`
+6. **Test locally**: Add `TestPlayerSpawner` prefab from `Runtime/Prefabs/`
 7. **Publish**: Open `VirtualVenues > World Publisher`, login, and upload
 
 See **[REQUIREMENTS.md](REQUIREMENTS.md)** for the complete World and Avatar publishing requirements.
@@ -118,9 +118,11 @@ See **[REQUIREMENTS.md](REQUIREMENTS.md)** for the complete World and Avatar pub
 
 Use the `TestPlayerSpawner` prefab to test your world locally:
 
-1. Drag `Runtime/Resources/TestPlayerSpawner.prefab` into your scene
+1. Drag `Runtime/Prefabs/TestPlayerSpawner.prefab` into your scene
 2. Enter Play mode
 3. A test player will spawn at a random SpawnPoint
+4. Walk up to an Interactable and press **E** (gamepad: west button) — Seats sit/stand, Vehicles drive
+   (simple offline drive), TriggerEvents fire on enter, and Carry Players movers carry you
 
 ## Namespace
 
@@ -214,6 +216,21 @@ Interactable.Tracker.onInstanceAdded += (obj) => { };
 // - InteractionDisplayText: "Press {0} to interact"
 // - OnHighlight/OnUnhighlight: UnityEvents for visual feedback
 // - OnLocalInteract: UnityEvent when player interacts
+```
+
+### Rides (SplineTrack, SplineRide, SplineMover, TrackSupportBlocker)
+
+Roller coasters and other track rides. Start from **GameObject > VirtualVenues > New Roller Coaster** or the
+example scene `Runtime/Examples/RollerCoaster/RollerCoasterExample.unity`. Full guide (how the parts fit, the
+support-post rule, the script API and a build-from-code recipe): [`Documentation~/Rides.md`](Documentation~/Rides.md).
+
+```csharp
+// SplineTrack: rails, ties and support posts generated along the SplineContainer on the same object.
+track.ConfigureSupports(show: true, material: null, spacing: 6f, radius: 0.15f, minHeight: 1.5f, groundHeight: 0f);
+SplineTrack.RebuildAll();   // after creating/moving colliders from code
+
+// Support posts stop on the first solid collider below them (a tunnel roof, a building).
+// TrackSupportBlocker on a collider: Block = a trigger also stops posts; LetSupportsThrough = posts ignore it.
 ```
 
 ## Support
