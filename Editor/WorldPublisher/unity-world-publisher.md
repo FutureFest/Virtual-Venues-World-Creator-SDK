@@ -1,5 +1,9 @@
 # World Publisher Extension API Guide
 
+> **Backend API spec, not usage docs.** To publish from code use the SDK's public C# API — see
+> `Documentation~/Publishing.md`. The SDK currently calls the `/dev` API gateway, not the base URL below, and
+> does not refresh tokens.
+
 This guide documents the VirtualVenues World Publisher API for Unity developers building a World Publisher extension. Users can upload UPC and UMS World Maps through Unity, which will appear in the VirtualVenues web app.
 
 ## Table of Contents

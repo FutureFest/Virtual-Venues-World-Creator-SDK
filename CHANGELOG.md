@@ -2,6 +2,20 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.10.5] - 2026-10-05
+
+### Added
+- **Docs for AI agents**: `AGENTS.md` plus `Documentation~/Components.md` (every world component),
+  `Documentation~/Building-a-World.md` (build a world from code via the `unity` CLI) and
+  `Documentation~/Publishing.md`.
+- **`WorldPublisher.WorldPublishJob`**: build (and optionally upload) a world from code —
+  `WorldPublishJob.Start(mainScene, additionalScenes, worldName, upload)`, then poll `WorldPublishJob.Status`.
+  Survives the script reloads of the platform switches, re-reads the cached sign-in after each one, and
+  `upload: false` builds both bundles with no sign-in. The World Publisher window now runs on it.
+
+### Fixed
+- REQUIREMENTS.md pointed at the wrong `TestPlayerSpawner` path.
+
 ## [0.10.4] - 2026-09-30
 
 ### Added

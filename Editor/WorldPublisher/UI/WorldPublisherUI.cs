@@ -60,21 +60,6 @@ public class WorldPublisherUI : EditorWindow
     // Bumped on sign-out and at the top of CheckAuth so a background refresh continuation can detect a
     // stale auth context and bail before mutating UI. Mirrors BuildUploaderUI.
     private int _authGen = 0;
-    private string _outputFolder = "Assets/WorldMapAssetBundles";
-
-    // Publish state is serialized so the step machine survives the domain reload each platform switch triggers.
-    [SerializeField] private bool _isPublishing = false;
-    [SerializeField] private int _currentStep = 0;
-    [SerializeField] private string _versionedBundleName;
-    [SerializeField] private string _umsFilePath;
-    [SerializeField] private string _upcFilePath;
-    [SerializeField] private BuildTarget _originalBuildTarget;
-    [SerializeField] private BuildTargetGroup _originalBuildTargetGroup;
-    [SerializeField] private System.Collections.Generic.List<string> _publishScenes = new System.Collections.Generic.List<string>();
-    [SerializeField] private bool _awaitingReload = false;
-    [SerializeField] private double _switchTime;
-    private const double RELOAD_TIMEOUT_SECONDS = 120;
-    private const string PUBLISHING_SESSION_KEY = "WorldPublisher_Publishing";
 
     // Auth state
     private Credentials _credentials = null;
@@ -87,7 +72,6 @@ public class WorldPublisherUI : EditorWindow
     [SerializeField] private string _publishWorldName = string.Empty;
     private string _lastPublishedWorldId = null;
 
-    private const string VERSION_KEY = "WorldMapVersion_";
     private const string WORLD_NAME_KEY = "WorldPublisher_WorldName";
     private const string ADDITIONAL_SCENES_KEY = "WorldPublisher_AdditionalScenes_"; // + main scene GUID -> "guid;guid"
 
@@ -102,19 +86,14 @@ public class WorldPublisherUI : EditorWindow
     private void OnEnable()
     {
         AuthManager.AuthStateChanged += OnAuthStateChanged;
-
-        // OnEnable after a publish started means a domain reload happened: resume the step machine.
-        // SessionState dies with the editor, so a window restored after a restart/crash doesn't resume a stale publish.
-        _awaitingReload = false;
-        if (!SessionState.GetBool(PUBLISHING_SESSION_KEY, false)) { _isPublishing = false; }
-        EditorApplication.update -= ProcessPublishingStep;
-        if (_isPublishing) { EditorApplication.update += ProcessPublishingStep; }
+        // The publish itself runs in WorldPublishJob and survives domain reloads; the window only shows progress.
+        WorldPublishJob.Changed += OnPublishChanged;
     }
 
     private void OnDisable()
     {
         AuthManager.AuthStateChanged -= OnAuthStateChanged;
-        EditorApplication.update -= ProcessPublishingStep;
+        WorldPublishJob.Changed -= OnPublishChanged;
     }
 
     private void OnAuthStateChanged()
@@ -278,7 +257,7 @@ public class WorldPublisherUI : EditorWindow
         UpdateSetupBanner();
 
         // Rebuilt mid-publish after a domain reload: keep the progress visible and publish locked.
-        if (_isPublishing)
+        if (WorldPublishJob.IsRunning)
         {
             _progressSection.style.display = DisplayStyle.Flex;
             _publishButton.SetEnabled(false);
@@ -345,11 +324,9 @@ public class WorldPublisherUI : EditorWindow
         }
     }
 
-    // Main scene first, then the distinct additional scenes (never the main scene twice). Frozen while publishing:
-    // a domain reload re-runs PrePopulateSceneSelection, which can change the selector.
+    // Main scene first, then the additional scenes. WorldPublishJob drops duplicates and freezes the list.
     private System.Collections.Generic.List<string> PublishScenePaths()
     {
-        if (_isPublishing && _publishScenes.Count > 0) { return _publishScenes; }
         string main = AssetDatabase.GetAssetPath(_sceneSelector.value);
         var paths = new System.Collections.Generic.List<string> { main };
         foreach (SceneAsset scene in _additionalScenes)
@@ -358,34 +335,6 @@ public class WorldPublisherUI : EditorWindow
             if (!string.IsNullOrEmpty(path) && path.EndsWith(".unity") && !paths.Contains(path)) { paths.Add(path); }
         }
         return paths;
-    }
-
-    // Every published scene shares one bundle. The loader makes the main scene active by matching its file name
-    // against the bundle name ("world_upc_<main scene>_<yyMMdd>_<vv>"), so the naming convention is load-bearing.
-    private void AssignBundleName(string bundleName)
-    {
-        foreach (string path in PublishScenePaths())
-        {
-            AssetImporter importer = AssetImporter.GetAtPath(path);
-            if (importer == null)
-            {
-                throw new Exception($"Failed to get AssetImporter for scene: {path}. The scene may not be properly imported.");
-            }
-            importer.assetBundleName = bundleName;
-            Debug.Log($"Assigned asset bundle name {bundleName} to {path}");
-        }
-    }
-
-    // BuildAssetBundles builds every named asset in the project, so names must not outlive a publish.
-    private void ClearBundleNames()
-    {
-        if (_publishScenes.Count == 0 && _sceneSelector?.value == null) { return; }
-        foreach (string path in PublishScenePaths())
-        {
-            AssetImporter importer = AssetImporter.GetAtPath(path);
-            if (importer != null && !string.IsNullOrEmpty(importer.assetBundleName)) { importer.assetBundleName = string.Empty; }
-        }
-        AssetDatabase.RemoveUnusedAssetBundleNames();
     }
 
     private void SetVersionLabel()
@@ -896,22 +845,6 @@ public class WorldPublisherUI : EditorWindow
         EditorPrefs.SetString(WORLD_NAME_KEY, worldName);
         ClearWorldNameError();
 
-        // NMKR pre-publish validation. No-op for scenes without NMKR content;
-        // blocks publishing when an NMKR Mint Interactable is misconfigured.
-        foreach (string scenePath in PublishScenePaths())
-        {
-            WorldNmkrValidator.Result nmkrResult = WorldNmkrValidator.Validate(AssetDatabase.LoadAssetAtPath<SceneAsset>(scenePath));
-            if (!nmkrResult.Ok)
-            {
-                EditorUtility.DisplayDialog(
-                    "NMKR Configuration Errors",
-                    $"This world cannot be published until the following NMKR issues in {Path.GetFileNameWithoutExtension(scenePath)} are fixed:\n\n- "
-                        + string.Join("\n- ", nmkrResult.Errors),
-                    "OK");
-                return;
-            }
-        }
-
         StartPublishing();
     }
 
@@ -934,281 +867,44 @@ public class WorldPublisherUI : EditorWindow
 
     private void StartPublishing()
     {
-        string assetPath = AssetDatabase.GetAssetPath(_sceneSelector.value);
-        if (string.IsNullOrEmpty(assetPath) || !assetPath.EndsWith(".unity"))
+        var paths = PublishScenePaths();
+        try
         {
-            EditorUtility.DisplayDialog("Error", "Selected asset is not a valid Unity scene.", "OK");
+            WorldPublishJob.Start(paths[0], paths.Skip(1).ToList(), _publishWorldName);
+        }
+        catch (Exception ex)
+        {
+            EditorUtility.DisplayDialog("Error", ex.Message, "OK");
             return;
         }
-
-        if (EditorUtility.scriptCompilationFailed)
-        {
-            EditorUtility.DisplayDialog("Error", "Scripts have compile errors. Fix the Console errors before publishing.", "OK");
-            return;
-        }
-
-        _publishScenes = PublishScenePaths();
-        _isPublishing = true;
-        SessionState.SetBool(PUBLISHING_SESSION_KEY, true);
-        _currentStep = 0;
-        _awaitingReload = false;
-        _umsFilePath = null;
-        _upcFilePath = null;
-        _versionedBundleName = GenerateVersionedBundleName(assetPath);
-
-        // Save original build target to restore after publishing
-        _originalBuildTarget = EditorUserBuildSettings.activeBuildTarget;
-        _originalBuildTargetGroup = EditorUserBuildSettings.selectedBuildTargetGroup;
-        Debug.Log($"Saved original build target: {_originalBuildTargetGroup}/{_originalBuildTarget}");
-
-        UpdateProgress(0f, "Initializing publishing...");
         _progressSection.style.display = DisplayStyle.Flex;
         _publishButton.SetEnabled(false);
-
-        Debug.Log("Starting world map publishing process.");
-        EditorApplication.update -= ProcessPublishingStep;
-        EditorApplication.update += ProcessPublishingStep;
     }
 
-    // Each platform is a switch step then a build step: the build waits (across ticks and the domain reload the
-    // switch causes) until scripts are compiled for that platform. OnEnable re-hooks this after the reload.
-    private void ProcessPublishingStep()
+    private void OnPublishChanged(WorldPublishStatus status)
     {
-        try
+        UpdateProgress(status.progress, status.message);
+        if (status.state == WorldPublishState.Running) { return; }
+
+        if (_progressSection != null) { _progressSection.style.display = DisplayStyle.None; }
+        if (_publishButton != null) { _publishButton.SetEnabled(true); }
+        // A modal blocks the main thread, so skip it where nobody can click OK.
+        if (Application.isBatchMode) { return; }
+
+        if (status.state == WorldPublishState.Succeeded)
         {
-            switch (_currentStep)
-            {
-                case 0:
-                    UpdateProgress(0.2f, "Switching to Linux platform...");
-                    SwitchTo(BuildTargetGroup.Standalone, BuildTarget.StandaloneLinux64);
-                    _currentStep++;
-                    break;
-                case 1:
-                    if (!ReadyToBuild(BuildTarget.StandaloneLinux64)) { return; }
-                    UpdateProgress(0.25f, "Building UMS asset bundle for Linux...");
-                    _umsFilePath = BuildBundle(BuildTarget.StandaloneLinux64, "ums", "UMS");
-                    _currentStep++;
-                    break;
-                case 2:
-                    UpdateProgress(0.4f, "Switching to WebGL platform...");
-                    SwitchTo(BuildTargetGroup.WebGL, BuildTarget.WebGL);
-                    _currentStep++;
-                    break;
-                case 3:
-                    if (!ReadyToBuild(BuildTarget.WebGL)) { return; }
-                    UpdateProgress(0.45f, "Building UPC asset bundle for WebGL...");
-                    _upcFilePath = BuildBundle(BuildTarget.WebGL, "upc", "UPC");
-                    _currentStep++;
-                    break;
-                case 4:
-                    UpdateProgress(0.5f, "Refreshing AssetDatabase...");
-                    AssetDatabase.Refresh();
-                    _currentStep++;
-                    break;
-                case 5:
-                    UpdateProgress(0.6f, "Starting upload to cloud...");
-                    UploadBundles(_umsFilePath, _upcFilePath);
-                    _currentStep++;
-                    break;
-            }
-        }
-        catch (Exception ex)
-        {
-            FinishWithError($"Publishing failed at step {_currentStep}:\n\n{ex.Message}");
-        }
-    }
-
-    private void SwitchTo(BuildTargetGroup group, BuildTarget target)
-    {
-        if (EditorUserBuildSettings.activeBuildTarget == target) { return; }
-
-        Debug.Log($"Switching build target to {target}...");
-        // Set before switching: OnEnable (after the reload) clears it.
-        _awaitingReload = true;
-        _switchTime = EditorApplication.timeSinceStartup;
-        if (!EditorUserBuildSettings.SwitchActiveBuildTarget(group, target))
-        {
-            _awaitingReload = false;
-            throw new Exception(
-                $"Failed to switch build target to {target}.\n\n" +
-                "Install its Build Support module via Unity Hub -> Installs -> Add Modules.");
-        }
-    }
-
-    // Building before the recompile + domain reload finishes makes the player serialization layout differ from the
-    // editor's (fields inside #if UNITY_WEBGL etc.) and the bundle build fails.
-    private bool ReadyToBuild(BuildTarget target)
-    {
-        if (EditorApplication.isCompiling || EditorApplication.isUpdating) { return false; }
-        if (EditorUtility.scriptCompilationFailed) { throw new Exception($"Scripts failed to compile for {target}. Fix the Console errors and publish again."); }
-        if (_awaitingReload)
-        {
-            // ponytail: assumes every target switch recompiles + reloads; the timeout covers a switch that doesn't.
-            if (EditorApplication.timeSinceStartup - _switchTime < RELOAD_TIMEOUT_SECONDS) { return false; }
-            Debug.LogWarning($"No script reload seen {RELOAD_TIMEOUT_SECONDS}s after switching to {target}; building anyway.");
-            _awaitingReload = false;
-        }
-        if (EditorUserBuildSettings.activeBuildTarget != target) { throw new Exception($"Active build target is {EditorUserBuildSettings.activeBuildTarget}, expected {target}."); }
-        return true;
-    }
-
-    // Builds the world bundle for one platform and returns its file path.
-    private string BuildBundle(BuildTarget target, string prefix, string subfolder)
-    {
-        string bundleName = $"world_{prefix}_{_versionedBundleName}";
-        AssignBundleName(bundleName);
-
-        string outputFolder = Path.Combine(_outputFolder, subfolder);
-        Directory.CreateDirectory(outputFolder);
-
-        Debug.Log($"Building asset bundles for {target}...");
-        var errors = new System.Collections.Generic.List<string>();
-        Application.LogCallback capture = (message, stack, type) =>
-        {
-            if (type == LogType.Error || type == LogType.Exception) { errors.Add(message); }
-        };
-        AssetBundleManifest manifest;
-        Application.logMessageReceived += capture;
-        try
-        {
-            manifest = BuildPipeline.BuildAssetBundles(outputFolder, BuildAssetBundleOptions.None, target);
-        }
-        finally
-        {
-            Application.logMessageReceived -= capture;
-        }
-
-        if (manifest == null)
-        {
-            throw new Exception($"{subfolder} bundle build failed for {target}.\n\n{DescribeBuildErrors(errors, target)}");
-        }
-
-        string fileName = bundleName.ToLower();
-        string filePath = Path.Combine(outputFolder, fileName);
-        if (!File.Exists(filePath))
-        {
-            // List what WAS created for debugging
-            string[] createdBundles = Directory.GetFiles(outputFolder, "*", SearchOption.TopDirectoryOnly)
-                .Where(f => !f.EndsWith(".manifest") && !f.EndsWith(".meta"))
-                .Select(Path.GetFileName)
-                .ToArray();
-
-            throw new FileNotFoundException(
-                $"{subfolder} bundle build completed but expected file was not created.\n\n" +
-                $"Expected file: {filePath}\n\n" +
-                $"Bundles found in directory:\n{string.Join("\n", createdBundles)}\n\n" +
-                "This may indicate:\n" +
-                "- Scene is empty (no content to bundle)\n" +
-                "- File naming mismatch\n" +
-                "- Build completed with warnings that prevented bundle creation"
-            );
-        }
-
-        Debug.Log($"{subfolder} bundle created successfully: {fileName} ({new FileInfo(filePath).Length / 1024} KB)");
-        return filePath;
-    }
-
-    private static string DescribeBuildErrors(System.Collections.Generic.List<string> errors, BuildTarget target)
-    {
-        if (errors.Any(e => e.Contains("script class layout is incompatible") || e.Contains("has an extra field")))
-        {
-            return $"The editor's scripts were not compiled for {target} (script class layout mismatch).\n" +
-                   "Publish again. If it repeats, look for [SerializeField] fields inside platform #if blocks.";
-        }
-        if (errors.Count > 0) { return $"First error:\n{errors[0]}\n\nSee the Console for the full log."; }
-        return "No error was logged. Make sure the scene has content, then check the Console.";
-    }
-
-    private async void UploadBundles(string umsBundlePath, string upcBundlePath)
-    {
-        try
-        {
-            if (!File.Exists(umsBundlePath))
-                throw new FileNotFoundException($"UMS bundle not found: {umsBundlePath}");
-            if (!File.Exists(upcBundlePath))
-                throw new FileNotFoundException($"UPC bundle not found: {upcBundlePath}");
-
-            byte[] umsData = await Task.Run(() => File.ReadAllBytes(umsBundlePath));
-            byte[] upcData = await Task.Run(() => File.ReadAllBytes(upcBundlePath));
-
-            string umsFileName = Path.GetFileName(umsBundlePath);
-            string upcFileName = Path.GetFileName(upcBundlePath);
-
-            // Create progress reporter
-            var progress = new Progress<string>(message =>
-            {
-                float prog = GetUploadProgress(message);
-                UpdateProgress(0.6f + (prog * 0.4f), message);
-            });
-
-            // Pass world name to upload
-            World uploadedWorld = await WorldPublisherApi.UploadWorldAsync(
-                umsFileName, upcFileName, umsData, upcData, _publishWorldName, progress);
-
-            _lastPublishedWorldId = uploadedWorld?.worldId;
-            await HandleUploadSuccess(uploadedWorld);
-        }
-        catch (Exception ex)
-        {
-            FinishWithError($"Upload failed: {ex.Message}");
-        }
-        finally
-        {
-            CleanupPublishingProcess();
-        }
-    }
-
-    private float GetUploadProgress(string message)
-    {
-        if (message.Contains("Requesting upload URLs")) { return 0.1f; }
-        if (message.Contains("Uploading UMS")) { return 0.3f; }
-        if (message.Contains("Uploading UPC")) { return 0.6f; }
-        if (message.Contains("Confirming upload")) { return 0.8f; }
-        if (message.Contains("Fetching world info")) { return 0.9f; }
-        return 1.0f;
-    }
-
-    private async Task HandleUploadSuccess(World uploadedWorld)
-    {
-        UpdateProgress(1f, "Publishing Complete!");
-
-        await Task.Run(() =>
-        {
+            _lastPublishedWorldId = status.worldId;
             EditorApplication.delayCall += () =>
             {
                 RefreshWorldList();
-                EditorUtility.DisplayDialog("Success",
-                    $"World \"{uploadedWorld?.worldName ?? _publishWorldName}\" published successfully!",
-                    "OK");
+                EditorUtility.DisplayDialog("Success", $"World \"{status.worldName}\" published successfully!", "OK");
             };
-        });
-    }
-
-    private void CleanupPublishingProcess()
-    {
-        EditorApplication.update -= ProcessPublishingStep;
-        ClearBundleNames(); // before _isPublishing = false so it clears the frozen scene list
-        _isPublishing = false;
-        SessionState.EraseBool(PUBLISHING_SESSION_KEY);
-        _awaitingReload = false;
-        _publishScenes.Clear();
-        if (_progressSection != null) { _progressSection.style.display = DisplayStyle.None; }
-        if (_publishButton != null) { _publishButton.SetEnabled(true); }
-
-        // Restore original build target
-        if (EditorUserBuildSettings.activeBuildTarget != _originalBuildTarget)
-        {
-            Debug.Log($"Restoring original build target: {_originalBuildTargetGroup}/{_originalBuildTarget}");
-            EditorUserBuildSettings.SwitchActiveBuildTarget(_originalBuildTargetGroup, _originalBuildTarget);
         }
-    }
-
-    private void FinishWithError(string errorMessage)
-    {
-        Debug.LogError(errorMessage);
-        CleanupPublishingProcess();
-        // A modal blocks the main thread, so skip it where nobody can click OK.
-        if (!Application.isBatchMode) { EditorUtility.DisplayDialog("Error", errorMessage, "OK"); }
+        else if (status.state == WorldPublishState.Failed)
+        {
+            // Shown now, not deferred: the build-target restore that follows can reload and drop a delayCall.
+            EditorUtility.DisplayDialog("Error", status.message, "OK");
+        }
     }
 
     private void UpdateProgress(float value, string message)
@@ -1217,42 +913,5 @@ public class WorldPublisherUI : EditorWindow
         if (_progressBar == null || _progressMessage == null) { return; }
         _progressBar.value = value * 100; // ProgressBar expects 0-100
         _progressMessage.text = message;
-    }
-
-    private string GenerateVersionedBundleName(string assetPath)
-    {
-        string sceneName = Path.GetFileNameWithoutExtension(assetPath);
-        string date = DateTime.Now.ToString("yyMMdd");
-
-        string versionKeyWithScene = VERSION_KEY + sceneName;
-        string dateKeyWithScene = versionKeyWithScene + "_date";
-
-        // Get last date and version
-        string lastDate = EditorPrefs.GetString(dateKeyWithScene, "");
-        int lastVersion = EditorPrefs.GetInt(versionKeyWithScene, -1);
-
-        int newVersion;
-        if (lastDate != date)
-        {
-            // New date, reset version to 0
-            newVersion = 0;
-        }
-        else
-        {
-            // Same date, increment version
-            newVersion = lastVersion + 1;
-            if (newVersion > 99) { newVersion = 0; } // Reset to 0 after 99
-        }
-
-        string formattedVersion = newVersion.ToString("D2");
-        string versionedName = $"{sceneName}_{date}_{formattedVersion}";
-
-        // Save new version and date
-        EditorPrefs.SetInt(versionKeyWithScene, newVersion);
-        EditorPrefs.SetString(dateKeyWithScene, date);
-
-        Debug.Log($"Generated versioned bundle name: {versionedName}");
-
-        return versionedName;
     }
 }

@@ -28,7 +28,7 @@ compiles into `com.virtualvenues.sdk.editor` like them — there is no longer a 
 
 ## Notes / known gaps
 
-- **Thumbnails** are not yet generated (`thumbnailUrl` is empty); the grid falls back to glyphs.
+- **Thumbnails** are baked per asset and uploaded as `thumb_<assetKey>.png` next to the catalog; `PublishAsync` stamps each asset's `thumbnailUrl`.
   The backend already anticipates `thumbs/*.png` upload objects — this is the main pending feature.
 - **Unity 6.4:** `LockReloadAssemblies` won't hold across the build-target switch on 6.4. When the
   editor is upgraded, this needs the `SessionState` + `delayCall` reload-safe state machine —

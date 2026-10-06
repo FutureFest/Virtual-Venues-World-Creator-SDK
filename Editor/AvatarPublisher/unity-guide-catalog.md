@@ -1,5 +1,9 @@
 # Unity Developer Guide: Avatar Collection Upload Integration
 
+> **Backend API spec, not usage docs.** To publish from code use the SDK's public C# API — see
+> `Documentation~/Publishing.md`. The SDK currently calls the `/dev` API gateway, not the base URL below, and
+> does not refresh tokens.
+
 ## Overview
 
 We've added a new Catalog (Avatar Collections) system to the API. Your Unity plugin needs to upload avatar bundles, cosmetics, and metadata using a two-step upload flow similar to how world maps work.

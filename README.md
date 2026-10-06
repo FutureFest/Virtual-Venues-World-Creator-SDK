@@ -9,6 +9,8 @@ A Unity package for creating custom virtual worlds and stages for the VirtualVen
 - **Dependencies**: `com.unity.nuget.newtonsoft-json` and `com.unity.addressables` (auto-installed)
 - **Run `VirtualVenues > Project Setup`** once to configure rendering, so worlds don't render pink in the browser
 
+> **AI agents:** start at [AGENTS.md](AGENTS.md) — building and publishing worlds from code.
+
 > **Before publishing, read [REQUIREMENTS.md](REQUIREMENTS.md)** — the full list of what your project, scene, and prefabs need to build and publish Worlds and Avatars (required vs. recommended vs. silent gotchas).
 
 ## Installation

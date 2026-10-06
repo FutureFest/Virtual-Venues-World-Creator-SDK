@@ -60,7 +60,7 @@ Configure these via `VirtualVenues → Plugins → NMKR Settings`. Publishing is
 
 - **At least one SpawnPoint** (`GameObject → VirtualVenues → Spawn Point`) — players spawn here.
 - A **Stage** (`GameObject → VirtualVenues → New Stage`) with Screens/Fixtures for performances.
-- Test locally first with `Runtime/Resources/TestPlayerSpawner.prefab`.
+- Test locally first with `Runtime/Prefabs/TestPlayerSpawner.prefab`.
 
 ### Gotchas
 
