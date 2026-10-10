@@ -283,29 +283,35 @@ namespace VirtualVenues.Editor.Publishing
         // ---- build ----------------------------------------------------------------------------- //
 
         /// <summary>
-        /// Builds this publisher's Addressables catalog for the WebGL/WebGPU target. Switches the active
-        /// build target to WebGL if needed (restored afterwards), temporarily makes the isolated settings
-        /// the global default (restored / torn down afterwards), cleans, and builds. The caller is expected
+        /// Builds this publisher's Addressables catalog for the WebGL/WebGPU target. The caller is expected
         /// to have called <see cref="SetRemoteLoadPath"/> with the final content base URL first so bundle
         /// URLs bake correctly.
         /// </summary>
-        public BuildResult BuildForWebGPU(IProgress<(float progress, string message)> progress = null)
+        public BuildResult BuildForWebGPU(IProgress<(float progress, string message)> progress = null) =>
+            Build(BuildTargetGroup.WebGL, BuildTarget.WebGL, progress);
+
+        /// <summary>
+        /// Builds this publisher's Addressables catalog for <paramref name="target"/>. Switches the active
+        /// build target if needed (restored afterwards), cleans, and builds the isolated settings directly.
+        /// The caller is expected to have called <see cref="SetRemoteLoadPath"/> first.
+        /// </summary>
+        public BuildResult Build(BuildTargetGroup targetGroup, BuildTarget target, IProgress<(float progress, string message)> progress = null)
         {
             BuildTarget originalTarget = EditorUserBuildSettings.activeBuildTarget;
             BuildTargetGroup originalGroup = EditorUserBuildSettings.selectedBuildTargetGroup;
             bool switchedTarget = false;
 
-            if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.WebGL)
+            if (EditorUserBuildSettings.activeBuildTarget != target)
             {
-                progress?.Report((0.05f, "Switching to WebGL platform..."));
-                bool switched = EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.WebGL, BuildTarget.WebGL);
+                progress?.Report((0.05f, $"Switching to {target} platform..."));
+                bool switched = EditorUserBuildSettings.SwitchActiveBuildTarget(targetGroup, target);
                 if (!switched)
                 {
                     return new BuildResult
                     {
                         Success = false,
-                        Error = "Failed to switch the active build target to WebGL. " +
-                                "Ensure Web Build Support is installed (Unity Hub > Add Modules), then try again.",
+                        Error = $"Failed to switch the active build target to {target}. " +
+                                $"Ensure {target} Build Support is installed (Unity Hub > Add Modules), then try again.",
                         OutputPath = null
                     };
                 }
@@ -323,7 +329,7 @@ namespace VirtualVenues.Editor.Publishing
                 progress?.Report((0.2f, "Cleaning build cache..."));
                 AddressableAssetSettings.CleanPlayerContent(settings.ActivePlayerDataBuilder);
 
-                progress?.Report((0.3f, "Building Addressables for WebGPU..."));
+                progress?.Report((0.3f, $"Building Addressables for {target}..."));
 
                 // Build THIS publisher's isolated settings DIRECTLY, WITHOUT ever swapping the project-wide
                 // AddressableAssetSettingsDefaultObject.Settings.
@@ -361,6 +367,7 @@ namespace VirtualVenues.Editor.Publishing
                 {
                     Success = true,
                     Error = null,
+                    Target = target,
                     OutputPath = GetBuildOutputPath(),
                     BundleCount = result.LocationCount,
                     BundleFilePaths = result.AssetBundleBuildResults != null
@@ -502,6 +509,7 @@ namespace VirtualVenues.Editor.Publishing
         {
             public bool Success;
             public string Error;
+            public BuildTarget Target; // the platform actually built — record this, not activeBuildTarget (restored by then)
             public string OutputPath;
             public int BundleCount;
 

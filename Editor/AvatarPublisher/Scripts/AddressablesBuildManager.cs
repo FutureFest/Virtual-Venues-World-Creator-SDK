@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEditor;
 using UnityEditor.AddressableAssets.Settings;
 using UnityEngine;
 using VirtualVenues.Editor.Publishing;
@@ -34,6 +35,9 @@ namespace VirtualVenues.Editor.AvatarPublisher
 
         public static AddressablesCatalogBuilder.BuildResult BuildForWebGPU(
             IProgress<(float progress, string message)> progress = null) => _impl.BuildForWebGPU(progress);
+
+        public static AddressablesCatalogBuilder.BuildResult BuildForIOS(
+            IProgress<(float progress, string message)> progress = null) => _impl.Build(BuildTargetGroup.iOS, BuildTarget.iOS, progress);
 
         public static string GetBuildOutputPath() => _impl.GetBuildOutputPath();
 

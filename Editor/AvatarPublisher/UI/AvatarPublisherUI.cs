@@ -44,6 +44,7 @@ public class AvatarPublisherUI : EditorWindow
 
     // UI Elements - Version
     private TextField _versionTagField;
+    private Toggle _exportIosToggle;
     private Label _versionTagError;
 
     // UI Elements - Build Mode
@@ -132,6 +133,7 @@ public class AvatarPublisherUI : EditorWindow
 
     private const string CATALOG_NAME_KEY = "AvatarPublisher_CatalogName";
     private const string VERSION_TAG_KEY = "AvatarPublisher_VersionTag";
+    private const string EXPORT_IOS_KEY = "AvatarPublisher_ExportIOS";
     private const string BUNDLE_FOLDER_KEY = "AvatarPublisher_BundleFolder";
     private const string BUILD_MODE_KEY = "AvatarPublisher_BuildMode";
     private const string CATALOG_MODE_KEY = "AvatarPublisher_CatalogMode";
@@ -419,6 +421,22 @@ public class AvatarPublisherUI : EditorWindow
         if (_bundleFolderError != null) { _bundleFolderError.style.display = DisplayStyle.None; }
         if (_prefabsError != null) { _prefabsError.style.display = DisplayStyle.None; }
         if (_catalogDropdownError != null) { _catalogDropdownError.style.display = DisplayStyle.None; }
+
+        // "Also export iOS" (auto build only). Off by default; disabled without the iOS Build Support module.
+        if (_autoBuildSection != null)
+        {
+            bool iosSupported = IsIosBuildSupported();
+            _exportIosToggle = new Toggle("Also export iOS")
+            {
+                value = iosSupported && EditorPrefs.GetBool(EXPORT_IOS_KEY, false),
+                tooltip = iosSupported
+                    ? "Also build and upload an iOS copy of this catalog version (for the native iOS app)."
+                    : "Install iOS Build Support (Unity Hub > Add Modules) to export iOS."
+            };
+            _exportIosToggle.SetEnabled(iosSupported);
+            _exportIosToggle.RegisterValueChangedCallback(e => EditorPrefs.SetBool(EXPORT_IOS_KEY, e.newValue));
+            _autoBuildSection.Insert(0, _exportIosToggle);
+        }
 
         // Load saved values
         if (_catalogNameField != null)
@@ -2963,47 +2981,19 @@ public class AvatarPublisherUI : EditorWindow
 
             Debug.Log($"[AvatarPublish] Addressables build complete — {buildResult.BundleCount} bundle(s); proceeding to upload...");
             UpdateProgress(0.5f, "Scanning build output...");
+            PlatformBuildFiles webglFiles = await ReadBuildFilesAsync(buildResult);
+            Dictionary<string, byte[]> bundleFiles = webglFiles.BundleFiles;
 
-            // Get build output files
-            var outputFiles = AddressablesBuildManager.GetBuildOutputFiles();
-
-            if (outputFiles.Count == 0)
+            // iOS: same group + identity, rebuilt for iOS into the (re-cleaned) output folder. WebGL files are
+            // already in memory. Its load path is the iOS subfolder the backend presigns (versions/{vid}/iOS/).
+            PlatformBuildFiles iosFiles = null;
+            if (ShouldExportIos())
             {
-                throw new Exception("No files found in build output folder.");
-            }
-
-            // Load files
-            UpdateProgress(0.52f, "Loading files...");
-
-            byte[] binData = null;
-            byte[] hashData = null;
-            var bundleFiles = new Dictionary<string, byte[]>();
-
-            // Bundles are filtered to THIS build's outputs — bundle names are unique per publish now,
-            // so a stale ContentData file that somehow survived the pre-clean must never be uploaded.
-            var builtBundles = new HashSet<string>(
-                buildResult.BundleFilePaths ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
-
-            foreach (var file in outputFiles)
-            {
-                if (file.FileName.EndsWith(".bin"))
-                {
-                    binData = await Task.Run(() => File.ReadAllBytes(file.FilePath));
-                }
-                else if (file.FileName.EndsWith(".hash"))
-                {
-                    hashData = await Task.Run(() => File.ReadAllBytes(file.FilePath));
-                }
-                else if (file.IsBundle && builtBundles.Contains(Path.GetFullPath(file.FilePath)))
-                {
-                    byte[] data = await Task.Run(() => File.ReadAllBytes(file.FilePath));
-                    bundleFiles[file.FileName] = data;
-                }
-            }
-
-            if (binData == null || hashData == null)
-            {
-                throw new Exception("Missing required catalog files (.bin and .hash) in build output.");
+                UpdateProgress(0.5f, "Building Addressables for iOS...");
+                AddressablesBuildManager.SetRemoteLoadPath(contentBaseUrl + "/iOS");
+                var iosResult = AddressablesBuildManager.BuildForIOS(buildProgress);
+                if (!iosResult.Success) { throw new Exception($"iOS Addressables build failed: {iosResult.Error}"); }
+                iosFiles = await ReadBuildFilesAsync(iosResult);
             }
 
             UpdateProgress(0.6f, "Building metadata...");
@@ -3020,7 +3010,7 @@ public class AvatarPublisherUI : EditorWindow
             {
                 bundleVersion = versionTag,
                 unityVersion = Application.unityVersion,
-                buildTarget = EditorUserBuildSettings.activeBuildTarget.ToString(),
+                buildTarget = buildResult.Target.ToString(),
                 avatars = avatarMetadata.Select(e => new AvatarMetadata
                 {
                     id = e.Id,
@@ -3053,11 +3043,12 @@ public class AvatarPublisherUI : EditorWindow
                 versionId,
                 catalogName,
                 versionTag,
-                binData,
-                hashData,
+                webglFiles.BinData,
+                webglFiles.HashData,
                 bundleFiles,
                 metadata,
-                uploadProgress);
+                uploadProgress,
+                iosFiles);
 
             _lastPublishedCatalogId = uploadedCatalog?.catalogId;
             UpdateProgress(1f, "Upload complete!");
@@ -3096,6 +3087,41 @@ public class AvatarPublisherUI : EditorWindow
             _publishButton.SetEnabled(true);
             _progressSection.style.display = DisplayStyle.None;
         }
+    }
+
+    private bool ShouldExportIos() =>
+        _exportIosToggle != null && _exportIosToggle.value && IsIosBuildSupported();
+
+    private static bool IsIosBuildSupported() =>
+        BuildPipeline.IsBuildTargetSupported(BuildTargetGroup.iOS, BuildTarget.iOS);
+
+    /// <summary>Reads one build's .bin/.hash and exactly the bundles it produced into memory.</summary>
+    private static async Task<PlatformBuildFiles> ReadBuildFilesAsync(VirtualVenues.Editor.Publishing.AddressablesCatalogBuilder.BuildResult buildResult)
+    {
+        var outputFiles = AddressablesBuildManager.GetBuildOutputFiles();
+        if (outputFiles.Count == 0) { throw new Exception($"No files found in the {buildResult.Target} build output folder."); }
+
+        // Bundles are filtered to THIS build's outputs — bundle names are unique per publish now,
+        // so a stale ContentData file that somehow survived the pre-clean must never be uploaded.
+        var builtBundles = new HashSet<string>(
+            buildResult.BundleFilePaths ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+        var files = new PlatformBuildFiles { BundleFiles = new Dictionary<string, byte[]>() };
+
+        foreach (var file in outputFiles)
+        {
+            if (file.FileName.EndsWith(".bin")) { files.BinData = await Task.Run(() => File.ReadAllBytes(file.FilePath)); }
+            else if (file.FileName.EndsWith(".hash")) { files.HashData = await Task.Run(() => File.ReadAllBytes(file.FilePath)); }
+            else if (file.IsBundle && builtBundles.Contains(Path.GetFullPath(file.FilePath)))
+            {
+                files.BundleFiles[file.FileName] = await Task.Run(() => File.ReadAllBytes(file.FilePath));
+            }
+        }
+
+        if (files.BinData == null || files.HashData == null)
+        {
+            throw new Exception($"Missing required catalog files (.bin and .hash) in the {buildResult.Target} build output.");
+        }
+        return files;
     }
 
     private async void StartManualPublishing()

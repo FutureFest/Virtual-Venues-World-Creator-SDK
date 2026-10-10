@@ -17,6 +17,8 @@ namespace AvatarPublisher
         public string catalogId;
         public string versionId;
         public string[] bundleNames;
+        // "" = WebGL (the backend default); "iOS" presigns under versions/{vid}/iOS/.
+        public string platform;
     }
 
     [Serializable]
@@ -67,8 +69,18 @@ namespace AvatarPublisher
         public string unityVersion;
         public string buildTarget;
         public string defaultAvatarId;
+        // Bundles uploaded under versions/{vid}/iOS/. JsonUtility sends [] when unset = WebGL-only version.
+        public string[] iosBundleNames;
         public AvatarMetadata[] avatars;
         public CosmeticMetadata[] cosmetics;
+    }
+
+    /// <summary>One platform's built catalog, read into memory and ready to upload.</summary>
+    public class PlatformBuildFiles
+    {
+        public byte[] BinData;
+        public byte[] HashData;
+        public Dictionary<string, byte[]> BundleFiles;
     }
 
     [Serializable]
@@ -173,7 +185,7 @@ namespace AvatarPublisher
         /// <summary>
         /// Request presigned S3 URLs for uploading catalog files and bundles
         /// </summary>
-        public static async Task<CatalogUploadUrlsResponse> GetUploadUrlsAsync(string catalogId, string versionId, string[] bundleNames)
+        public static async Task<CatalogUploadUrlsResponse> GetUploadUrlsAsync(string catalogId, string versionId, string[] bundleNames, string platform = null)
         {
             if (!IsTokenValid)
             {
@@ -184,7 +196,8 @@ namespace AvatarPublisher
             {
                 catalogId = catalogId,
                 versionId = versionId,
-                bundleNames = bundleNames
+                bundleNames = bundleNames,
+                platform = platform
             };
 
             string jsonData = JsonUtility.ToJson(request);
@@ -426,7 +439,8 @@ namespace AvatarPublisher
             byte[] hashData,
             Dictionary<string, byte[]> bundleFiles,
             CatalogMetadata metadata,
-            IProgress<(float progress, string message)> progress = null)
+            IProgress<(float progress, string message)> progress = null,
+            PlatformBuildFiles iosBuild = null)
         {
             try
             {
@@ -479,6 +493,12 @@ namespace AvatarPublisher
                     }
                 }
 
+                if (iosBuild != null)
+                {
+                    progress?.Report((0.85f, "Uploading iOS build..."));
+                    metadata.iosBundleNames = await UploadIosBuildAsync(resolvedCatalogId, resolvedVersionId, iosBuild);
+                }
+
                 progress?.Report((0.9f, "Confirming upload..."));
                 await ConfirmUploadAsync(
                     resolvedCatalogId,
@@ -509,6 +529,30 @@ namespace AvatarPublisher
             {
                 throw new Exception($"Upload workflow failed: {ex.Message}", ex);
             }
+        }
+
+        /// <summary>
+        /// Uploads the iOS build under versions/{vid}/iOS/ and returns its bundle names for the confirm.
+        /// Returns null (WebGL-only publish) when the backend predates iOS support: it ignores
+        /// "platform" and would presign over the WebGL catalog, so nothing is uploaded in that case.
+        /// </summary>
+        private static async Task<string[]> UploadIosBuildAsync(string catalogId, string versionId, PlatformBuildFiles ios)
+        {
+            string[] bundleNames = ios.BundleFiles.Keys.ToArray();
+            CatalogUploadUrlsResponse urls = await GetUploadUrlsAsync(catalogId, versionId, bundleNames, "iOS");
+            if (urls.uploadUrlBin == null || !new Uri(urls.uploadUrlBin).AbsolutePath.Contains("/iOS/"))
+            {
+                Debug.LogWarning("[AvatarPublisher] The backend doesn't support iOS catalogs yet (needs docs/ios-catalog-handoff.md in ff-api); published WebGL only.");
+                return null;
+            }
+
+            await UploadFileAsync(urls.uploadUrlBin, ios.BinData);
+            await UploadFileAsync(urls.uploadUrlHash, ios.HashData);
+            foreach (BundleUploadUrl bundleUrl in urls.uploadUrlBundles)
+            {
+                if (ios.BundleFiles.TryGetValue(bundleUrl.name, out byte[] data)) { await UploadFileAsync(bundleUrl.presignedUrl, data); }
+            }
+            return bundleNames;
         }
 
         /// <summary>
