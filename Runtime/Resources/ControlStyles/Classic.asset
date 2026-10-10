@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f3eaac2d80464754abc2edfebe215215, type: 3}
+  m_Name: Classic
+  m_EditorClassIdentifier: com.virtualvenues.sdk.runtime::VirtualVenues.WorldCreator.ControlStyle
+  _id: classic
+  _displayName: Classic
+  _look:
+    activation: 0
+    holdButtons: 3
+    sensitivity: 1
+    invertY: 0
+    topClamp: 70
+    bottomClamp: -30
+  _camera:
+    zoomMax: 12
+    defaultZoom: 0.3
+    shoulderSide: 0.6
+    fieldOfView: 75
+    allowFirstPerson: 1
+  _facing:
+    mode: 0
+    heldButton: 1
+    turnSmoothTime: 0.06

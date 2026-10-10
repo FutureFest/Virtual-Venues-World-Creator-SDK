@@ -9,7 +9,8 @@
         "Unity.RenderPipelines.Core.Runtime",
         "Unity.RenderPipelines.Universal.Runtime",
         "Unity.Splines",
-        "Unity.Splines.Editor"
+        "Unity.Splines.Editor",
+        "Unity.Collections"
     ],
     "includePlatforms": [
         "Editor"

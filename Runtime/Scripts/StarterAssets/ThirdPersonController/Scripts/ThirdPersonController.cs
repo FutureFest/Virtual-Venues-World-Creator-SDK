@@ -1,7 +1,8 @@
-﻿ using UnityEngine;
+ using UnityEngine;
 #if ENABLE_INPUT_SYSTEM 
 using UnityEngine.InputSystem;
 #endif
+using VirtualVenues.WorldCreator;
 
 /* Note: animations are called via the controller for both the character and capsule using animator null checks
  */
@@ -74,6 +75,13 @@ namespace StarterAssets
 
         [Tooltip("For locking the camera position on all axis")]
         public bool LockCameraPosition = false;
+
+        [Header("Control Style")]
+        [Tooltip("Optional. Empty = the world's style (World Control Settings), else Classic. Camera framing (zoom, shoulder, FOV) is only applied in the live player.")]
+        public ControlStyle ControlStyleOverride = null;
+
+        private ControlStyle Style => ControlStyleOverride != null ? ControlStyleOverride : ControlStyles.Active;
+        private bool _styleCursorLocked = false;
 
         // cinemachine
         private float _cinemachineTargetYaw;
@@ -163,7 +171,52 @@ namespace StarterAssets
 
         private void LateUpdate()
         {
+            UpdateStyleCursor();
             CameraRotation();
+        }
+
+        private bool LeftHeld
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return Mouse.current != null && Mouse.current.leftButton.isPressed;
+#else
+                return Input.GetMouseButton(0);
+#endif
+            }
+        }
+
+        private bool RightHeld
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return Mouse.current != null && Mouse.current.rightButton.isPressed;
+#else
+                return Input.GetMouseButton(1);
+#endif
+            }
+        }
+
+        // Hold styles lock the cursor only while a look button is held; Locked styles lock on click and Ctrl frees it.
+        private void UpdateStyleCursor()
+        {
+            LookModule look = Style.Look;
+            if (look.activation == LookActivation.Locked)
+            {
+#if ENABLE_INPUT_SYSTEM
+                if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame) { _styleCursorLocked = true; }
+                if (Keyboard.current != null && Keyboard.current.ctrlKey.wasPressedThisFrame) { _styleCursorLocked = !_styleCursorLocked; }
+#endif
+            }
+            else
+            {
+                _styleCursorLocked = ControlStyleMath.ShouldRotateCamera(look, LeftHeld, RightHeld, false);
+            }
+
+            _input.cursorLocked = _styleCursorLocked;
+            Cursor.lockState = _styleCursorLocked ? CursorLockMode.Locked : CursorLockMode.None;
         }
 
         private void AssignAnimationIDs()
@@ -193,18 +246,20 @@ namespace StarterAssets
         private void CameraRotation()
         {
             // if there is an input and camera position is not fixed
-            if (_input.look.sqrMagnitude >= _threshold && !LockCameraPosition)
+            LookModule look = Style.Look;
+            bool canLook = !IsCurrentDeviceMouse || ControlStyleMath.ShouldRotateCamera(look, LeftHeld, RightHeld, _styleCursorLocked);
+            if (canLook && _input.look.sqrMagnitude >= _threshold && !LockCameraPosition)
             {
                 //Don't multiply mouse input by Time.deltaTime;
-                float deltaTimeMultiplier = IsCurrentDeviceMouse ? 1.0f : Time.deltaTime;
+                float deltaTimeMultiplier = (IsCurrentDeviceMouse ? 1.0f : Time.deltaTime) * look.sensitivity;
 
                 _cinemachineTargetYaw += _input.look.x * deltaTimeMultiplier;
-                _cinemachineTargetPitch += _input.look.y * deltaTimeMultiplier;
+                _cinemachineTargetPitch += _input.look.y * deltaTimeMultiplier * (look.invertY ? -1f : 1f);
             }
 
             // clamp our rotations so our values are limited 360 degrees
             _cinemachineTargetYaw = ClampAngle(_cinemachineTargetYaw, float.MinValue, float.MaxValue);
-            _cinemachineTargetPitch = ClampAngle(_cinemachineTargetPitch, BottomClamp, TopClamp);
+            _cinemachineTargetPitch = ClampAngle(_cinemachineTargetPitch, look.bottomClamp, look.topClamp);
 
             // Cinemachine will follow this target
             CinemachineCameraTarget.transform.rotation = Quaternion.Euler(_cinemachineTargetPitch + CameraAngleOverride,
@@ -251,19 +306,17 @@ namespace StarterAssets
             // normalise input direction
             Vector3 inputDirection = new Vector3(_input.move.x, 0.0f, _input.move.y).normalized;
 
-            // note: Vector2's != operator uses approximation so is not floating point error prone, and is cheaper than magnitude
-            // if there is a move input rotate player when the player is moving
-            if (_input.move != Vector2.zero)
+            // the style decides which way to face; movement always follows the input relative to the camera
+            float cameraYaw = _mainCamera.transform.eulerAngles.y;
+            FacingModule facing = Style.Facing;
+            if (ControlStyleMath.TryGetTargetYaw(facing, _input.move, cameraYaw, LeftHeld, RightHeld, out float faceYaw))
             {
-                _targetRotation = Mathf.Atan2(inputDirection.x, inputDirection.z) * Mathf.Rad2Deg +
-                                  _mainCamera.transform.eulerAngles.y;
-                float rotation = Mathf.SmoothDampAngle(transform.eulerAngles.y, _targetRotation, ref _rotationVelocity,
-                    RotationSmoothTime);
-
-                // rotate to face input direction relative to camera position
+                float rotation = Mathf.SmoothDampAngle(transform.eulerAngles.y, faceYaw, ref _rotationVelocity,
+                    facing.turnSmoothTime);
                 transform.rotation = Quaternion.Euler(0.0f, rotation, 0.0f);
             }
 
+            if (_input.move != Vector2.zero) { _targetRotation = ControlStyleMath.MoveYaw(_input.move, cameraYaw); }
 
             Vector3 targetDirection = Quaternion.Euler(0.0f, _targetRotation, 0.0f) * Vector3.forward;
 

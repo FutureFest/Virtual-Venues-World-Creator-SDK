@@ -74,6 +74,9 @@ namespace VirtualVenues.WorldCreator
         /// <summary>Raised when a vehicle is enabled, disabled or re-configured. The runtime (re)builds or tears down on it.</summary>
         public static event Action<Vehicle> OnChanged;
 
+        /// <summary>Raised by <see cref="Push"/>/<see cref="Turn"/> (vehicle, m/s forward, deg/s yaw). The runtime applies it where the physics runs.</summary>
+        public static event Action<Vehicle, float, float> OnNudge;
+
         [Tooltip("Seat 0 is the driver; the rest are passengers. Empty = one driver seat at the offset below.")]
         [SerializeField] private Transform[] _seats = new Transform[0];
         [Tooltip("Driver seat position (local) when no seats are assigned.")]
@@ -174,6 +177,21 @@ namespace VirtualVenues.WorldCreator
             _cameraDistance = Mathf.Max(1f, cameraDistance);
             _cameraHeight = cameraHeight;
             OnChanged?.Invoke(this);
+        }
+
+        /// <summary>
+        /// Instant speed change along the vehicle's forward axis (negative = backward), e.g. a paddle stroke.
+        /// Wire it into a <see cref="CustomControls"/> EVERYONE event: it only acts on the peer running the physics.
+        /// </summary>
+        public void Push(float metersPerSecond)
+        {
+            OnNudge?.Invoke(this, metersPerSecond, 0f);
+        }
+
+        /// <summary>Instant spin around the vehicle's up axis (positive = right). Same rule as <see cref="Push"/>.</summary>
+        public void Turn(float degreesPerSecond)
+        {
+            OnNudge?.Invoke(this, 0f, degreesPerSecond);
         }
 
         /// <summary>Set the vehicle type (and boat handling) from external data. Null stats keep the current ones.</summary>

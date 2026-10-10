@@ -31,6 +31,8 @@ namespace VirtualVenues.WorldCreator
         private readonly HashSet<TriggerEvent> _insideTriggers = new HashSet<TriggerEvent>();
         private readonly HashSet<TriggerEvent> _nowInside = new HashSet<TriggerEvent>();
         private readonly Dictionary<TriggerEvent, float> _lastFired = new Dictionary<TriggerEvent, float>();
+        private readonly HashSet<CustomControls> _insideZones = new HashSet<CustomControls>();
+        private readonly HashSet<CustomControls> _nowInsideZones = new HashSet<CustomControls>();
 
         private CharacterController _controller = null;
         private ThirdPersonController _thirdPerson = null;
@@ -46,6 +48,11 @@ namespace VirtualVenues.WorldCreator
         private Vehicle _vehicle = null;
         private float _vehicleSpeed = 0f;
         private float _vehicleRideHeight = 0f;
+        private float _vehicleYawRate = 0f;
+        private CustomControls _seatControls = null;
+        private bool _controlsUnlockedCursor = false;
+        private bool _savedCursorLocked = true;
+        private bool _savedCursorInputForLook = true;
 
         private Transform _carrier = null;
         private Vector3 _carryLastPos = Vector3.zero;
@@ -74,9 +81,20 @@ namespace VirtualVenues.WorldCreator
             }
         }
 
+        private void OnEnable()
+        {
+            Vehicle.OnNudge += OnVehicleNudge;
+        }
+
+        private void OnDisable()
+        {
+            Vehicle.OnNudge -= OnVehicleNudge;
+        }
+
         private void Update()
         {
             ScanSurroundings();
+            UpdateControlsCursor();
             if (_vehicle != null) { DriveVehicle(); }
             if (!IsSeated) { CarryOnPlatform(); }
         }
@@ -102,14 +120,15 @@ namespace VirtualVenues.WorldCreator
             target.OnLocalInteract();
 
             if (IsSeated) { Stand(); return; }
-            if (target.TryGetComponent(out Seat seat)) { Sit(seat.SeatPoint, target); return; }
+            if (target.TryGetComponent(out Seat seat)) { Sit(seat.SeatPoint, target, seat); return; }
             if (target.TryGetComponent(out Vehicle vehicle))
             {
                 _vehicle = vehicle;
                 _vehicleSpeed = 0f;
                 Vector3 start = vehicle.transform.position;
                 _vehicleRideHeight = TryGroundHeight(start, vehicle.transform, out float groundY) ? start.y - groundY : 0f;
-                Sit(vehicle.Seats[0], target);
+                _vehicleYawRate = 0f;
+                Sit(vehicle.Seats[0], target, vehicle);
             }
         }
 
@@ -123,12 +142,14 @@ namespace VirtualVenues.WorldCreator
             Interactable nearest = null;
             float nearestSqr = float.MaxValue;
             _nowInside.Clear();
+            _nowInsideZones.Clear();
             for (int i = 0; i < count; i++)
             {
                 Collider col = _overlaps[i];
                 if (col.transform.IsChildOf(transform)) { continue; }
 
                 if (col.isTrigger && col.TryGetComponent(out TriggerEvent trigger)) { _nowInside.Add(trigger); }
+                if (col.isTrigger && col.TryGetComponent(out CustomControls zone) && zone.ShowWhen == ControlsShowWhen.WhileInZone) { _nowInsideZones.Add(zone); }
 
                 Interactable interactable = col.GetComponentInParent<Interactable>();
                 if (interactable == null || !interactable.isActiveAndEnabled) { continue; }
@@ -138,6 +159,44 @@ namespace VirtualVenues.WorldCreator
 
             SetTarget(_pinnedTarget != null ? _pinnedTarget : nearest);
             FireEnteredTriggers();
+            UpdateZoneControls();
+        }
+
+        // ---- CustomControls zones: show while inside the trigger.
+
+        private void UpdateZoneControls()
+        {
+            foreach (CustomControls zone in _insideZones)
+            {
+                if (zone != null && !_nowInsideZones.Contains(zone)) { zone.SetShown(false); }
+            }
+            foreach (CustomControls zone in _nowInsideZones) { zone.SetShown(true); }
+            _insideZones.Clear();
+            _insideZones.UnionWith(_nowInsideZones);
+        }
+
+        // The StarterAssets camera locks the cursor; free it while buttons are on screen so they can be clicked.
+        private void UpdateControlsCursor()
+        {
+            bool want = CustomControls.Current != null;
+            if (want == _controlsUnlockedCursor || _input == null) { return; }
+            _controlsUnlockedCursor = want;
+            if (want)
+            {
+                _savedCursorLocked = _input.cursorLocked;
+                _savedCursorInputForLook = _input.cursorInputForLook;
+                _input.cursorLocked = false;
+                _input.cursorInputForLook = false;
+                _input.look = Vector2.zero;
+            }
+            else
+            {
+                _input.cursorLocked = _savedCursorLocked;
+                _input.cursorInputForLook = _savedCursorInputForLook;
+            }
+            bool locked = !want && _input.cursorLocked;
+            Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
+            Cursor.visible = !locked;
         }
 
         private void SetTarget(Interactable target)
@@ -168,9 +227,11 @@ namespace VirtualVenues.WorldCreator
 
         // ---- Seats: copy the seat pose every LateUpdate (no parenting), same as the core project's MountBehaviour.
 
-        private void Sit(Transform seatPoint, Interactable interactable)
+        private void Sit(Transform seatPoint, Interactable interactable, Component owner)
         {
             _seatPoint = seatPoint;
+            _seatControls = CustomControls.FindForSeat(seatPoint, owner);
+            if (_seatControls != null) { _seatControls.SetShown(true); }
             _pinnedTarget = interactable;
             _carrier = null;
             SetMovementEnabled(false);
@@ -187,6 +248,8 @@ namespace VirtualVenues.WorldCreator
             Vector3 forward = Vector3.ProjectOnPlane(_seatPoint.forward, Vector3.up);
             Quaternion facing = forward.sqrMagnitude > 0.001f ? Quaternion.LookRotation(forward) : transform.rotation;
 
+            if (_seatControls != null) { _seatControls.SetShown(false); }
+            _seatControls = null;
             _seatPoint = null;
             _pinnedTarget = null;
             _vehicle = null;
@@ -278,11 +341,21 @@ namespace VirtualVenues.WorldCreator
 
             _vehicleSpeed = Mathf.MoveTowards(_vehicleSpeed, _input.move.y * stats.topSpeed, accel * Time.deltaTime);
             float turnScale = Mathf.Clamp01(Mathf.Abs(_vehicleSpeed) / 2f) * Mathf.Sign(_vehicleSpeed);
-            t.Rotate(0f, _input.move.x * turn * 20f * turnScale * Time.deltaTime, 0f, Space.World);
+            t.Rotate(0f, (_input.move.x * turn * 20f * turnScale + _vehicleYawRate) * Time.deltaTime, 0f, Space.World);
+            _vehicleYawRate = Mathf.MoveTowards(_vehicleYawRate, 0f, 180f * Time.deltaTime);
 
             Vector3 pos = t.position + t.forward * (_vehicleSpeed * Time.deltaTime);
             if (!boat && TryGroundHeight(pos, t, out float groundY)) { pos.y = groundY + _vehicleRideHeight; }
             t.position = pos;
+        }
+
+        // ponytail: arcade stand-in for the runtime's VelocityChange impulse; the push decays at the drive's
+        // acceleration and the spin at 180°/s², so it feels shorter than the Rigidbody version.
+        private void OnVehicleNudge(Vehicle vehicle, float metersPerSecond, float degreesPerSecond)
+        {
+            if (vehicle == null || vehicle != _vehicle) { return; }
+            _vehicleSpeed += metersPerSecond;
+            _vehicleYawRate += degreesPerSecond;
         }
 
         private bool TryGroundHeight(Vector3 pos, Transform vehicle, out float groundY)
@@ -302,12 +375,31 @@ namespace VirtualVenues.WorldCreator
 
         private void OnGUI()
         {
+            DrawCustomControls();
             if (_target == null) { return; }
             string text = !IsSeated ? SafeFormat(_target.InteractionDisplayText)
                 : _vehicle != null ? $"Press {InteractKey} to get out" : $"Press {InteractKey} to stand up";
             GUIStyle style = new GUIStyle(GUI.skin.box) { fontSize = 20, alignment = TextAnchor.MiddleCenter };
             Vector2 size = style.CalcSize(new GUIContent(text)) + new Vector2(24f, 12f);
             GUI.Box(new Rect((UnityEngine.Screen.width - size.x) * 0.5f, UnityEngine.Screen.height - size.y - 60f, size.x, size.y), text, style);
+        }
+
+        private static void DrawCustomControls()
+        {
+            CustomControls controls = CustomControls.Current;
+            if (controls == null || controls.Controls == null) { return; }
+            const float width = 140f, height = 48f, gap = 8f;
+            int count = controls.Controls.Length;
+            float x = (UnityEngine.Screen.width - (count * width + (count - 1) * gap)) * 0.5f;
+            float y = UnityEngine.Screen.height - 130f - height;
+            GUIStyle style = new GUIStyle(GUI.skin.button) { fontSize = 16 };
+            for (int i = 0; i < count; i++)
+            {
+                CustomControl control = controls.Controls[i];
+                if (control == null) { continue; }
+                GUIContent content = control.icon != null ? new GUIContent(control.label, control.icon.texture) : new GUIContent(control.label);
+                if (GUI.Button(new Rect(x + i * (width + gap), y, width, height), content, style)) { controls.Press(i); }
+            }
         }
 
         private static string SafeFormat(string format)

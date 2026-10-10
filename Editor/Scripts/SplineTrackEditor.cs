@@ -51,15 +51,21 @@ namespace VirtualVenues.WorldCreator.Editor
         {
             if (container == null || container.Spline == null || Editing) { return; }
             Handles.color = new Color(0.2f, 0.9f, 1f);
-            for (int i = 0; i < container.Spline.Count; i++)
+            // Several splines (a path network): label points "spline.point".
+            bool many = container.Splines.Count > 1;
+            for (int s = 0; s < container.Splines.Count; s++)
             {
-                Vector3 p = container.transform.TransformPoint((Vector3)container.Spline[i].Position);
-                float size = HandleUtility.GetHandleSize(p) * 0.1f;
-                Handles.Label(p + Vector3.up * size * 2.5f, $"Point {i}", EditorStyles.whiteBoldLabel);
-                if (Handles.Button(p, Quaternion.identity, size, size * 1.2f, Handles.SphereHandleCap))
+                Spline spline = container.Splines[s];
+                for (int i = 0; i < spline.Count; i++)
                 {
-                    SplineSelection.Set(new SelectableKnot(new SplineInfo(container, 0), i));
-                    StartEditing();
+                    Vector3 p = container.transform.TransformPoint((Vector3)spline[i].Position);
+                    float size = HandleUtility.GetHandleSize(p) * 0.1f;
+                    Handles.Label(p + Vector3.up * size * 2.5f, many ? $"Point {s}.{i}" : $"Point {i}", EditorStyles.whiteBoldLabel);
+                    if (Handles.Button(p, Quaternion.identity, size, size * 1.2f, Handles.SphereHandleCap))
+                    {
+                        SplineSelection.Set(new SelectableKnot(new SplineInfo(container, s), i));
+                        StartEditing();
+                    }
                 }
             }
         }

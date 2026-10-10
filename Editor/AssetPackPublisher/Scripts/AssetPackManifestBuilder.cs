@@ -278,6 +278,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             if (node.GetComponentInChildren<Vehicle>(true) != null) { return true; }
             if (node.GetComponentInChildren<AnimatedObject>(true) != null) { return true; }
             if (node.GetComponentInChildren<PhysicsObject>(true) != null) { return true; }
+            if (node.GetComponentInChildren<Pathway>(true) != null) { return true; }
             if (node.GetComponentInChildren<TriggerEvent>(true) != null) { return true; }
             return false;
         }

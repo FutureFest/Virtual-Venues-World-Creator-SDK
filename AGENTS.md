@@ -12,5 +12,7 @@ Read in this order:
 2. `Documentation~/Components.md` — every world component: what it does, how to add it, its fields.
 3. `Documentation~/Publishing.md` — sign-in, `WorldPublisher.WorldPublishJob` (build + upload from code).
 4. `Documentation~/Rides.md` — spline tracks, roller coasters, support posts.
+5. `Documentation~/Paths.md` — pathways: a ground strip plus lamp posts, fences and plants laid out along a spline.
+5. `Documentation~/Paths.md` — pathways: ground strip + lamp posts, fences, plants laid out along a spline.
 
 The human-facing overview is `README.md`; publish requirements are in `REQUIREMENTS.md`.

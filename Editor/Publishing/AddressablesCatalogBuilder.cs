@@ -126,6 +126,7 @@ namespace VirtualVenues.Editor.Publishing
         protected AddressableAssetGroup GetOrCreateClearedGroup()
         {
             var settings = GetOrCreateSettings();
+            settings.CatalogRequestsTimeout = 30;
 
             AddressableAssetGroup group;
             if (string.IsNullOrEmpty(_buildIdentity))
@@ -160,7 +161,10 @@ namespace VirtualVenues.Editor.Publishing
             bundleSchema.BuildPath.SetVariableByName(settings, AddressableAssetSettings.kRemoteBuildPath);
             bundleSchema.LoadPath.SetVariableByName(settings, AddressableAssetSettings.kRemoteLoadPath);
             bundleSchema.Compression = BundledAssetGroupSchema.BundleCompressionMode.LZ4;
-            bundleSchema.BundleMode = BundledAssetGroupSchema.BundlePackingMode.PackTogether;
+            // Each explicit entry is an independent download; do not fetch the entire collection for one avatar.
+            bundleSchema.BundleMode = BundledAssetGroupSchema.BundlePackingMode.PackSeparately;
+            bundleSchema.Timeout = 30;
+            bundleSchema.RetryCount = 2;
             bundleSchema.BundleNaming = BundledAssetGroupSchema.BundleNamingStyle.AppendHash;
 
             foreach (var entry in group.entries.ToList())

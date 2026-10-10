@@ -2,6 +2,31 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [Unreleased]
+
+### Added
+- **Control styles**: `ControlStyle` assets describe how the camera turns, how it frames the player and which
+  way the character faces. Built-ins Classic (default, today's controls), Shooter (Fortnite-style strafe +
+  locked cursor) and MMO (WoW-style right-drag turn). `WorldControlSettings` sets a world's default, which
+  styles players may switch to, or forces one. The TestPlayer follows the active style (look + facing).
+  `ControlStyleMath` holds the shared rules. See `Documentation~/Components.md` > Controls.
+  - Needs a matching app build (new components).
+- **Pathway** (**GameObject > VirtualVenues > New Pathway**): draw a spline, get a finished path — a ground strip
+  plus props from your own prefabs, laid out by rules. See `Documentation~/Paths.md`.
+  - Rules: Every / Segments (fences stretch to meet on curves) / Start / End / Corners; lanes Center, Left,
+    Right, Both Sides, Alternating; offset, spacing, insets, jitter, chance, facing, random turn and size,
+    keep-clear radius. Each rule has its own random stream, so editing one never reshuffles another.
+  - Snaps the strip and props onto the ground below. Rebuilds live as you drag the spline and on world load;
+    **Bake** saves the props as normal objects that no longer rebuild.
+  - **Path Kits** (`PathwayPreset`): save and load a ground + rules set.
+  - **Unity Terrain** stamp: flatten, paint a Terrain Layer, clear grass and trees along the path (Undo works).
+  - **Junctions**: every spline in the container is a path; linked points are junctions. Strips meet in a patch,
+    fences stop at the joining path and close into corners, and a new **Junctions** slot places corner or centre
+    props. **Link Touching Points** links points sitting on top of each other.
+  - `SnapIgnoreRoot`: colliders under it are never ground (the web World Editor sets it to the placed object).
+  - Pathway props handed over as inactive or hidden prototypes are switched on.
+  - Needs a matching app build (new component).
+
 ## [0.10.5] - 2026-10-05
 
 ### Added
