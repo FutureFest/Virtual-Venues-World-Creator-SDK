@@ -14,6 +14,7 @@ namespace WorldPublisher
         public string umsName;
         public string upcName;
         public string worldName;
+        public string iosReleaseId;
     }
 
     [Serializable]
@@ -22,6 +23,7 @@ namespace WorldPublisher
         public string worldId;
         public string uploadUrlUms;
         public string uploadUrlUpc;
+        public bool mobileSupported;
     }
 
     [Serializable]
@@ -31,6 +33,7 @@ namespace WorldPublisher
         public string umsName;
         public string upcName;
         public string worldName;
+        public string iosReleaseId;
     }
 
     [Serializable]
@@ -41,6 +44,8 @@ namespace WorldPublisher
         public string userId;
         public string updatedAt;
         public bool isDefault;
+        public string iosUrl;
+        public string iosReleaseId;
     }
 
     [Serializable]
@@ -62,7 +67,7 @@ namespace WorldPublisher
 
     public static class WorldPublisherApi
     {
-        private const string BASE_URL = "https://jsxf2xqpn4.execute-api.us-east-1.amazonaws.com/dev";
+        public const string BaseUrl = "https://jsxf2xqpn4.execute-api.us-east-1.amazonaws.com/dev";
 
         // Token surface delegates to the shared EditorAuthToken so all tools read one token (no drift).
         public static string AccessToken => EditorAuthToken.AccessToken;
@@ -73,7 +78,7 @@ namespace WorldPublisher
         /// <summary>
         /// Request presigned S3 URLs for uploading UMS and UPC bundles
         /// </summary>
-        public static async Task<UploadUrlsResponse> GetUploadUrlsAsync(string umsName, string upcName, string worldName = null)
+        public static async Task<UploadUrlsResponse> GetUploadUrlsAsync(string umsName, string upcName, string worldName = null, string iosReleaseId = null)
         {
             if (!IsTokenValid)
             {
@@ -84,7 +89,8 @@ namespace WorldPublisher
             {
                 umsName = umsName,
                 upcName = upcName,
-                worldName = worldName
+                worldName = worldName,
+                iosReleaseId = iosReleaseId
             };
             
             Debug.Log("world name" + request.worldName);
@@ -92,7 +98,7 @@ namespace WorldPublisher
             string jsonData = JsonUtility.ToJson(request);
             byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonData);
 
-            using (UnityWebRequest www = new UnityWebRequest($"{BASE_URL}/worlds/upload-urls", "POST"))
+            using (UnityWebRequest www = new UnityWebRequest($"{BaseUrl}/worlds/upload-urls", "POST"))
             {
                 www.uploadHandler = new UploadHandlerRaw(bodyRaw);
                 www.downloadHandler = new DownloadHandlerBuffer();
@@ -140,7 +146,7 @@ namespace WorldPublisher
         /// <summary>
         /// Confirm upload completion and finalize world publication
         /// </summary>
-        public static async Task ConfirmUploadAsync(string worldId, string umsName, string upcName, string worldName = null)
+        public static async Task ConfirmUploadAsync(string worldId, string umsName, string upcName, string worldName = null, string iosReleaseId = null)
         {
             if (!IsTokenValid)
             {
@@ -152,13 +158,14 @@ namespace WorldPublisher
                 worldId = worldId,
                 umsName = umsName,
                 upcName = upcName,
-                worldName = worldName
+                worldName = worldName,
+                iosReleaseId = iosReleaseId
             };
 
             string jsonData = JsonUtility.ToJson(request);
             byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonData);
 
-            using (UnityWebRequest www = new UnityWebRequest($"{BASE_URL}/worlds/confirm-upload", "POST"))
+            using (UnityWebRequest www = new UnityWebRequest($"{BaseUrl}/worlds/confirm-upload", "POST"))
             {
                 www.uploadHandler = new UploadHandlerRaw(bodyRaw);
                 www.downloadHandler = new DownloadHandlerBuffer();
@@ -189,7 +196,7 @@ namespace WorldPublisher
                 throw new ArgumentException("World ID is required", nameof(worldId));
             }
 
-            using (UnityWebRequest www = UnityWebRequest.Delete($"{BASE_URL}/worlds/{worldId}"))
+            using (UnityWebRequest www = UnityWebRequest.Delete($"{BaseUrl}/worlds/{worldId}"))
             {
                 www.SetRequestHeader("Authorization", $"Bearer {AccessToken}");
                 www.downloadHandler = new DownloadHandlerBuffer();
@@ -239,7 +246,7 @@ namespace WorldPublisher
             string jsonData = JsonUtility.ToJson(request);
             byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonData);
 
-            using (UnityWebRequest www = new UnityWebRequest($"{BASE_URL}/vv/worlds/{worldId}", "PUT"))
+            using (UnityWebRequest www = new UnityWebRequest($"{BaseUrl}/vv/worlds/{worldId}", "PUT"))
             {
                 www.uploadHandler = new UploadHandlerRaw(bodyRaw);
                 www.downloadHandler = new DownloadHandlerBuffer();
@@ -273,7 +280,7 @@ namespace WorldPublisher
                 throw new InvalidOperationException("Access token is invalid or expired");
             }
 
-            string url = $"{BASE_URL}/vv/worlds";
+            string url = $"{BaseUrl}/vv/worlds";
             using (UnityWebRequest www = UnityWebRequest.Get(url))
             {
                 www.SetRequestHeader("Authorization", $"Bearer {AccessToken}");
@@ -304,12 +311,14 @@ namespace WorldPublisher
         /// Complete upload workflow: get URLs, upload both bundles, confirm
         /// </summary>
         public static async Task<World> UploadWorldAsync(string umsName, string upcName, byte[] umsData, byte[] upcData,
-            string worldName = null, IProgress<string> progress = null)
+            string worldName = null, IProgress<string> progress = null, string iosReleaseId = null)
         {
             try
             {
                 progress?.Report("Requesting upload URLs...");
-                var uploadUrls = await GetUploadUrlsAsync(umsName, upcName, worldName);
+                var uploadUrls = await GetUploadUrlsAsync(umsName, upcName, worldName, iosReleaseId);
+                if (!string.IsNullOrEmpty(iosReleaseId) && !uploadUrls.mobileSupported)
+                { throw new InvalidOperationException("This API has not enabled mobile world publishing yet."); }
 
                 progress?.Report("Uploading UMS bundle...");
                 await UploadBundleAsync(uploadUrls.uploadUrlUms, umsData);
@@ -318,7 +327,7 @@ namespace WorldPublisher
                 await UploadBundleAsync(uploadUrls.uploadUrlUpc, upcData);
 
                 progress?.Report("Confirming upload...");
-                await ConfirmUploadAsync(uploadUrls.worldId, umsName, upcName, worldName);
+                await ConfirmUploadAsync(uploadUrls.worldId, umsName, upcName, worldName, iosReleaseId);
 
                 progress?.Report("Fetching world info...");
                 var worlds = await GetAllWorldsAsync();

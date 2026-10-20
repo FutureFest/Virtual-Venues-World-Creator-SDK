@@ -290,6 +290,16 @@ namespace VirtualVenues.Editor.Publishing
         public BuildResult BuildForWebGPU(IProgress<(float progress, string message)> progress = null) =>
             Build(BuildTargetGroup.WebGL, BuildTarget.WebGL, progress);
 
+        /// <summary>Build only in an already-selected worker target, without a domain reload.</summary>
+        public BuildResult BuildForTarget(BuildTarget target, IProgress<(float progress, string message)> progress = null)
+        {
+            if (target != BuildTarget.WebGL && target != BuildTarget.iOS)
+            { throw new ArgumentException("Catalog target must be WebGL or iOS."); }
+            if (EditorUserBuildSettings.activeBuildTarget != target || EditorApplication.isCompiling)
+            { throw new InvalidOperationException("Start a ready isolated Unity worker with the matching build target."); }
+            return Build(BuildPipeline.GetBuildTargetGroup(target), target, progress);
+        }
+
         /// <summary>
         /// Builds this publisher's Addressables catalog for <paramref name="target"/>. Switches the active
         /// build target if needed (restored afterwards), cleans, and builds the isolated settings directly.
@@ -368,6 +378,7 @@ namespace VirtualVenues.Editor.Publishing
                     Success = true,
                     Error = null,
                     Target = target,
+                    UnityVersion = Application.unityVersion,
                     OutputPath = GetBuildOutputPath(),
                     BundleCount = result.LocationCount,
                     BundleFilePaths = result.AssetBundleBuildResults != null
@@ -509,6 +520,7 @@ namespace VirtualVenues.Editor.Publishing
         {
             public bool Success;
             public string Error;
+            public string UnityVersion;
             public BuildTarget Target; // the platform actually built — record this, not activeBuildTarget (restored by then)
             public string OutputPath;
             public int BundleCount;

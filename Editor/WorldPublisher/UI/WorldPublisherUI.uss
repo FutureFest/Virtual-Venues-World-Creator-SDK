@@ -431,3 +431,8 @@ Button {
     margin: 5px 0;
     height: 24px;
 }
+
+.mobile-checkbox {
+    margin: 12px 0 0 90px;
+    color: var(--vv-text);
+}

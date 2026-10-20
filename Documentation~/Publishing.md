@@ -76,3 +76,11 @@ The building blocks are public if you must script it: `AvatarPublisher.AvatarPub
 
 The world uses the player app the event runs on. A world that uses a component added in a newer SDK version
 needs an app build that knows it — check `CHANGELOG.md` and tell the user if the world relies on a new one.
+
+## Native iOS world companion (0.10.8)
+
+In **VirtualVenues > World Publisher**, check **Include mobile (iOS)** to publish an iOS companion together with the existing Linux/WebGL world. It defaults off. Install iOS Build Support for your Unity Editor and Python 3 (`python3` on macOS, `python` on Windows).
+
+For scripts, pass `includeMobile: true` to `WorldPublishJob.Start`; `upload: false` builds locally without signing in. The SDK prepares an isolated iOS worker, preserves the main scene and additional scenes, and validates the manifest and bundles before uploading. The publishing job then completes the ordinary Linux/WebGL flow and confirms one world record with the iOS release reference. Tools ship inside this package; the core app's Build Uploader is not required.
+
+This publishes native iOS world content. A compatible backend and native UPC are required; the native UPC must support the world manifest/additional scenes and match its runtime and Unity version. The publisher rejects a backend without mobile companion support. Publishing does not distribute the native application or change event assignments. Keep the normal unchecked workflow for desktop/server-only worlds.

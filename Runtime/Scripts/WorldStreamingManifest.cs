@@ -21,9 +21,11 @@ namespace VirtualVenues.WorldCreator
         public StreamingBundle[] bundles = Array.Empty<StreamingBundle>();
         public StreamingZone[] zones = Array.Empty<StreamingZone>();
 
-        public void Validate()
+        public void Validate() => Validate("WebGL");
+
+        public void Validate(string expectedTarget)
         {
-            if (format != "virtualvenues-streaming-world" || (version != 1 && version != 2) || target != "WebGL")
+            if ((expectedTarget != "WebGL" && expectedTarget != "iOS") || format != "virtualvenues-streaming-world" || (version != 1 && version != 2) || target != expectedTarget)
                 throw new ArgumentException("Unsupported streaming world format/version/target.");
             if (version == 2 && (!SafeName(memoryEstimateProfile) || !MemoryCost(mobileWorldMemoryBudgetBytes)))
                 throw new ArgumentException("Missing/invalid streaming memory profile or budget.");
@@ -53,13 +55,20 @@ namespace VirtualVenues.WorldCreator
                     foreach (var indirect in FindBundle(d).dependencies)
                         if (indirect == b.name || !deps.Contains(indirect)) throw new ArgumentException("Incomplete/cyclic dependency closure.");
             }
-            var sceneNames = new HashSet<string>(StringComparer.Ordinal);
+            var sceneNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var sceneBundles = new HashSet<string>(StringComparer.Ordinal) { baseBundle };
             foreach (var b in bundles)
             {
                 if (!string.IsNullOrEmpty(b.scene) && (!b.scene.StartsWith("Assets/", StringComparison.Ordinal) ||
                     !b.scene.EndsWith(".unity", StringComparison.OrdinalIgnoreCase) || !sceneNames.Add(b.scene)))
                     throw new ArgumentException("Invalid/duplicate scene path.");
+                if ((b.additionalScenes?.Length ?? 0) > 32 ||
+                    ((b.additionalScenes?.Length ?? 0) > 0 && (b.name != baseBundle || version != 1)))
+                    throw new ArgumentException("Additional scenes belong to the V1 base world bundle.");
+                foreach (string scene in b.additionalScenes ?? Array.Empty<string>())
+                    if (string.IsNullOrEmpty(scene) || !scene.StartsWith("Assets/", StringComparison.Ordinal) ||
+                        !scene.EndsWith(".unity", StringComparison.OrdinalIgnoreCase) || !sceneNames.Add(scene))
+                        throw new ArgumentException("Invalid/duplicate additional scene path.");
                 foreach (var d in b.dependencies)
                     if (!string.IsNullOrEmpty(FindBundle(d).scene)) throw new ArgumentException("Scene bundles cannot be dependencies.");
             }
@@ -115,6 +124,7 @@ namespace VirtualVenues.WorldCreator
         public long sceneResidentBytes;
         public long activationTemporaryBytes;
         public string scene;
+        public string[] additionalScenes = Array.Empty<string>();
         public string[] dependencies = Array.Empty<string>();
     }
     [Serializable]

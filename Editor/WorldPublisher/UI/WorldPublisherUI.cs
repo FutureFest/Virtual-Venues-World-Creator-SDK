@@ -16,6 +16,7 @@ using WorldPublisher;
 using VirtualVenues.Plugins.Nmkr.Editor;
 using VirtualVenues.Editor.ProjectSetup;
 using VirtualVenues.Editor.UI;
+using VirtualVenues.Editor.Publishing;
 
 public class WorldPublisherUI : EditorWindow
 {
@@ -41,6 +42,8 @@ public class WorldPublisherUI : EditorWindow
     private Button _addSceneButton;
     private readonly System.Collections.Generic.List<SceneAsset> _additionalScenes = new System.Collections.Generic.List<SceneAsset>();
     private Button _publishButton;
+    private Toggle _mobileCheckbox;
+    [SerializeField] private bool _includeMobile;
 
     private VisualElement _progressSection;
     private Label _progressMessage;
@@ -88,12 +91,14 @@ public class WorldPublisherUI : EditorWindow
         AuthManager.AuthStateChanged += OnAuthStateChanged;
         // The publish itself runs in WorldPublishJob and survives domain reloads; the window only shows progress.
         WorldPublishJob.Changed += OnPublishChanged;
+        PlatformPublisherProcess.Changed += OnPlatformPublishChanged;
     }
 
     private void OnDisable()
     {
         AuthManager.AuthStateChanged -= OnAuthStateChanged;
         WorldPublishJob.Changed -= OnPublishChanged;
+        PlatformPublisherProcess.Changed -= OnPlatformPublishChanged;
     }
 
     private void OnAuthStateChanged()
@@ -169,6 +174,8 @@ public class WorldPublisherUI : EditorWindow
         _additionalScenesList = root.Q<VisualElement>("additional-scenes-list");
         _addSceneButton = root.Q<Button>("add-scene-button");
         _publishButton = root.Q<Button>("publish-button");
+        _mobileCheckbox = root.Q<Toggle>("include-mobile");
+        _mobileCheckbox.SetValueWithoutNotify(_includeMobile);
 
         _progressSection = root.Q<VisualElement>("progress-section");
         _progressMessage = root.Q<Label>("progress-message");
@@ -182,6 +189,7 @@ public class WorldPublisherUI : EditorWindow
 
     private void SetupEventHandlers()
     {
+        _mobileCheckbox.RegisterValueChangedCallback(evt => _includeMobile = evt.newValue);
         _authButton.clicked += OnAuthButtonClicked;
         _verificationUrlButton.clicked += () => Application.OpenURL(_verificationUrlButton.text);
         _copyCodeButton.clicked += () => EditorGUIUtility.systemCopyBuffer = _userCodeField.value;
@@ -255,6 +263,7 @@ public class WorldPublisherUI : EditorWindow
         PrePopulateSceneSelection();
         LoadAdditionalScenes();
         UpdateSetupBanner();
+        UpdatePublishAvailability();
 
         // Rebuilt mid-publish after a domain reload: keep the progress visible and publish locked.
         if (WorldPublishJob.IsRunning)
@@ -488,9 +497,22 @@ public class WorldPublisherUI : EditorWindow
         {
             _userGreeting.style.display = DisplayStyle.None;
             _authButton.text = "Login";
-            _publisherSection.style.display = DisplayStyle.None;
+            _publisherSection.style.display = DisplayStyle.Flex;
             if (_worldsSection != null) { _worldsSection.style.display = DisplayStyle.None; }
         }
+        UpdatePublishAvailability();
+    }
+
+    private void UpdatePublishAvailability()
+    {
+        bool busy = WorldPublishJob.IsRunning || PlatformPublisherProcess.IsRunning || (PlatformPublisherProcess.ExternalBuildRunning?.Invoke() ?? false);
+        _publishButton?.SetEnabled(_loggedIn && !busy);
+        _mobileCheckbox?.SetEnabled(!busy);
+    }
+    private void OnPlatformPublishChanged()
+    {
+        UpdatePublishAvailability();
+        Repaint();
     }
 
     private void OnAuthButtonClicked()
@@ -870,7 +892,7 @@ public class WorldPublisherUI : EditorWindow
         var paths = PublishScenePaths();
         try
         {
-            WorldPublishJob.Start(paths[0], paths.Skip(1).ToList(), _publishWorldName);
+            WorldPublishJob.Start(paths[0], paths.Skip(1).ToList(), _publishWorldName, includeMobile: _includeMobile);
         }
         catch (Exception ex)
         {
@@ -887,7 +909,7 @@ public class WorldPublisherUI : EditorWindow
         if (status.state == WorldPublishState.Running) { return; }
 
         if (_progressSection != null) { _progressSection.style.display = DisplayStyle.None; }
-        if (_publishButton != null) { _publishButton.SetEnabled(true); }
+        UpdatePublishAvailability();
         // A modal blocks the main thread, so skip it where nobody can click OK.
         if (Application.isBatchMode) { return; }
 

@@ -31,13 +31,15 @@ namespace VirtualVenues.Editor
             if (string.IsNullOrEmpty(path)) { return; }
             Validate(Path.GetDirectoryName(path));
         }
-        public static ReleaseAudit Validate(string directory)
+        public static ReleaseAudit Validate(string directory) => Validate(directory, "WebGL");
+
+        public static ReleaseAudit Validate(string directory, string expectedTarget)
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode)
                 throw new InvalidOperationException("Validate outside Play mode with the world unloaded.");
             string folder = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar);
             var manifest = JsonUtility.FromJson<WorldStreamingManifest>(File.ReadAllText(Path.Combine(folder, "world.streaming.json")));
-            manifest.Validate();
+            manifest.Validate(expectedTarget);
             var root = AssetBundle.LoadFromFile(Path.Combine(folder, Path.GetFileName(folder)));
             if (root == null) throw new InvalidOperationException("Unable to load the Unity build manifest.");
             try
@@ -53,6 +55,11 @@ namespace VirtualVenues.Editor
                         var paths = bundle.GetAllScenePaths();
                         if (!string.IsNullOrEmpty(entry.scene) && !paths.Any(p => string.Equals(p, entry.scene, StringComparison.OrdinalIgnoreCase)))
                             throw new InvalidOperationException("Declared scene missing: " + entry.name);
+                        foreach (string extra in entry.additionalScenes ?? Array.Empty<string>())
+                            if (!paths.Any(p => string.Equals(p, extra, StringComparison.OrdinalIgnoreCase)))
+                                throw new InvalidOperationException("Declared additional scene missing: " + extra);
+                        if (paths.Length != (string.IsNullOrEmpty(entry.scene) ? 0 : 1) + (entry.additionalScenes?.Length ?? 0))
+                            throw new InvalidOperationException("Bundle contains undeclared scenes: " + entry.name);
                         if (string.IsNullOrEmpty(entry.scene) && paths.Length != 0)
                             throw new InvalidOperationException("Shared bundle unexpectedly contains scenes.");
                         if (built.GetAssetBundleHash(entry.name).ToString() != entry.hash)

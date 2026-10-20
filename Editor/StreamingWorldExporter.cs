@@ -19,6 +19,7 @@ namespace VirtualVenues.Editor
     {
         [Serializable] public sealed class Settings
         {
+            public BuildTarget target = BuildTarget.WebGL;
             public string sourceScene;
             public string outputDirectory;
             public string legacyWorldUrl;
@@ -72,6 +73,8 @@ namespace VirtualVenues.Editor
 
         public static Report Export(Settings settings)
         {
+            if (settings == null || (settings.target != BuildTarget.WebGL && settings.target != BuildTarget.iOS) || (settings.target == BuildTarget.iOS && EditorUserBuildSettings.activeBuildTarget != BuildTarget.iOS))
+                throw new ArgumentException("Select the matching supported streaming export target before exporting.");
             if (EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling)
                 throw new InvalidOperationException("Export requires a ready editor outside Play mode.");
             if (settings == null || string.IsNullOrEmpty(settings.sourceScene) ||
@@ -228,7 +231,7 @@ namespace VirtualVenues.Editor
                 foreach (var shared in owners.Where(p => p.Value.Count > 1).GroupBy(p => string.Join("_", p.Value)).OrderBy(g => g.Key, StringComparer.Ordinal))
                     builds.Add(new AssetBundleBuild { assetBundleName = "shared_" + group++, assetNames = shared.Select(p => p.Key).OrderBy(p => p, StringComparer.Ordinal).ToArray() });
                 Directory.CreateDirectory(output);
-                var built = BuildPipeline.BuildAssetBundles(output, builds.ToArray(), BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.StrictMode, BuildTarget.WebGL);
+                var built = BuildPipeline.BuildAssetBundles(output, builds.ToArray(), BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.StrictMode, settings.target);
                 if (built == null) throw new InvalidOperationException("Streaming world bundle build failed.");
                 manifest.bundles = built.GetAllAssetBundles().OrderBy(n => n, StringComparer.Ordinal).Select(name =>
                 {
@@ -238,7 +241,10 @@ namespace VirtualVenues.Editor
                     return new StreamingBundle { name = name, file = name, bytes = new FileInfo(file).Length, crc = crc,
                         hash = built.GetAssetBundleHash(name).ToString(), dependencies = built.GetAllDependencies(name), scene = scene };
                 }).ToArray();
-                manifest.Validate(); report.manifest = manifest;
+                manifest.target = settings.target == BuildTarget.iOS ? "iOS" : "WebGL";
+                if (settings.target != BuildTarget.WebGL && settings.target != BuildTarget.iOS)
+                    throw new ArgumentException("Unsupported streaming export target.");
+                manifest.Validate(manifest.target); report.manifest = manifest;
                 report.baseDependencies = manifest.FindBundle(manifest.baseBundle).dependencies;
                 report.warnings = new[] { "Static visuals only: collisions, gameplay, screens and animated objects remain in the base.",
                     "Bundle bytes and vertex counts do not measure browser/GPU memory. Base/shared dependencies remain resident.",

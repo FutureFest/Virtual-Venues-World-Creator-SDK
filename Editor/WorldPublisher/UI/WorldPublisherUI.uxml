@@ -41,6 +41,7 @@
                     <ui:VisualElement name="additional-scenes-list" />
                     <ui:Button name="add-scene-button" text="+ Add Scene" class="add-scene-button" />
                 </ui:VisualElement>
+                <ui:Toggle name="include-mobile" text="Include mobile (iOS)" class="mobile-checkbox" tooltip="Also builds and publishes this world for the native iOS app. Desktop and server publishing are always included." />
                 <ui:VisualElement class="button-section">
                     <ui:Button name="publish-button" text="Publish World Map" class="primary-button" />
                 </ui:VisualElement>

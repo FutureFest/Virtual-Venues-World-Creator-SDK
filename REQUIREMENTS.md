@@ -134,3 +134,7 @@ You never assign it yourself.
 **Avatar:** logged in · catalog name/selection · unique version tag · ≥1 prefab · Avatar component on root + Animator · unique prefab names. (Clearing the Animator's Controller field is recommended, not required.)
 
 If a publish is blocked, the tool tells you exactly which item to fix. For rendering issues, start with `VirtualVenues → Project Setup`.
+
+## Optional native iOS world publishing
+
+Requires iOS Build Support for the same Unity Editor, Python 3, and a compatible publishing backend/native UPC. Enable **Include mobile (iOS)** in World Publisher. See [Publishing](Documentation~/Publishing.md#native-ios-world-companion-0108) for compatibility and distribution boundaries.

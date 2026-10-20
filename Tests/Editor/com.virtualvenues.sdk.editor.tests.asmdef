@@ -1,0 +1,20 @@
+{
+  "name": "com.virtualvenues.sdk.editor.tests",
+  "references": [
+    "com.virtualvenues.sdk.editor",
+    "com.virtualvenues.sdk.runtime",
+    "UnityEditor.TestRunner",
+    "UnityEngine.TestRunner"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "UNITY_INCLUDE_TESTS"
+  ],
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "nunit.framework.dll"
+  ]
+}

@@ -1,3 +1,8 @@
+## 0.10.8
+
+- Add optional native iOS world companions to World Publisher with isolated worker builds, additional scene support, manifest validation and SDK-contained publishing tools.
+- Preserve the existing desktop/server world workflow and the 0.10.7 avatar publishing features.
+
 # Changelog
 
 All notable changes to `com.virtualvenues.sdk`.

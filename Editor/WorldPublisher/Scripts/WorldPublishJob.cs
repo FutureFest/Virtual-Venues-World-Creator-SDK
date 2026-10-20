@@ -43,6 +43,7 @@ namespace WorldPublisher
         private const string VERSION_KEY = "WorldMapVersion_"; // EditorPrefs key the window used; keeps numbering continuous
         private const double RELOAD_TIMEOUT_SECONDS = 120;
         private const int STEP_UPLOADING = 6;
+        private const int STEP_MOBILE = 7;
 
         [Serializable]
         private class Job
@@ -50,6 +51,8 @@ namespace WorldPublisher
             public List<string> scenes = new List<string>(); // main scene first
             public string worldName;
             public bool upload;
+            public bool includeMobile;
+            public string mobileOutput, iosReleaseId;
             public int step;
             public string bundleBase;
             public string umsPath;
@@ -78,7 +81,7 @@ namespace WorldPublisher
             if (!IsRunning) { return; }
             Job job = LoadJob();
             if (job == null) { Fail("Publish state was lost."); return; }
-            if (job.step == STEP_UPLOADING)
+            if (job.step == STEP_UPLOADING || job.step == STEP_MOBILE)
             {
                 Cleanup(job);
                 Fail("Upload was interrupted by a script reload. Publish again.");
@@ -96,9 +99,10 @@ namespace WorldPublisher
         /// Starts a publish. Throws if a precondition fails (bad scene, compile errors, NMKR config, not signed in).
         /// upload:false builds both bundles and stops — no sign-in needed.
         /// </summary>
-        public static void Start(string mainScenePath, IList<string> additionalScenePaths, string worldName, bool upload = true)
+        public static void Start(string mainScenePath, IList<string> additionalScenePaths, string worldName, bool upload = true, bool includeMobile = false)
         {
-            if (IsRunning) { throw new InvalidOperationException("A world publish is already running."); }
+            if (IsRunning || VirtualVenues.Editor.Publishing.PlatformPublisherProcess.IsRunning || (VirtualVenues.Editor.Publishing.PlatformPublisherProcess.ExternalBuildRunning?.Invoke() ?? false))
+            { throw new InvalidOperationException("Wait for the current build or publishing operation to finish."); }
             if (string.IsNullOrEmpty(mainScenePath) || !mainScenePath.EndsWith(".unity") || AssetDatabase.LoadAssetAtPath<SceneAsset>(mainScenePath) == null)
             {
                 throw new ArgumentException($"Not a scene asset: {mainScenePath}");
@@ -139,6 +143,7 @@ namespace WorldPublisher
                 scenes = scenes,
                 worldName = worldName,
                 upload = upload,
+                includeMobile = includeMobile,
                 bundleBase = GenerateVersionedBundleName(mainScenePath),
                 originalTarget = EditorUserBuildSettings.activeBuildTarget,
                 originalGroup = EditorUserBuildSettings.selectedBuildTargetGroup,
@@ -163,6 +168,8 @@ namespace WorldPublisher
                 switch (job.step)
                 {
                     case 0:
+                        if (job.includeMobile && string.IsNullOrEmpty(job.iosReleaseId))
+                        { StartMobile(job); return; }
                         Progress(0.2f, "Switching to Linux platform...");
                         SwitchTo(job, BuildTargetGroup.Standalone, BuildTarget.StandaloneLinux64);
                         job.step++;
@@ -211,6 +218,57 @@ namespace WorldPublisher
                 Cleanup(job);
                 Fail($"Publishing failed at step {job.step}:\n\n{ex.Message}");
             }
+        }
+
+        [Serializable] private class MobileRequest
+        {
+            public string kind = "world", scene, assetId, version;
+            public string[] additionalScenes;
+        }
+        [Serializable] private class MobileResult { public string releaseId; public bool published; }
+        private static void StartMobile(Job job)
+        {
+            string id = Guid.NewGuid().ToString();
+            string folder = Path.GetFullPath(Path.Combine("Builds", "WorldPublishing", id));
+            Directory.CreateDirectory(folder);
+            string request = Path.Combine(folder, "world-request.json");
+            File.WriteAllText(request, JsonUtility.ToJson(new MobileRequest {
+                scene = job.scenes[0], additionalScenes = job.scenes.Skip(1).ToArray(), assetId = id, version = id }, true));
+            job.mobileOutput = Path.Combine(folder, "mobile");
+            job.step = STEP_MOBILE;
+            SaveJob(job);
+            EditorApplication.update -= Tick;
+            Progress(0.05f, "Building mobile world in an isolated iOS worker...");
+            VirtualVenues.Editor.Publishing.PlatformPublisherProcess.Changed += OnMobileChanged;
+            try
+            {
+                var q = new Func<string, string>(VirtualVenues.Editor.Publishing.PlatformPublisherProcess.Quote);
+                string args = "world-mobile --source " + q(Path.GetFullPath(".")) + " --sdk-root " + q(VirtualVenues.Editor.Publishing.PlatformPublisherProcess.SDKRoot)
+                    + " --job " + q(request) + " --output " + q(job.mobileOutput) + " --unity " + q(EditorApplication.applicationPath);
+                if (job.upload) { args += " --publish --api " + q(WorldPublisherApi.BaseUrl); }
+                VirtualVenues.Editor.Publishing.PlatformPublisherProcess.StartForWorldJob(args, job.upload);
+            }
+            catch { VirtualVenues.Editor.Publishing.PlatformPublisherProcess.Changed -= OnMobileChanged; throw; }
+        }
+        private static void OnMobileChanged()
+        {
+            if (VirtualVenues.Editor.Publishing.PlatformPublisherProcess.IsRunning) { return; }
+            VirtualVenues.Editor.Publishing.PlatformPublisherProcess.Changed -= OnMobileChanged;
+            Job job = LoadJob();
+            if (job == null || job.step != STEP_MOBILE) { return; }
+            try
+            {
+                if (!VirtualVenues.Editor.Publishing.PlatformPublisherProcess.Status.StartsWith("Completed.", StringComparison.Ordinal))
+                { throw new InvalidOperationException(VirtualVenues.Editor.Publishing.PlatformPublisherProcess.Status); }
+                var result = JsonUtility.FromJson<MobileResult>(File.ReadAllText(Path.Combine(job.mobileOutput, "world-result.json")));
+                if (string.IsNullOrEmpty(result.releaseId) || result.published != job.upload)
+                { throw new InvalidOperationException("Mobile world build/publication was incomplete."); }
+                job.iosReleaseId = result.releaseId;
+                job.step = 0;
+                SaveJob(job);
+                EditorApplication.update += Tick;
+            }
+            catch (Exception error) { Cleanup(job); Fail("Mobile publishing failed: " + error.Message); }
         }
 
         private static void SwitchTo(Job job, BuildTargetGroup group, BuildTarget target)
@@ -352,7 +410,7 @@ namespace WorldPublisher
 
                 var progress = new Progress<string>(message => Progress(0.6f + UploadProgress(message) * 0.4f, message));
                 World world = await WorldPublisherApi.UploadWorldAsync(
-                    Path.GetFileName(job.umsPath), Path.GetFileName(job.upcPath), umsData, upcData, job.worldName, progress);
+                    Path.GetFileName(job.umsPath), Path.GetFileName(job.upcPath), umsData, upcData, job.worldName, progress, job.iosReleaseId);
 
                 Cleanup(job);
                 Succeed(job, world, "Publishing Complete!");

@@ -242,3 +242,7 @@ For issues or questions, contact the VirtualVenues development team.
 ## License
 
 See LICENSE file for details.
+
+### Native iOS world publishing
+
+The World Publisher now offers **Include mobile (iOS)**. See [publishing requirements and workflow](Documentation~/Publishing.md#native-ios-world-companion-0108).
