@@ -23,6 +23,7 @@ namespace WorldPublisher
         public string worldId;
         public string uploadUrlUms;
         public string uploadUrlUpc;
+        public string uploadUrlThumbnail; // empty on backends without world thumbnails
         public bool mobileSupported;
     }
 
@@ -34,6 +35,7 @@ namespace WorldPublisher
         public string upcName;
         public string worldName;
         public string iosReleaseId;
+        public bool hasThumbnail;
     }
 
     [Serializable]
@@ -46,6 +48,7 @@ namespace WorldPublisher
         public bool isDefault;
         public string iosUrl;
         public string iosReleaseId;
+        public string thumbnailUrl;
     }
 
     [Serializable]
@@ -128,11 +131,11 @@ namespace WorldPublisher
         /// <summary>
         /// Upload a bundle file to S3 using presigned URL
         /// </summary>
-        public static async Task UploadBundleAsync(string presignedUrl, byte[] fileData)
+        public static async Task UploadBundleAsync(string presignedUrl, byte[] fileData, string contentType = "application/octet-stream")
         {
             using (UnityWebRequest www = UnityWebRequest.Put(presignedUrl, fileData))
             {
-                www.SetRequestHeader("Content-Type", "application/octet-stream");
+                www.SetRequestHeader("Content-Type", contentType);
 
                 await SendWebRequestAsync(www);
 
@@ -146,7 +149,7 @@ namespace WorldPublisher
         /// <summary>
         /// Confirm upload completion and finalize world publication
         /// </summary>
-        public static async Task ConfirmUploadAsync(string worldId, string umsName, string upcName, string worldName = null, string iosReleaseId = null)
+        public static async Task ConfirmUploadAsync(string worldId, string umsName, string upcName, string worldName = null, string iosReleaseId = null, bool hasThumbnail = false)
         {
             if (!IsTokenValid)
             {
@@ -159,7 +162,8 @@ namespace WorldPublisher
                 umsName = umsName,
                 upcName = upcName,
                 worldName = worldName,
-                iosReleaseId = iosReleaseId
+                iosReleaseId = iosReleaseId,
+                hasThumbnail = hasThumbnail
             };
 
             string jsonData = JsonUtility.ToJson(request);
@@ -308,10 +312,10 @@ namespace WorldPublisher
         }
 
         /// <summary>
-        /// Complete upload workflow: get URLs, upload both bundles, confirm
+        /// Complete upload workflow: get URLs, upload both bundles and the optional JPEG thumbnail, confirm
         /// </summary>
         public static async Task<World> UploadWorldAsync(string umsName, string upcName, byte[] umsData, byte[] upcData,
-            string worldName = null, IProgress<string> progress = null, string iosReleaseId = null)
+            string worldName = null, IProgress<string> progress = null, string iosReleaseId = null, byte[] thumbnailJpg = null)
         {
             try
             {
@@ -326,8 +330,20 @@ namespace WorldPublisher
                 progress?.Report("Uploading UPC bundle...");
                 await UploadBundleAsync(uploadUrls.uploadUrlUpc, upcData);
 
+                bool hasThumbnail = false;
+                if (thumbnailJpg != null && !string.IsNullOrEmpty(uploadUrls.uploadUrlThumbnail))
+                {
+                    progress?.Report("Uploading thumbnail...");
+                    try
+                    {
+                        await UploadBundleAsync(uploadUrls.uploadUrlThumbnail, thumbnailJpg, "image/jpeg");
+                        hasThumbnail = true;
+                    }
+                    catch (Exception ex) { Debug.LogWarning($"[WorldPublisher] Thumbnail upload failed, publishing without it: {ex.Message}"); }
+                }
+
                 progress?.Report("Confirming upload...");
-                await ConfirmUploadAsync(uploadUrls.worldId, umsName, upcName, worldName, iosReleaseId);
+                await ConfirmUploadAsync(uploadUrls.worldId, umsName, upcName, worldName, iosReleaseId, hasThumbnail);
 
                 progress?.Report("Fetching world info...");
                 var worlds = await GetAllWorldsAsync();

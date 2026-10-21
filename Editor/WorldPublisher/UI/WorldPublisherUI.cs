@@ -44,6 +44,11 @@ public class WorldPublisherUI : EditorWindow
     private Button _publishButton;
     private Toggle _mobileCheckbox;
     [SerializeField] private bool _includeMobile;
+    private VisualElement _thumbnailPreview;
+    private Label _thumbnailHint;
+    private Button _captureThumbnailButton;
+    private ObjectField _thumbnailOverride;
+    private Texture2D _thumbnailCapture; // last Scene view capture; lost on domain reload, recaptured at publish
 
     private VisualElement _progressSection;
     private Label _progressMessage;
@@ -76,6 +81,7 @@ public class WorldPublisherUI : EditorWindow
     private string _lastPublishedWorldId = null;
 
     private const string WORLD_NAME_KEY = "WorldPublisher_WorldName";
+    private const string THUMBNAIL_OVERRIDE_KEY = "WorldPublisher_ThumbnailOverride"; // Texture2D asset GUID
     private const string ADDITIONAL_SCENES_KEY = "WorldPublisher_AdditionalScenes_"; // + main scene GUID -> "guid;guid"
 
     [MenuItem("VirtualVenues/World Publisher")]
@@ -99,6 +105,7 @@ public class WorldPublisherUI : EditorWindow
         AuthManager.AuthStateChanged -= OnAuthStateChanged;
         WorldPublishJob.Changed -= OnPublishChanged;
         PlatformPublisherProcess.Changed -= OnPlatformPublishChanged;
+        SetThumbnailCapture(null);
     }
 
     private void OnAuthStateChanged()
@@ -176,6 +183,11 @@ public class WorldPublisherUI : EditorWindow
         _publishButton = root.Q<Button>("publish-button");
         _mobileCheckbox = root.Q<Toggle>("include-mobile");
         _mobileCheckbox.SetValueWithoutNotify(_includeMobile);
+        _thumbnailPreview = root.Q<VisualElement>("thumbnail-preview");
+        _thumbnailHint = root.Q<Label>("thumbnail-hint");
+        _captureThumbnailButton = root.Q<Button>("capture-thumbnail-button");
+        _thumbnailOverride = root.Q<ObjectField>("thumbnail-override");
+        _thumbnailOverride.objectType = typeof(Texture2D);
 
         _progressSection = root.Q<VisualElement>("progress-section");
         _progressMessage = root.Q<Label>("progress-message");
@@ -195,7 +207,17 @@ public class WorldPublisherUI : EditorWindow
         _copyCodeButton.clicked += () => EditorGUIUtility.systemCopyBuffer = _userCodeField.value;
         _useActiveSceneButton.clicked += OnUseActiveSceneClicked;
         _publishButton.clicked += OnPublishButtonClicked;
-        _sceneSelector.RegisterValueChangedCallback(_ => LoadAdditionalScenes());
+        _sceneSelector.RegisterValueChangedCallback(_ =>
+        {
+            LoadAdditionalScenes();
+            SetThumbnailCapture(null); // a capture belongs to the scene it was taken in
+        });
+        _captureThumbnailButton.clicked += OnCaptureThumbnailClicked;
+        _thumbnailOverride.RegisterValueChangedCallback(evt =>
+        {
+            EditorPrefs.SetString(THUMBNAIL_OVERRIDE_KEY, evt.newValue != null ? AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(evt.newValue)) : "");
+            RefreshThumbnailPreview();
+        });
         if (_addSceneButton != null)
         {
             _addSceneButton.clicked += () =>
@@ -262,6 +284,9 @@ public class WorldPublisherUI : EditorWindow
         CheckAuth();
         PrePopulateSceneSelection();
         LoadAdditionalScenes();
+        _thumbnailOverride.SetValueWithoutNotify(AssetDatabase.LoadAssetAtPath<Texture2D>(
+            AssetDatabase.GUIDToAssetPath(EditorPrefs.GetString(THUMBNAIL_OVERRIDE_KEY, ""))));
+        RefreshThumbnailPreview();
         UpdateSetupBanner();
         UpdatePublishAvailability();
 
@@ -887,12 +912,61 @@ public class WorldPublisherUI : EditorWindow
         }
     }
 
+    // ---- Thumbnail: custom image > last Scene view capture > capture now ----
+
+    private void OnCaptureThumbnailClicked()
+    {
+        Texture2D capture = WorldThumbnail.CaptureSceneView();
+        if (capture == null)
+        {
+            EditorUtility.DisplayDialog("Thumbnail", "Couldn't capture. Open a Scene view on your world and try again.", "OK");
+            return;
+        }
+        SetThumbnailCapture(capture);
+    }
+
+    private void SetThumbnailCapture(Texture2D capture)
+    {
+        if (_thumbnailCapture != null && _thumbnailCapture != capture) { DestroyImmediate(_thumbnailCapture); }
+        _thumbnailCapture = capture;
+        RefreshThumbnailPreview();
+    }
+
+    private void RefreshThumbnailPreview()
+    {
+        if (_thumbnailPreview == null) { return; }
+        Texture2D custom = _thumbnailOverride.value as Texture2D;
+        Texture2D shown = custom != null ? custom : _thumbnailCapture;
+        _thumbnailPreview.style.backgroundImage = shown != null ? new StyleBackground(shown) : new StyleBackground(StyleKeyword.None);
+        _thumbnailHint.text = custom != null ? "Your custom image is used (cropped to 16:9)."
+            : _thumbnailCapture != null ? "This Scene view capture is used."
+            : "Captured from the Scene view when you publish, if the scene is open.";
+    }
+
+    // Runs before the job starts: the job's platform switches reload the domain, so the image goes to disk now.
+    private string SaveThumbnailForPublish(string mainScenePath)
+    {
+        Texture2D cropped = WorldThumbnail.FromImage(_thumbnailOverride.value as Texture2D);
+        if (cropped != null)
+        {
+            string customPath = WorldThumbnail.SaveJpg(cropped);
+            DestroyImmediate(cropped);
+            if (customPath != null) { return customPath; }
+        }
+        // Never open scenes for the creator: only auto-capture when the main scene is already loaded.
+        if (_thumbnailCapture == null && SceneManager.GetSceneByPath(mainScenePath).isLoaded) { SetThumbnailCapture(WorldThumbnail.CaptureSceneView()); }
+        string path = WorldThumbnail.SaveJpg(_thumbnailCapture);
+        if (path == null) { Debug.Log("[WorldPublisher] Publishing without a thumbnail. Open the scene in the Scene view or pick a custom image to add one."); }
+        return path;
+    }
+
     private void StartPublishing()
     {
         var paths = PublishScenePaths();
         try
         {
-            WorldPublishJob.Start(paths[0], paths.Skip(1).ToList(), _publishWorldName, includeMobile: _includeMobile);
+            WorldPublishJob.Start(paths[0], paths.Skip(1).ToList(), _publishWorldName, includeMobile: _includeMobile,
+                thumbnailPath: SaveThumbnailForPublish(paths[0]));
         }
         catch (Exception ex)
         {

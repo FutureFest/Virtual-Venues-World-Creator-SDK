@@ -309,6 +309,7 @@ interface World {
   userId: string        // Owner's Auth0 user ID
   updatedAt: string     // ISO 8601 timestamp
   isDefault: boolean    // True for system-provided worlds
+  thumbnailUrl?: string // Public 1280x720 JPEG, when one was uploaded
 }
 ```
 
@@ -325,6 +326,7 @@ interface UploadUrlsResponse {
   worldId: string       // Generated UUID for this world
   uploadUrlUms: string  // Presigned S3 URL for UMS
   uploadUrlUpc: string  // Presigned S3 URL for UPC
+  uploadUrlThumbnail?: string // Presigned S3 PUT for thumbnail.jpg (Content-Type: image/jpeg)
 }
 
 interface ConfirmUploadRequest {
@@ -332,6 +334,7 @@ interface ConfirmUploadRequest {
   umsName: string       // Same as upload-urls request
   upcName: string       // Same as upload-urls request
   worldName?: string    // Can override name from upload-urls
+  hasThumbnail?: boolean // True after a successful thumbnail PUT
 }
 ```
 

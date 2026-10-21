@@ -57,6 +57,7 @@ namespace WorldPublisher
             public string bundleBase;
             public string umsPath;
             public string upcPath;
+            public string thumbnailPath; // JPEG in Temp/, optional
             public BuildTarget originalTarget;
             public BuildTargetGroup originalGroup;
             public bool awaitingReload;
@@ -98,8 +99,9 @@ namespace WorldPublisher
         /// <summary>
         /// Starts a publish. Throws if a precondition fails (bad scene, compile errors, NMKR config, not signed in).
         /// upload:false builds both bundles and stops — no sign-in needed.
+        /// thumbnailPath: optional JPEG (see <see cref="WorldThumbnail"/>) uploaded with the world; the job deletes it when done.
         /// </summary>
-        public static void Start(string mainScenePath, IList<string> additionalScenePaths, string worldName, bool upload = true, bool includeMobile = false)
+        public static void Start(string mainScenePath, IList<string> additionalScenePaths, string worldName, bool upload = true, bool includeMobile = false, string thumbnailPath = null)
         {
             if (IsRunning || VirtualVenues.Editor.Publishing.PlatformPublisherProcess.IsRunning || (VirtualVenues.Editor.Publishing.PlatformPublisherProcess.ExternalBuildRunning?.Invoke() ?? false))
             { throw new InvalidOperationException("Wait for the current build or publishing operation to finish."); }
@@ -144,6 +146,7 @@ namespace WorldPublisher
                 worldName = worldName,
                 upload = upload,
                 includeMobile = includeMobile,
+                thumbnailPath = thumbnailPath,
                 bundleBase = GenerateVersionedBundleName(mainScenePath),
                 originalTarget = EditorUserBuildSettings.activeBuildTarget,
                 originalGroup = EditorUserBuildSettings.selectedBuildTargetGroup,
@@ -407,10 +410,11 @@ namespace WorldPublisher
 
                 byte[] umsData = await Task.Run(() => File.ReadAllBytes(job.umsPath));
                 byte[] upcData = await Task.Run(() => File.ReadAllBytes(job.upcPath));
+                byte[] thumbnail = File.Exists(job.thumbnailPath) ? await Task.Run(() => File.ReadAllBytes(job.thumbnailPath)) : null;
 
                 var progress = new Progress<string>(message => Progress(0.6f + UploadProgress(message) * 0.4f, message));
                 World world = await WorldPublisherApi.UploadWorldAsync(
-                    Path.GetFileName(job.umsPath), Path.GetFileName(job.upcPath), umsData, upcData, job.worldName, progress, job.iosReleaseId);
+                    Path.GetFileName(job.umsPath), Path.GetFileName(job.upcPath), umsData, upcData, job.worldName, progress, job.iosReleaseId, thumbnail);
 
                 Cleanup(job);
                 Succeed(job, world, "Publishing Complete!");
@@ -427,6 +431,7 @@ namespace WorldPublisher
             if (message.Contains("Requesting upload URLs")) { return 0.1f; }
             if (message.Contains("Uploading UMS")) { return 0.3f; }
             if (message.Contains("Uploading UPC")) { return 0.6f; }
+            if (message.Contains("Uploading thumbnail")) { return 0.7f; }
             if (message.Contains("Confirming upload")) { return 0.8f; }
             if (message.Contains("Fetching world info")) { return 0.9f; }
             return 1.0f;
@@ -436,6 +441,7 @@ namespace WorldPublisher
         {
             SessionState.EraseString(JOB_KEY);
             ClearBundleNames(job.scenes);
+            if (File.Exists(job.thumbnailPath)) { File.Delete(job.thumbnailPath); }
             if (EditorUserBuildSettings.activeBuildTarget != job.originalTarget)
             {
                 Debug.Log($"[WorldPublishJob] Restoring original build target: {job.originalGroup}/{job.originalTarget}");

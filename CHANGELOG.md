@@ -1,3 +1,8 @@
+## 0.10.9
+
+- World Publisher thumbnails: capture from the Scene view or pick a custom image; a 1280x720 JPEG is uploaded with the world and shown while the world loads. Skipped automatically on backends without thumbnail support.
+- `WorldPublishJob.Start` takes an optional `thumbnailPath`; new `WorldPublisher.WorldThumbnail` helpers.
+
 ## 0.10.8
 
 - Add optional native iOS world companions to World Publisher with isolated worker builds, additional scene support, manifest validation and SDK-contained publishing tools.

@@ -432,6 +432,28 @@ Button {
     height: 24px;
 }
 
+.thumbnail-row {
+    align-items: flex-start;
+}
+.thumbnail-body {
+    flex-grow: 1;
+}
+.thumbnail-preview {
+    width: 256px;
+    height: 144px;
+    background-color: rgba(0, 0, 0, 0.3);
+    -unity-background-scale-mode: scale-and-crop;
+    border-radius: 4px;
+}
+.thumbnail-hint {
+    margin: 4px 0;
+    white-space: normal;
+    color: var(--vv-text-muted);
+}
+.capture-thumbnail-button {
+    align-self: flex-start;
+    margin: 0 0 4px 0;
+}
 .mobile-checkbox {
     margin: 12px 0 0 90px;
     color: var(--vv-text);
