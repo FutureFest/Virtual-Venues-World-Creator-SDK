@@ -129,7 +129,20 @@ public class AvatarPublisherUI : EditorWindow
     // to _cosmeticAssets, because that list is mutated by three separate paths (add / remove / multi-drop)
     // and a parallel list silently desyncs. A stale key for a removed asset is harmless.
     private readonly Dictionary<UnityEngine.Object, string> _cosmeticSlotIds = new Dictionary<UnityEngine.Object, string>();
-    private VisualElement _avatarSlotsSummary;
+    private Foldout _avatarSlotsSummary;
+
+    // _cosmeticAssets holds everything that publishes into cosmetics[]; each item is SHOWN in the section its
+    // slot names (Actions = Dance / VFX / Spray, Pets = Pet, Mounts = Mount, the rest = Cosmetics). Publish,
+    // persistence and catalog loading stay one list. Empty "+ Add" rows of the extra sections are a count, not
+    // null entries, because a null has no slot to say which section it belongs to.
+    private enum ItemGroup { Cosmetic, Action, Pet, Mount }
+    private class ItemSection { public Foldout Foldout; public VisualElement Container; public Button AddButton; public string Title; }
+    private readonly Dictionary<ItemGroup, ItemSection> _sections = new Dictionary<ItemGroup, ItemSection>();
+    private readonly Dictionary<ItemGroup, int> _emptyRows = new Dictionary<ItemGroup, int>();
+
+    // The catalog mode the in-memory lists belong to (0 = New, 1 = Existing). Each mode stages its own lists
+    // and version under its own prefs, so switching never overwrites the other one.
+    private int _listMode;
 
     private const string CATALOG_NAME_KEY = "AvatarPublisher_CatalogName";
     private const string VERSION_TAG_KEY = "AvatarPublisher_VersionTag";
@@ -333,6 +346,19 @@ public class AvatarPublisherUI : EditorWindow
         _addCosmeticPrefabButton = root.Q<Button>("add-cosmetic-prefab-button");
         _prefabsError = root.Q<Label>("prefabs-error");
         _catalogDropdownError = root.Q<Label>("catalog-dropdown-error");
+        foreach (var (group, prefix, title) in new[] { (ItemGroup.Action, "actions", "Actions"), (ItemGroup.Pet, "pets", "Pets"), (ItemGroup.Mount, "mounts", "Mounts") })
+        {
+            var foldout = root.Q<Foldout>($"{prefix}-foldout");
+            if (foldout == null) { continue; }
+            _sections[group] = new ItemSection
+            {
+                Foldout = foldout,
+                Container = root.Q<VisualElement>($"{prefix}-container"),
+                AddButton = root.Q<Button>($"add-{prefix}-button"),
+                Title = title,
+            };
+            _emptyRows[group] = 0;
+        }
 
         // Manual bundle
         _bundleFolderField = root.Q<TextField>("bundle-folder-field");
@@ -396,6 +422,16 @@ public class AvatarPublisherUI : EditorWindow
         // foldouts, not the containers, which get rebuilt on every refresh).
         RegisterPrefabDragAndDrop(_avatarPrefabsFoldout, true);
         RegisterPrefabDragAndDrop(_cosmeticPrefabsFoldout, false);
+        foreach (var kv in _sections)
+        {
+            ItemGroup group = kv.Key;
+            if (kv.Value.AddButton != null) { kv.Value.AddButton.clicked += () => { _emptyRows[group]++; UpdateCosmeticPrefabsUI(); }; }
+            RegisterFoldoutPersistence(kv.Value.Foldout, $"AvatarPublisher_Foldout{kv.Value.Title}");
+            RegisterPrefabDragAndDrop(kv.Value.Foldout, false, group);
+        }
+
+        // The version is staged per catalog mode.
+        _versionTagField.RegisterValueChangedCallback(e => EditorPrefs.SetString(ModeKey(VERSION_TAG_KEY), e.newValue));
 
         // Auto-fill the next version when an existing catalog is selected.
         _catalogDropdown.RegisterValueChangedCallback(OnCatalogDropdownChanged);
@@ -443,9 +479,11 @@ public class AvatarPublisherUI : EditorWindow
         {
             _catalogNameField.value = EditorPrefs.GetString(CATALOG_NAME_KEY, "");
         }
+        // Lists and version below are read for the saved catalog mode.
+        _listMode = EditorPrefs.GetInt(CATALOG_MODE_KEY, 0);
         if (_versionTagField != null)
         {
-            _versionTagField.value = EditorPrefs.GetString(VERSION_TAG_KEY, "1.0.0");
+            _versionTagField.SetValueWithoutNotify(EditorPrefs.GetString(ModeKey(VERSION_TAG_KEY), "1.0.0"));
         }
 
         // Load saved bundle folder
@@ -472,6 +510,7 @@ public class AvatarPublisherUI : EditorWindow
         RestoreFoldoutState(_cosmeticPrefabsFoldout, FOLDOUT_COSMETIC_PREFABS_KEY);
         RestoreFoldoutState(_avatarsFoldout, FOLDOUT_AVATARS_META_KEY);
         RestoreFoldoutState(_cosmeticsFoldout, FOLDOUT_COSMETICS_META_KEY);
+        foreach (ItemSection section in _sections.Values) { RestoreFoldoutState(section.Foldout, $"AvatarPublisher_Foldout{section.Title}"); }
 
         // Restore auto-build prefab selections (survive window reconstruction).
         RestorePrefabsFromGuids();
@@ -750,6 +789,9 @@ public class AvatarPublisherUI : EditorWindow
 
     private void OnCatalogModeChanged(ChangeEvent<int> evt)
     {
+        // A publish re-reads the lists after its build; swapping them mid-publish would ship the wrong set.
+        if (_isPublishing) { SelectRadioButton(_catalogModeGroup, evt.previousValue); return; }
+        SwitchStaging(evt.newValue);
         UpdateCatalogModeUI(evt.newValue);
         EditorPrefs.SetInt(CATALOG_MODE_KEY, evt.newValue);
         // Entering "Add Version to Existing" → pre-fill the next version for the selected catalog.
@@ -759,6 +801,46 @@ public class AvatarPublisherUI : EditorWindow
         // meant as that catalog's next version — with a hint pointing at the card's Load button.
         if (!HasAnyItems()) { _ = LoadCatalogRosterAsync(SelectedCatalog()); }
         else if (string.IsNullOrEmpty(_loadedCatalogId)) { SetRosterStatus("Lists are hand-built. Use Load on a catalog below to fill them from a published version."); }
+    }
+
+    // Existing keeps the original pref keys (so lists saved before staging stay there); New gets "_New" ones.
+    private string ModeKey(string key) => _listMode == 0 ? key + "_New" : key;
+
+    private static readonly string[] STAGED_LIST_KEYS =
+    {
+        AVATAR_PREFAB_GUIDS_KEY, COSMETIC_PREFAB_GUIDS_KEY, COSMETIC_SLOT_IDS_KEY, AVATAR_KINDS_KEY,
+        UNBOUND_ITEMS_KEY, LOADED_CATALOG_KEY, LOADED_SIGNATURE_KEY, ROSTER_STATUS_KEY,
+    };
+
+    /// <summary>Saves the lists to the mode they belong to, then shows the other mode's lists and version.</summary>
+    private void SwitchStaging(int mode)
+    {
+        if (mode == _listMode) { return; }
+        SavePrefabGuids();
+        _listMode = mode;
+        foreach (ItemGroup group in _sections.Keys.ToList()) { _emptyRows[group] = 0; }
+        ClearPrefabsError();
+        RestorePrefabsFromGuids();
+        _versionTagField?.SetValueWithoutNotify(EditorPrefs.GetString(ModeKey(VERSION_TAG_KEY), "1.0.0"));
+    }
+
+    /// <summary>
+    /// A New catalog just published: its lists ARE that catalog's latest version now, so they move to the
+    /// Existing staging, and New starts empty again (blank name, 1.0.0).
+    /// </summary>
+    private void PromoteNewStaging()
+    {
+        if (_listMode != 0) { return; }
+        string status = _rosterStatus?.text;
+        _listMode = 1;
+        SavePrefabGuids();
+        PersistLoadedState(status);
+        _listMode = 0;
+        foreach (string key in STAGED_LIST_KEYS) { SetPref(ModeKey(key), ""); }
+        EditorPrefs.DeleteKey(ModeKey(VERSION_TAG_KEY));
+        EditorPrefs.SetString(CATALOG_NAME_KEY, "");
+        _catalogNameField?.SetValueWithoutNotify("");
+        _listMode = 1;
     }
 
     private void UpdateCatalogModeUI(int mode)
@@ -848,7 +930,7 @@ public class AvatarPublisherUI : EditorWindow
 
         string next = BumpPatch(_catalogs[index].latestVersionTag);
         _versionTagField.value = next;
-        EditorPrefs.SetString(VERSION_TAG_KEY, next);
+        EditorPrefs.SetString(ModeKey(VERSION_TAG_KEY), next);
     }
 
     #endregion
@@ -889,7 +971,8 @@ public class AvatarPublisherUI : EditorWindow
 
             // Stale response: window gone, signed out, a publish started (it re-reads the live lists between
             // the Addressables build and the metadata build), or another catalog was picked meanwhile.
-            if (this == null || authGen != _authGen || _isPublishing) { return; }
+            // Also stale when the user switched to New meanwhile: these lists belong to Existing.
+            if (this == null || authGen != _authGen || _isPublishing || _listMode != 1) { return; }
             if (SelectedCatalog()?.catalogId != cat.catalogId) { return; }
 
             ClearIcons();
@@ -959,6 +1042,7 @@ public class AvatarPublisherUI : EditorWindow
         EditorPrefs.SetString(SELECTED_CATALOG_KEY, catalog.catalogId);
         SelectRadioButton(_catalogModeGroup, 1);
         EditorPrefs.SetInt(CATALOG_MODE_KEY, 1);
+        SwitchStaging(1); // the New staging is saved and left alone
         UpdateCatalogModeUI(1); // its dropdown rebuild restores the saved id silently
         AutoFillVersionForSelectedCatalog();
         _ = LoadCatalogRosterAsync(catalog);
@@ -983,9 +1067,9 @@ public class AvatarPublisherUI : EditorWindow
     // Only the "Showing ..." text is persisted; loading / error / hint texts are transient.
     private void PersistLoadedState(string statusText)
     {
-        SetPref(LOADED_CATALOG_KEY, _loadedCatalogId ?? "");
-        SetPref(LOADED_SIGNATURE_KEY, _loadedSignature ?? "");
-        SetPref(ROSTER_STATUS_KEY, statusText ?? "");
+        SetPref(ModeKey(LOADED_CATALOG_KEY), _loadedCatalogId ?? "");
+        SetPref(ModeKey(LOADED_SIGNATURE_KEY), _loadedSignature ?? "");
+        SetPref(ModeKey(ROSTER_STATUS_KEY), statusText ?? "");
         SetRosterStatus(statusText);
     }
 
@@ -1085,11 +1169,22 @@ public class AvatarPublisherUI : EditorWindow
     private void UpdateCosmeticPrefabsUI()
     {
         _cosmeticPrefabsContainer.Clear();
+        foreach (ItemSection section in _sections.Values) { section.Container?.Clear(); }
 
         for (int i = 0; i < _cosmeticAssets.Count; i++)
         {
             int index = i;
             UnityEngine.Object asset = _cosmeticAssets[i];
+            ItemGroup group = asset == null ? ItemGroup.Cosmetic : GroupOf(asset);
+            if (group != ItemGroup.Cosmetic && _sections.TryGetValue(group, out ItemSection itemSection))
+            {
+                itemSection.Container.Add(CreateGroupRow(asset, group, newValue =>
+                {
+                    _cosmeticAssets.RemoveAt(index);
+                    if (newValue != null) { _cosmeticAssets.Insert(index, newValue); } else { _emptyRows[group]++; }
+                }, () => _cosmeticAssets.RemoveAt(index)));
+                continue;
+            }
             BaseField<string> slotControl = CreateSlotControl(asset);
             var row = CreatePrefabRow(asset, false, CosmeticFieldType(asset, slotControl.value), newValue =>
             {
@@ -1121,9 +1216,25 @@ public class AvatarPublisherUI : EditorWindow
             row.Insert(2, slotControl);
             _cosmeticPrefabsContainer.Add(row);
         }
+        foreach (var kv in _sections)
+        {
+            ItemGroup group = kv.Key;
+            for (int k = 0; k < _emptyRows[group]; k++)
+            {
+                kv.Value.Container.Add(CreateGroupRow(null, group, newValue =>
+                {
+                    if (newValue == null) { return; }
+                    _emptyRows[group]--;
+                    _cosmeticAssets.Add(newValue);
+                }, () => _emptyRows[group]--));
+            }
+        }
         foreach (UnboundItem item in _unboundItems)
         {
-            if (!item.isAvatar) { _cosmeticPrefabsContainer.Add(CreateUnboundRow(item)); }
+            if (item.isAvatar) { continue; }
+            ItemGroup group = GroupOfSlot(item.slotId);
+            VisualElement container = _sections.TryGetValue(group, out ItemSection s) ? s.Container : _cosmeticPrefabsContainer;
+            container.Add(CreateUnboundRow(item));
         }
 
         UpdateAvatarSlotsSummary();
@@ -1152,8 +1263,7 @@ public class AvatarPublisherUI : EditorWindow
             return field;
         }
 
-        if (!options.Contains("Pet")) options.Add("Pet");
-        if (!options.Contains("Mount")) options.Add("Mount");
+        // Pets and Mounts have their own sections now, so they are not offered as cosmetic slots.
         // An unknown stored value must stay selectable, or reopening the window would silently retarget it.
         if (!string.IsNullOrEmpty(current) && !options.Contains(current)) { options.Insert(0, current); }
 
@@ -1192,6 +1302,69 @@ public class AvatarPublisherUI : EditorWindow
         if (asset.GetType().FullName == "FutureFest.Actions.VFXActionContentData") return "VFX";
         if (asset.GetType().FullName == "FutureFest.Actions.SprayActionContentData") return "Spray";
         return null;
+    }
+
+    // Which section shows an item: its category (actions, legacy pets/mounts) or its slot.
+    private ItemGroup GroupOf(UnityEngine.Object asset) => GroupOfSlot(GetCosmeticSlotId(asset));
+
+    private static ItemGroup GroupOfSlot(string slotId)
+    {
+        switch (slotId)
+        {
+            case "Pet": return ItemGroup.Pet;
+            case "Mount": return ItemGroup.Mount;
+            case "Dance": case "VFX": case "Spray": return ItemGroup.Action;
+            default: return ItemGroup.Cosmetic;
+        }
+    }
+
+    /// <summary>Can this asset go in this section? Pets/Mounts are judged against their fixed slot.</summary>
+    private bool ValidateForGroup(UnityEngine.Object asset, ItemGroup group, out string reason)
+    {
+        if (group == ItemGroup.Cosmetic) { return ValidateAsset(asset, false, out reason); }
+        if (!IsValidCosmeticAsset(asset, out reason)) { return false; }
+        string companion = CompanionCategory(asset);
+        if (group == ItemGroup.Action)
+        {
+            reason = GroupOfSlot(companion) == ItemGroup.Action ? ActionContentProblem(asset)
+                : $"\"{asset.name}\" is not a Dance, VFX or Spray action asset.";
+            return reason == null;
+        }
+        string slot = group == ItemGroup.Pet ? "Pet" : "Mount";
+        if (companion == null && !(asset is GameObject)) { reason = $"\"{asset.name}\": {slot}s are prefabs with a VirtualVenues {slot} component."; return false; }
+        reason = CosmeticKindMismatch(asset, slot);
+        return reason == null;
+    }
+
+    /// <summary>
+    /// An Actions / Pets / Mounts row: [icon][asset][category][X]. There is no slot to pick: the category is
+    /// fixed by the section (or by the action asset itself), and these never link to an avatar.
+    /// </summary>
+    private VisualElement CreateGroupRow(UnityEngine.Object asset, ItemGroup group, Action<UnityEngine.Object> replace, Action remove)
+    {
+        Type type = group == ItemGroup.Action ? typeof(ScriptableObject) : typeof(UnityEngine.Object);
+        var row = CreatePrefabRow(asset, false, asset != null ? asset.GetType() : type, newValue =>
+        {
+            if (newValue != null)
+            {
+                // Validate first: a stale "Pet" slot on a rejected prefab would also block it from Cosmetics.
+                if (!ValidateForGroup(newValue, group, out string reason)) { ShowPrefabsError(reason); newValue = null; }
+                else if (group != ItemGroup.Action && newValue is GameObject) { SetCosmeticSlotId(newValue, group == ItemGroup.Pet ? "Pet" : "Mount"); }
+            }
+            replace(newValue);
+            UpdateCosmeticPrefabsUI();
+        }, () =>
+        {
+            remove();
+            UpdateCosmeticPrefabsUI();
+        });
+        var category = new Label(asset != null ? GetCosmeticSlotId(asset) : (group == ItemGroup.Action ? "Action" : group.ToString()));
+        category.AddToClassList("slot-field");
+        category.tooltip = group == ItemGroup.Action
+            ? "The action asset sets its own category (Dance, VFX or Spray)."
+            : $"Publishes as {group}_<name>.";
+        row.Insert(2, category);
+        return row;
     }
 
     private void SetCosmeticSlotId(UnityEngine.Object cosmetic, string slotId)
@@ -1333,7 +1506,8 @@ public class AvatarPublisherUI : EditorWindow
         if (_cosmeticPrefabsFoldout == null) { return; }
         if (_avatarSlotsSummary == null)
         {
-            _avatarSlotsSummary = new VisualElement();
+            // Collapsed by default: with 60+ avatars it would push the cosmetics list off screen.
+            _avatarSlotsSummary = new Foldout { value = false };
             _cosmeticPrefabsFoldout.Insert(0, _avatarSlotsSummary);
         }
         _avatarSlotsSummary.Clear();
@@ -1353,6 +1527,9 @@ public class AvatarPublisherUI : EditorWindow
             foldout.Add(summary);
             _avatarSlotsSummary.Add(foldout);
         }
+        int avatarCount = RealAvatars().Count();
+        _avatarSlotsSummary.text = $"Avatar slots ({avatarCount} avatar(s))";
+        _avatarSlotsSummary.style.display = avatarCount > 0 ? DisplayStyle.Flex : DisplayStyle.None;
     }
 
     private VisualElement CreatePrefabRow(UnityEngine.Object currentValue, bool isAvatar, Type objectType, Action<UnityEngine.Object> onValueChanged, Action onRemove)
@@ -1647,9 +1824,15 @@ public class AvatarPublisherUI : EditorWindow
     private void UpdatePrefabFoldoutLabels()
     {
         int avatarCount = _avatarPrefabs.Count(p => p != null);
-        int cosmeticCount = _cosmeticAssets.Count(p => p != null);
+        int cosmeticCount = _cosmeticAssets.Count(p => p != null && GroupOf(p) == ItemGroup.Cosmetic);
         int avatarMissing = _unboundItems.Count(i => i.isAvatar);
-        int cosmeticMissing = _unboundItems.Count - avatarMissing;
+        int cosmeticMissing = _unboundItems.Count(i => !i.isAvatar && GroupOfSlot(i.slotId) == ItemGroup.Cosmetic);
+        foreach (var kv in _sections)
+        {
+            int count = _cosmeticAssets.Count(p => p != null && GroupOf(p) == kv.Key);
+            int missing = _unboundItems.Count(i => !i.isAvatar && GroupOfSlot(i.slotId) == kv.Key);
+            kv.Value.Foldout.text = missing > 0 ? $"{kv.Value.Title} ({count}, {missing} missing)" : $"{kv.Value.Title} ({count})";
+        }
 
         if (_avatarPrefabsFoldout != null)
         {
@@ -1830,7 +2013,7 @@ public class AvatarPublisherUI : EditorWindow
         List<string> declared = CollectDeclaredSlotIds();
         foreach (var cosmetic in _cosmeticAssets)
         {
-            if (cosmetic == null) { continue; }
+            if (cosmetic == null || GroupOf(cosmetic) != ItemGroup.Cosmetic) { continue; } // actions/pets/mounts have no avatar slot
             string slotId = GetCosmeticSlotId(cosmetic);
 
             if (string.IsNullOrEmpty(slotId))
@@ -1894,11 +2077,11 @@ public class AvatarPublisherUI : EditorWindow
         string avatarKinds = string.Join(",", _avatarKinds
             .Where(kv => kv.Key != null && _avatarPrefabs.Contains(kv.Key))
             .Select(kv => $"{AssetGuid(kv.Key)}={(kv.Value ? COSTUME_SLOT : "Avatar")}"));
-        SetPref(AVATAR_PREFAB_GUIDS_KEY, avatarGuids);
-        SetPref(COSMETIC_PREFAB_GUIDS_KEY, cosmeticGuids);
-        SetPref(COSMETIC_SLOT_IDS_KEY, cosmeticSlots);
-        SetPref(AVATAR_KINDS_KEY, avatarKinds);
-        SetPref(UNBOUND_ITEMS_KEY, JsonUtility.ToJson(new UnboundItemList { items = _unboundItems }));
+        SetPref(ModeKey(AVATAR_PREFAB_GUIDS_KEY), avatarGuids);
+        SetPref(ModeKey(COSMETIC_PREFAB_GUIDS_KEY), cosmeticGuids);
+        SetPref(ModeKey(COSMETIC_SLOT_IDS_KEY), cosmeticSlots);
+        SetPref(ModeKey(AVATAR_KINDS_KEY), avatarKinds);
+        SetPref(ModeKey(UNBOUND_ITEMS_KEY), JsonUtility.ToJson(new UnboundItemList { items = _unboundItems }));
         // EVERY custom icon, listed or not: pruning to the listed assets lost an icon for good the moment its
         // asset was removed or a catalog without it was loaded.
         SetPref(CUSTOM_ICONS_KEY, string.Join(",", _customIcons
@@ -1946,11 +2129,11 @@ public class AvatarPublisherUI : EditorWindow
 
     private void RestorePrefabsFromGuids()
     {
-        RestorePrefabList(_avatarPrefabs, GetPref(AVATAR_PREFAB_GUIDS_KEY));
-        RestorePrefabList(_cosmeticAssets, GetPref(COSMETIC_PREFAB_GUIDS_KEY));
-        RestoreCosmeticSlotIds(GetPref(COSMETIC_SLOT_IDS_KEY));
+        RestorePrefabList(_avatarPrefabs, GetPref(ModeKey(AVATAR_PREFAB_GUIDS_KEY)));
+        RestorePrefabList(_cosmeticAssets, GetPref(ModeKey(COSMETIC_PREFAB_GUIDS_KEY)));
+        RestoreCosmeticSlotIds(GetPref(ModeKey(COSMETIC_SLOT_IDS_KEY)));
         _avatarKinds.Clear();
-        foreach (string pair in GetPref(AVATAR_KINDS_KEY).Split(','))
+        foreach (string pair in GetPref(ModeKey(AVATAR_KINDS_KEY)).Split(','))
         {
             string[] parts = pair.Split('=');
             if (parts.Length != 2) { continue; }
@@ -1966,16 +2149,16 @@ public class AvatarPublisherUI : EditorWindow
         }
         // Placeholders + loaded-catalog state must be read BEFORE the rebuild below, which re-saves them.
         _unboundItems.Clear();
-        string unboundJson = GetPref(UNBOUND_ITEMS_KEY);
+        string unboundJson = GetPref(ModeKey(UNBOUND_ITEMS_KEY));
         if (!string.IsNullOrEmpty(unboundJson))
         {
             try { _unboundItems.AddRange(JsonUtility.FromJson<UnboundItemList>(unboundJson)?.items ?? new List<UnboundItem>()); }
             catch (Exception ex) { Debug.LogWarning($"[AvatarPublisher] Could not restore placeholder rows: {ex.Message}"); }
         }
-        _loadedCatalogId = GetPref(LOADED_CATALOG_KEY);
+        _loadedCatalogId = GetPref(ModeKey(LOADED_CATALOG_KEY));
         if (string.IsNullOrEmpty(_loadedCatalogId)) { _loadedCatalogId = null; }
-        _loadedSignature = GetPref(LOADED_SIGNATURE_KEY);
-        SetRosterStatus(GetPref(ROSTER_STATUS_KEY));
+        _loadedSignature = GetPref(ModeKey(LOADED_SIGNATURE_KEY));
+        SetRosterStatus(GetPref(ModeKey(ROSTER_STATUS_KEY)));
         _customIcons.Clear();
         foreach (string pair in GetPref(CUSTOM_ICONS_KEY).Split(','))
         {
@@ -2022,13 +2205,14 @@ public class AvatarPublisherUI : EditorWindow
 
     // --- Multi-asset drag & drop onto the prefab lists (registered on the persistent foldout) ---
 
-    private void RegisterPrefabDragAndDrop(Foldout foldout, bool isAvatar)
+    private void RegisterPrefabDragAndDrop(Foldout foldout, bool isAvatar, ItemGroup group = ItemGroup.Cosmetic)
     {
         if (foldout == null) { return; }
+        bool Valid(UnityEngine.Object obj, out string why) => isAvatar ? ValidateAsset(obj, true, out why) : ValidateForGroup(obj, group, out why);
 
         foldout.RegisterCallback<DragUpdatedEvent>(evt =>
         {
-            bool anyValid = DragAndDrop.objectReferences.Any(obj => ValidateAsset(obj, isAvatar, out _));
+            bool anyValid = DragAndDrop.objectReferences.Any(obj => Valid(obj, out _));
             // An avatar dropped on Cosmetics is still accepted as a drop, so the drop can say where it belongs.
             bool explain = !isAvatar && DragAndDrop.objectReferences.Any(IsAvatarRooted);
             DragAndDrop.visualMode = anyValid || explain ? DragAndDropVisualMode.Copy : DragAndDropVisualMode.Rejected;
@@ -2051,12 +2235,14 @@ public class AvatarPublisherUI : EditorWindow
             foreach (var obj in DragAndDrop.objectReferences)
             {
                 if (obj == null) { continue; }
-                if (!ValidateAsset(obj, isAvatar, out string reason)) { rejected++; rejectReason = reason; continue; }
+                if (!Valid(obj, out string reason)) { rejected++; rejectReason = reason; continue; }
 
                 string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(obj));
                 if (string.IsNullOrEmpty(guid) || seenGuids.Contains(guid)) { continue; }
 
                 seenGuids.Add(guid);
+                // A prefab dropped on Pets / Mounts publishes into that slot (slot first: the rows group by it).
+                if (obj is GameObject && (group == ItemGroup.Pet || group == ItemGroup.Mount)) { SetCosmeticSlotId(obj, group.ToString()); }
                 if (isAvatar) { _avatarPrefabs.Add((GameObject)obj); } else { _cosmeticAssets.Add(obj); }
                 added++;
             }
@@ -2921,7 +3107,7 @@ public class AvatarPublisherUI : EditorWindow
 
             // Save preferences
             EditorPrefs.SetString(CATALOG_NAME_KEY, _catalogNameField.value);
-            EditorPrefs.SetString(VERSION_TAG_KEY, _versionTagField.value);
+            EditorPrefs.SetString(ModeKey(VERSION_TAG_KEY), _versionTagField.value);
 
             // Determine catalogId
             string catalogId = isNewCatalog ? null : _catalogs[_catalogDropdown.index].catalogId;
@@ -3143,7 +3329,7 @@ public class AvatarPublisherUI : EditorWindow
 
             // Save preferences
             EditorPrefs.SetString(CATALOG_NAME_KEY, _catalogNameField.value);
-            EditorPrefs.SetString(VERSION_TAG_KEY, _versionTagField.value);
+            EditorPrefs.SetString(ModeKey(VERSION_TAG_KEY), _versionTagField.value);
 
             // For manual mode, catalogId is null for new catalogs (API generates it via upload-urls)
             string catalogId = isNewCatalog ? null : _catalogs[_catalogDropdown.index].catalogId;
@@ -3314,6 +3500,7 @@ public class AvatarPublisherUI : EditorWindow
             // Persist the selection first so UpdateCatalogModeUI's dropdown rebuild restores it, and so
             // it survives a later reload.
             EditorPrefs.SetString(SELECTED_CATALOG_KEY, publishedCatalogId);
+            PromoteNewStaging(); // a New publish's lists become the Existing ones; New empties
             SelectRadioButton(_catalogModeGroup, 1); // Add Version to Existing
             EditorPrefs.SetInt(CATALOG_MODE_KEY, 1);
             UpdateCatalogModeUI(1);
@@ -3324,7 +3511,7 @@ public class AvatarPublisherUI : EditorWindow
             // response. Only here — where the catalog is selected — so version and selection stay in sync.
             string bumped = BumpPatch(publishedVersionTag);
             _versionTagField.value = bumped;
-            EditorPrefs.SetString(VERSION_TAG_KEY, bumped);
+            EditorPrefs.SetString(ModeKey(VERSION_TAG_KEY), bumped);
         }
         finally
         {

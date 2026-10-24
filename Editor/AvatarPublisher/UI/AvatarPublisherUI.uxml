@@ -74,16 +74,47 @@
                 <ui:VisualElement name="auto-build-section" class="subsection">
                     <!-- Avatar Prefabs -->
                     <ui:Foldout name="avatar-prefabs-foldout" text="Avatar Prefabs (0)" class="prefab-foldout">
-                        <ui:VisualElement name="avatar-prefabs-container" class="prefab-container" />
+                        <ui:ScrollView class="prefab-scroll">
+                            <ui:VisualElement name="avatar-prefabs-container" class="prefab-container" />
+                        </ui:ScrollView>
                         <ui:Button name="add-avatar-prefab-button" text="+ Add Avatar Prefab" class="add-prefab-button" />
                         <ui:Label text="Drag avatar prefabs here (multi-select). The prefab root needs a VirtualVenues Avatar component with an Animator assigned." class="drag-hint" />
                     </ui:Foldout>
 
                     <!-- Cosmetics: prefabs, Materials or Texture2Ds -->
                     <ui:Foldout name="cosmetic-prefabs-foldout" text="Cosmetics (0)" class="prefab-foldout">
-                        <ui:VisualElement name="cosmetic-prefabs-container" class="prefab-container" />
+                        <ui:ScrollView class="prefab-scroll">
+                            <ui:VisualElement name="cosmetic-prefabs-container" class="prefab-container" />
+                        </ui:ScrollView>
                         <ui:Button name="add-cosmetic-prefab-button" text="+ Add Cosmetic" class="add-prefab-button" />
                         <ui:Label text="Drag prefabs, materials or textures here (multi-select supported)." class="drag-hint" />
+                    </ui:Foldout>
+
+                    <!-- Actions: Dance / VFX / Spray assets. Each names its own category; no slot, no avatar. -->
+                    <ui:Foldout name="actions-foldout" text="Actions (0)" class="prefab-foldout">
+                        <ui:ScrollView class="prefab-scroll">
+                            <ui:VisualElement name="actions-container" class="prefab-container" />
+                        </ui:ScrollView>
+                        <ui:Button name="add-actions-button" text="+ Add Action" class="add-prefab-button" />
+                        <ui:Label text="Drag Dance, VFX or Spray action assets here (Create &gt; Virtual Venues &gt; Actions)." class="drag-hint" />
+                    </ui:Foldout>
+
+                    <!-- Pets: prefabs with a VirtualVenues Pet component, published as Pet_<name> -->
+                    <ui:Foldout name="pets-foldout" text="Pets (0)" class="prefab-foldout">
+                        <ui:ScrollView class="prefab-scroll">
+                            <ui:VisualElement name="pets-container" class="prefab-container" />
+                        </ui:ScrollView>
+                        <ui:Button name="add-pets-button" text="+ Add Pet" class="add-prefab-button" />
+                        <ui:Label text="Drag pet prefabs here. The prefab root needs a VirtualVenues Pet component." class="drag-hint" />
+                    </ui:Foldout>
+
+                    <!-- Mounts: prefabs with a VirtualVenues Mount component, published as Mount_<name> -->
+                    <ui:Foldout name="mounts-foldout" text="Mounts (0)" class="prefab-foldout">
+                        <ui:ScrollView class="prefab-scroll">
+                            <ui:VisualElement name="mounts-container" class="prefab-container" />
+                        </ui:ScrollView>
+                        <ui:Button name="add-mounts-button" text="+ Add Mount" class="add-prefab-button" />
+                        <ui:Label text="Drag mount prefabs here. The prefab root needs a VirtualVenues Mount component." class="drag-hint" />
                     </ui:Foldout>
                     <ui:Label name="prefabs-error" class="error-label" />
                 </ui:VisualElement>

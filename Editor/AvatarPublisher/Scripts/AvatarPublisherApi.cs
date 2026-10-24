@@ -481,17 +481,12 @@ namespace AvatarPublisher
                 filesUploaded++;
 
                 // Upload each bundle file
-                foreach (var bundleUrl in uploadUrls.uploadUrlBundles)
+                await UploadBundlesAsync(resolvedCatalogId, resolvedVersionId, null, uploadUrls, bundleFiles, name =>
                 {
-                    if (bundleFiles.TryGetValue(bundleUrl.name, out byte[] bundleData))
-                    {
-                        float progressValue = 0.15f + (0.7f * filesUploaded / totalFiles);
-                        progress?.Report((progressValue, $"Uploading {bundleUrl.name}... ({filesUploaded + 1}/{totalFiles})"));
-                        // Icons get their real type so the wardrobe <img> never has to sniff.
-                        await UploadFileAsync(bundleUrl.presignedUrl, bundleData, IsIconObject(bundleUrl.name) ? "image/png" : "application/octet-stream");
-                        filesUploaded++;
-                    }
-                }
+                    float progressValue = 0.15f + (0.7f * filesUploaded / totalFiles);
+                    progress?.Report((progressValue, $"Uploading {name}... ({filesUploaded + 1}/{totalFiles})"));
+                    filesUploaded++;
+                });
 
                 if (iosBuild != null)
                 {
@@ -548,11 +543,56 @@ namespace AvatarPublisher
 
             await UploadFileAsync(urls.uploadUrlBin, ios.BinData);
             await UploadFileAsync(urls.uploadUrlHash, ios.HashData);
-            foreach (BundleUploadUrl bundleUrl in urls.uploadUrlBundles)
-            {
-                if (ios.BundleFiles.TryGetValue(bundleUrl.name, out byte[] data)) { await UploadFileAsync(bundleUrl.presignedUrl, data); }
-            }
+            await UploadBundlesAsync(catalogId, versionId, "iOS", urls, ios.BundleFiles, null);
             return bundleNames;
+        }
+
+        // Presigned PUT URLs expire after 15 min (X-Amz-Expires=900). A big catalog (1000+ bundles + icons) takes
+        // longer than that to upload one by one, so the files still to go are re-presigned once the batch is
+        // 10 min old, and once more if S3 still answers "Request has expired".
+        private static readonly TimeSpan PresignRefreshAge = TimeSpan.FromMinutes(10);
+
+        private static async Task UploadBundlesAsync(string catalogId, string versionId, string platform,
+            CatalogUploadUrlsResponse urls, Dictionary<string, byte[]> files, Action<string> onUploaded)
+        {
+            DateTime presignedAt = DateTime.UtcNow;
+            var pending = new Queue<BundleUploadUrl>(urls.uploadUrlBundles.Where(u => files.ContainsKey(u.name)));
+            bool fresh = true;
+
+            async Task RepresignAsync()
+            {
+                string[] remaining = pending.Select(u => u.name).ToArray();
+                CatalogUploadUrlsResponse again = await GetUploadUrlsAsync(catalogId, versionId, remaining, platform);
+                if (!string.IsNullOrEmpty(again.versionId) && again.versionId != versionId)
+                {
+                    throw new Exception($"Re-presign returned version {again.versionId}, expected {versionId}.");
+                }
+                pending = new Queue<BundleUploadUrl>(again.uploadUrlBundles.Where(u => files.ContainsKey(u.name)));
+                presignedAt = DateTime.UtcNow;
+                fresh = true;
+                Debug.Log($"[AvatarPublisher] Re-presigned {pending.Count} remaining upload URL(s).");
+            }
+
+            while (pending.Count > 0)
+            {
+                if (DateTime.UtcNow - presignedAt > PresignRefreshAge) { await RepresignAsync(); }
+
+                BundleUploadUrl bundleUrl = pending.Peek();
+                try
+                {
+                    // Icons get their real type so the wardrobe <img> never has to sniff.
+                    await UploadFileAsync(bundleUrl.presignedUrl, files[bundleUrl.name],
+                        IsIconObject(bundleUrl.name) ? "image/png" : "application/octet-stream");
+                }
+                catch (Exception ex) when (!fresh && ex.Message.Contains("Request has expired"))
+                {
+                    await RepresignAsync();
+                    continue;
+                }
+                fresh = false;
+                onUploaded?.Invoke(bundleUrl.name);
+                pending.Dequeue();
+            }
         }
 
         /// <summary>

@@ -2,6 +2,27 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.10.12] - 2026-10-24
+
+Editor only: no player or server update needed.
+
+### Added
+- **Avatar Publisher: Actions, Pets and Mounts sections.** Dance / VFX / Spray action assets, pets and mounts each
+  get their own list under Cosmetics, with their category shown instead of a slot dropdown. Drop a prefab on Pets
+  or Mounts and it publishes as `Pet_<name>` / `Mount_<name>`. Publishing and the catalog format are unchanged.
+
+### Changed
+- **Avatar Publisher: New and Existing keep separate lists.** Choosing **New** opens an empty staging area at
+  version 1.0.0; switching back to **Existing** brings that catalog's lists and version back untouched. After a New
+  catalog publishes, its lists move to Existing and New starts empty again. Lists saved before this version stay
+  under Existing.
+- **Avatar Publisher: long lists scroll.** Avatar Prefabs, Cosmetics, Actions, Pets and Mounts each scroll inside
+  their own box, and the per-avatar slot summary is folded into one collapsed "Avatar slots" row.
+
+### Fixed
+- **Avatar Publisher upload**: large catalogs no longer fail with `403 Request has expired`. Upload links last 15
+  minutes, so the publisher now gets new links for the files still waiting (WebGL and iOS).
+
 ## [0.10.11] - 2026-10-24
 
 0.10.10 was never published; its Collision Scope ships here.

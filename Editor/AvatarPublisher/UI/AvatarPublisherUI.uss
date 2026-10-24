@@ -175,6 +175,11 @@
     padding: 5px;
 }
 
+/* Long lists (60+ avatars, 500+ cosmetics) scroll inside their section instead of stretching the window. */
+.prefab-scroll {
+    max-height: 360px;
+}
+
 .prefab-row {
     flex-direction: row;
     align-items: center;
