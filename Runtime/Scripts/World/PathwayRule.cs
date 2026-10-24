@@ -116,17 +116,18 @@ namespace VirtualVenues.WorldCreator
         public PathwaySlot Slot { get => _slot; set => _slot = value; }
         public PathwayLane Lane { get => _lane; set => _lane = value; }
         public float Offset { get => _offset; set => _offset = value; }
-        public float Spacing { get => _spacing; set => _spacing = Mathf.Max(0.1f, value); }
+        // Clamped on read too: [Min] only clamps Inspector edits, and a zeroed Spacing loops forever.
+        public float Spacing { get => Mathf.Max(0.1f, _spacing); set => _spacing = Mathf.Max(0.1f, value); }
         public float StartInset { get => _startInset; set => _startInset = Mathf.Max(0f, value); }
         public float EndInset { get => _endInset; set => _endInset = Mathf.Max(0f, value); }
         public float Jitter { get => _jitter; set => _jitter = Mathf.Clamp01(value); }
         public float Chance { get => _chance; set => _chance = Mathf.Clamp01(value); }
         public PathwayFacing Facing { get => _facing; set => _facing = value; }
         public float RandomTurn { get => _randomTurn; set => _randomTurn = Mathf.Clamp(value, 0f, 180f); }
-        public float MinScale { get => _minScale; set => _minScale = Mathf.Max(0.01f, value); }
-        public float MaxScale { get => _maxScale; set => _maxScale = Mathf.Max(0.01f, value); }
+        public float MinScale { get => Mathf.Max(0.01f, _minScale); set => _minScale = Mathf.Max(0.01f, value); }
+        public float MaxScale { get => Mathf.Max(0.01f, _maxScale); set => _maxScale = Mathf.Max(0.01f, value); }
         public float Clearance { get => _clearance; set => _clearance = Mathf.Max(0f, value); }
-        public float CornerAngle { get => _cornerAngle; set => _cornerAngle = Mathf.Clamp(value, 1f, 180f); }
+        public float CornerAngle { get => Mathf.Clamp(_cornerAngle, 1f, 180f); set => _cornerAngle = Mathf.Clamp(value, 1f, 180f); }
         public bool FollowGround { get => _followGround; set => _followGround = value; }
 
         public PathwayRule() { }
@@ -138,6 +139,25 @@ namespace VirtualVenues.WorldCreator
             _lane = lane;
             Spacing = spacing;
             foreach (GameObject prefab in prefabs) { _props.Add(new PathwayProp(prefab)); }
+        }
+
+        /// <summary>
+        /// The Inspector's "+" on an empty rule list makes a zeroed rule (off, Spacing 0, Chance 0, size 0), not one with
+        /// the defaults above. Spacing 0 can't be typed (it has [Min]), so it marks such a rule: give it real defaults.
+        /// </summary>
+        public void FixBlank()
+        {
+            if (_spacing > 0f) { return; }
+            if (string.IsNullOrEmpty(_name)) { _name = "Props"; }
+            _enabled = true;
+            _lane = PathwayLane.BothSides;
+            _offset = 0.5f;
+            _spacing = 6f;
+            _chance = 1f;
+            _minScale = 1f;
+            _maxScale = 1f;
+            _cornerAngle = 30f;
+            _followGround = true;
         }
 
         /// <summary>A copy that shares the prefabs but not the list, so editing one never changes the other.</summary>

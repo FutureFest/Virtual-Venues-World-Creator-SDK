@@ -6,7 +6,7 @@ A Unity package for creating custom virtual worlds and stages for the VirtualVen
 
 - **Unity 6000.1** or later
 - **Build modules**: WebGL Build Support (player client) and Linux Build Support (dedicated server) — install from the Unity Hub
-- **Dependencies**: `com.unity.nuget.newtonsoft-json` and `com.unity.addressables` (auto-installed)
+- **Dependencies**: `com.unity.nuget.newtonsoft-json`, `com.unity.addressables` and `com.unity.cinemachine` (for the TestPlayer camera) (auto-installed)
 - **Run `VirtualVenues > Project Setup`** once to configure rendering, so worlds don't render pink in the browser
 
 > **AI agents:** start at [AGENTS.md](AGENTS.md) — building and publishing worlds from code.

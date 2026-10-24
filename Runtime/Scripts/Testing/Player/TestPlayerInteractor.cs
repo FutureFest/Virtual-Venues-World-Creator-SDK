@@ -10,7 +10,7 @@ namespace VirtualVenues.WorldCreator
     /// <summary>
     /// Local, offline stand-in for the core project's interaction runtime so creators can test a world with the
     /// TestPlayer: nearest-Interactable prompt + E, Seats, TriggerEvents, carry-platform SplineMovers and a simple
-    /// Vehicle drive. Lives on the TestPlayer's PlayerArmature (PlayerInput sends OnInteract here).
+    /// Vehicle drive (driver look-around + driver/throttle/speed <see cref="VehicleEvents"/>). Lives on the TestPlayer's PlayerArmature (PlayerInput sends OnInteract here).
     /// Runs after SplineMover (-50) so riders read this frame's pose, before ThirdPersonController (0).
     /// </summary>
     [DefaultExecutionOrder(-10)]
@@ -21,6 +21,10 @@ namespace VirtualVenues.WorldCreator
         private const float StandUpHeight = 0.5f;
         private const float VehicleExitDistance = 1.5f;
         private const float CarryBand = 0.5f;
+        private const int NoCameraTestLayer = 1;
+        private const float VehicleRecenterDegreesPerSecond = 90f;
+        private const float VehicleMovingForwardSpeed = 1f;
+        private const float LookThreshold = 0.01f;
 
         private static readonly int AnimSpeed = Animator.StringToHash("Speed");
         private static readonly int AnimGrounded = Animator.StringToHash("Grounded");
@@ -33,6 +37,7 @@ namespace VirtualVenues.WorldCreator
         private readonly Dictionary<TriggerEvent, float> _lastFired = new Dictionary<TriggerEvent, float>();
         private readonly HashSet<CustomControls> _insideZones = new HashSet<CustomControls>();
         private readonly HashSet<CustomControls> _nowInsideZones = new HashSet<CustomControls>();
+        private readonly List<Collider> _scopeColliders = new List<Collider>();
 
         private CharacterController _controller = null;
         private ThirdPersonController _thirdPerson = null;
@@ -49,6 +54,8 @@ namespace VirtualVenues.WorldCreator
         private float _vehicleSpeed = 0f;
         private float _vehicleRideHeight = 0f;
         private float _vehicleYawRate = 0f;
+        private bool _vehicleThrottling = false;
+        private Vector2 _vehicleOrbit = Vector2.zero;
         private CustomControls _seatControls = null;
         private bool _controlsUnlockedCursor = false;
         private bool _savedCursorLocked = true;
@@ -84,11 +91,33 @@ namespace VirtualVenues.WorldCreator
         private void OnEnable()
         {
             Vehicle.OnNudge += OnVehicleNudge;
+            CollisionScope.onCollisionScopeAdded += ApplyCollisionScope;
+            foreach (CollisionScope scope in CollisionScope.Instances) { ApplyCollisionScope(scope); }
         }
 
         private void OnDisable()
         {
             Vehicle.OnNudge -= OnVehicleNudge;
+            CollisionScope.onCollisionScopeAdded -= ApplyCollisionScope;
+        }
+
+        /// <summary>
+        /// Play-mode stand-in for the app's collision layers, which world projects don't have. Stops-camera colliders
+        /// go to Default (the follow camera's obstacle filter); the rest go to built-in layer 1 (TransparentFX),
+        /// outside the filter but still solid and counted as ground. The character ignores colliders that don't stop
+        /// players. Stops-vehicles is app only.
+        /// </summary>
+        private void ApplyCollisionScope(CollisionScope scope)
+        {
+            if (scope == null) { return; }
+            int layer = scope.StopsCamera ? 0 : NoCameraTestLayer;
+            if (layer == NoCameraTestLayer && _thirdPerson != null) { _thirdPerson.GroundLayers |= 1 << NoCameraTestLayer; }
+            scope.GetColliders(_scopeColliders);
+            foreach (Collider col in _scopeColliders)
+            {
+                col.gameObject.layer = layer;
+                if (!scope.StopsPlayers && _controller != null) { Physics.IgnoreCollision(_controller, col, true); }
+            }
         }
 
         private void Update()
@@ -103,6 +132,7 @@ namespace VirtualVenues.WorldCreator
         {
             if (!IsSeated) { return; }
             transform.SetPositionAndRotation(_seatPoint.position, _seatPoint.rotation);
+            if (_vehicle != null) { OrbitVehicleCamera(); }
         }
 
 #if ENABLE_INPUT_SYSTEM
@@ -128,7 +158,10 @@ namespace VirtualVenues.WorldCreator
                 Vector3 start = vehicle.transform.position;
                 _vehicleRideHeight = TryGroundHeight(start, vehicle.transform, out float groundY) ? start.y - groundY : 0f;
                 _vehicleYawRate = 0f;
+                _vehicleThrottling = false;
+                _vehicleOrbit = Vector2.zero;
                 Sit(vehicle.Seats[0], target, vehicle);
+                vehicle.Events.onDriverEnter.Invoke();
             }
         }
 
@@ -249,6 +282,13 @@ namespace VirtualVenues.WorldCreator
             Quaternion facing = forward.sqrMagnitude > 0.001f ? Quaternion.LookRotation(forward) : transform.rotation;
 
             if (_seatControls != null) { _seatControls.SetShown(false); }
+            if (_vehicle != null)
+            {
+                if (_vehicleThrottling) { _vehicle.Events.onThrottleStop.Invoke(); }
+                _vehicle.Events.onDriverExit.Invoke();
+                _vehicle.Events.RaiseSpeed(0f); // the arcade drive stops dead when you get out
+                _vehicleThrottling = false;
+            }
             _seatControls = null;
             _seatPoint = null;
             _pinnedTarget = null;
@@ -347,6 +387,50 @@ namespace VirtualVenues.WorldCreator
             Vector3 pos = t.position + t.forward * (_vehicleSpeed * Time.deltaTime);
             if (!boat && TryGroundHeight(pos, t, out float groundY)) { pos.y = groundY + _vehicleRideHeight; }
             t.position = pos;
+
+            bool throttling = _input.move.y > 0f;
+            if (throttling != _vehicleThrottling) { (throttling ? _vehicle.Events.onThrottleStart : _vehicle.Events.onThrottleStop).Invoke(); }
+            _vehicleThrottling = throttling;
+            _vehicle.Events.RaiseSpeed(Mathf.Abs(_vehicleSpeed) / Mathf.Max(0.1f, stats.topSpeed));
+        }
+
+        // Driver look-around, same rule as the core project's VehicleCameraLook. PlayerCameraRoot is a child of the
+        // armature (snapped to the seat), so its local rotation is the orbit relative to the vehicle.
+        // ponytail: mouse only, and the cursor isn't locked while dragging (ThirdPersonController is off while seated).
+        private void OrbitVehicleCamera()
+        {
+            if (_thirdPerson == null || _thirdPerson.CinemachineCameraTarget == null || _input == null) { return; }
+            ControlStyle style = _thirdPerson.ControlStyleOverride != null ? _thirdPerson.ControlStyleOverride : ControlStyles.Active;
+            LookModule look = style.Look;
+            bool canRotate = ControlStyleMath.ShouldRotateCamera(look, LeftHeld, RightHeld, _input.cursorLocked);
+            bool looking = canRotate && (look.activation != LookActivation.Locked || _input.look.sqrMagnitude >= LookThreshold);
+            bool movingForward = _vehicleSpeed > VehicleMovingForwardSpeed;
+            _vehicleOrbit = ControlStyleMath.StepVehicleOrbit(_vehicleOrbit, _input.look, looking, movingForward, look, VehicleRecenterDegreesPerSecond * Time.deltaTime);
+            _thirdPerson.CinemachineCameraTarget.transform.localRotation = Quaternion.Euler(_vehicleOrbit.y, _vehicleOrbit.x, 0f);
+        }
+
+        private static bool LeftHeld
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return Mouse.current != null && Mouse.current.leftButton.isPressed;
+#else
+                return Input.GetMouseButton(0);
+#endif
+            }
+        }
+
+        private static bool RightHeld
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return Mouse.current != null && Mouse.current.rightButton.isPressed;
+#else
+                return Input.GetMouseButton(1);
+#endif
+            }
         }
 
         // ponytail: arcade stand-in for the runtime's VelocityChange impulse; the push decays at the drive's

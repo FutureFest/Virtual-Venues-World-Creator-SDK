@@ -56,7 +56,9 @@ The job always clears the bundle names it set and switches back to the original 
 
 A world can carry a 1280×720 JPEG thumbnail. Players see it full-screen while the world loads, and it shows on
 the dashboard. The window takes it from a custom image if one is set, else from the Scene view (**Capture from
-Scene View**, or automatically at publish when the main scene is open). From code, save one first and pass its path:
+Scene View**, or automatically at publish when the main scene is open). The capture is saved per main scene under
+`Library/VVWorldThumbnails/`, so it survives reloads and restarts and every publish reuses it until you capture again.
+From code, save one first and pass its path:
 
 ```csharp
 var tex = WorldPublisher.WorldThumbnail.CaptureSceneView();          // or WorldThumbnail.FromImage(myTexture)

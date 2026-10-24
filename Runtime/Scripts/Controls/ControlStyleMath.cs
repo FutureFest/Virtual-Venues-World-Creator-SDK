@@ -50,5 +50,29 @@ namespace VirtualVenues.WorldCreator
             return ((look.holdButtons & LookButtons.Left) != 0 && leftHeld)
                 || ((look.holdButtons & LookButtons.Right) != 0 && rightHeld);
         }
+
+        public const float VehicleOrbitMinPitch = -15f;
+        public const float VehicleOrbitMaxPitch = 60f;
+
+        /// <summary>
+        /// One frame of the driver camera's orbit (x = yaw, y = pitch, degrees, relative to behind the vehicle).
+        /// Turns with the mouse while <paramref name="looking"/>; otherwise holds its angle, and eases back behind
+        /// the vehicle by <paramref name="recenterStep"/> degrees while it moves forward.
+        /// </summary>
+        public static Vector2 StepVehicleOrbit(Vector2 orbit, Vector2 lookDelta, bool looking, bool movingForward, LookModule look, float recenterStep)
+        {
+            if (looking)
+            {
+                orbit.x = Mathf.DeltaAngle(0f, orbit.x + lookDelta.x * look.sensitivity);
+                orbit.y += lookDelta.y * look.sensitivity * (look.invertY ? -1f : 1f);
+            }
+            else if (movingForward)
+            {
+                orbit.x = Mathf.MoveTowardsAngle(orbit.x, 0f, recenterStep);
+                orbit.y = Mathf.MoveTowards(orbit.y, 0f, recenterStep);
+            }
+            orbit.y = Mathf.Clamp(orbit.y, VehicleOrbitMinPitch, VehicleOrbitMaxPitch);
+            return orbit;
+        }
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Text;
 using UnityEngine;
+using UnityEngine.Events;
 
 namespace VirtualVenues.WorldCreator
 {
@@ -60,6 +61,38 @@ namespace VirtualVenues.WorldCreator
     }
 
     /// <summary>
+    /// Hooks for a <see cref="Vehicle"/>'s audio and VFX. They run on every player's game, so everyone hears the engine.
+    /// Engine loop: Driver Enter → AudioSource.Play (Loop on), Driver Exit → AudioSource.Stop. A player who joins
+    /// while someone drives gets Driver Enter (and Throttle Start if held) so loops start; one-shot events
+    /// (passenger, water) don't replay.
+    /// </summary>
+    [Serializable]
+    public class VehicleEvents
+    {
+        public UnityEvent onDriverEnter = new UnityEvent();
+        public UnityEvent onDriverExit = new UnityEvent();
+        [Tooltip("The driver starts / stops pressing forward.")]
+        public UnityEvent onThrottleStart = new UnityEvent();
+        public UnityEvent onThrottleStop = new UnityEvent();
+        [Tooltip("Someone takes / leaves a seat other than the driver's.")]
+        public UnityEvent onPassengerEnter = new UnityEvent();
+        public UnityEvent onPassengerExit = new UnityEvent();
+        [Tooltip("Boat only: the hull lands in / lifts out of the water.")]
+        public UnityEvent onEnterWater = new UnityEvent();
+        public UnityEvent onExitWater = new UnityEvent();
+        [Tooltip("Speed as a fraction of top speed, mapped into Speed Output Range. Bind to AudioSource.pitch with a range like 0.8–2.")]
+        public UnityEvent<float> onSpeed = new UnityEvent<float>();
+        [Tooltip("What On Speed sends at a standstill (x) and at top speed (y).")]
+        public Vector2 speedOutputRange = new Vector2(0f, 1f);
+
+        /// <summary>Raise <see cref="onSpeed"/> for a 0–1 fraction of top speed.</summary>
+        public void RaiseSpeed(float speed01)
+        {
+            onSpeed.Invoke(Mathf.Lerp(speedOutputRange.x, speedOutputRange.y, Mathf.Clamp01(speed01)));
+        }
+    }
+
+    /// <summary>
     /// A drivable world vehicle. Press the Interactable's key to take a seat — seat 0 drives, the rest ride —
     /// press again to get out. Data only: the core project adds the physics, wheels, networking and camera at
     /// runtime. Needs an <see cref="Interactable"/> (with a trigger collider) on the same object; adding a
@@ -93,6 +126,8 @@ namespace VirtualVenues.WorldCreator
         [Header("Driver camera")]
         [Min(1f)] [SerializeField] private float _cameraDistance = 6f;
         [SerializeField] private float _cameraHeight = 2f;
+        [Tooltip("Hook audio and VFX to the vehicle (engine start, engine loop, spray…). Runs for every player.")]
+        [SerializeField] private VehicleEvents _events = new VehicleEvents();
 
         private string _vehicleKey = null;
         private Transform _ownedSeat = null;
@@ -106,6 +141,7 @@ namespace VirtualVenues.WorldCreator
         public BoatStats BoatStats => _boatStats;
         public float CameraDistance => _cameraDistance;
         public float CameraHeight => _cameraHeight;
+        public VehicleEvents Events => _events;
         public Vector3 DriverSeatOffset => _driverSeatOffset;
 
         /// <summary>The authored seats, or one hidden driver seat at <see cref="DriverSeatOffset"/> when none are assigned.</summary>

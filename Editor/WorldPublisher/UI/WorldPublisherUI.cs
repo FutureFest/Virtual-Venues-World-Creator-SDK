@@ -37,6 +37,7 @@ public class WorldPublisherUI : EditorWindow
     private Label _worldListEmptyLabel;
 
     private ObjectField _sceneSelector;
+    [SerializeField] private SceneAsset _mainScene; // the field is rebuilt empty on every domain reload (publish switches platforms)
     private Button _useActiveSceneButton;
     private VisualElement _additionalScenesList;
     private Button _addSceneButton;
@@ -48,7 +49,7 @@ public class WorldPublisherUI : EditorWindow
     private Label _thumbnailHint;
     private Button _captureThumbnailButton;
     private ObjectField _thumbnailOverride;
-    private Texture2D _thumbnailCapture; // last Scene view capture; lost on domain reload, recaptured at publish
+    private Texture2D _thumbnailCapture; // preview of the main scene's saved capture (CapturePath), reloaded from disk after a domain reload
 
     private VisualElement _progressSection;
     private Label _progressMessage;
@@ -207,10 +208,11 @@ public class WorldPublisherUI : EditorWindow
         _copyCodeButton.clicked += () => EditorGUIUtility.systemCopyBuffer = _userCodeField.value;
         _useActiveSceneButton.clicked += OnUseActiveSceneClicked;
         _publishButton.clicked += OnPublishButtonClicked;
-        _sceneSelector.RegisterValueChangedCallback(_ =>
+        _sceneSelector.RegisterValueChangedCallback(evt =>
         {
+            _mainScene = evt.newValue as SceneAsset;
             LoadAdditionalScenes();
-            SetThumbnailCapture(null); // a capture belongs to the scene it was taken in
+            LoadThumbnailCapture(); // each scene keeps its own capture
         });
         _captureThumbnailButton.clicked += OnCaptureThumbnailClicked;
         _thumbnailOverride.RegisterValueChangedCallback(evt =>
@@ -286,7 +288,7 @@ public class WorldPublisherUI : EditorWindow
         LoadAdditionalScenes();
         _thumbnailOverride.SetValueWithoutNotify(AssetDatabase.LoadAssetAtPath<Texture2D>(
             AssetDatabase.GUIDToAssetPath(EditorPrefs.GetString(THUMBNAIL_OVERRIDE_KEY, ""))));
-        RefreshThumbnailPreview();
+        LoadThumbnailCapture();
         UpdateSetupBanner();
         UpdatePublishAvailability();
 
@@ -827,14 +829,11 @@ public class WorldPublisherUI : EditorWindow
 
     private void PrePopulateSceneSelection()
     {
-        if (_sceneSelector.value == null)
-        {
-            Scene openScene = EditorSceneManager.GetActiveScene();
-            if (openScene.isLoaded && !string.IsNullOrEmpty(openScene.path))
-            {
-                _sceneSelector.value = AssetDatabase.LoadAssetAtPath<SceneAsset>(openScene.path);
-            }
-        }
+        if (_mainScene != null) { _sceneSelector.SetValueWithoutNotify(_mainScene); return; }
+        Scene openScene = EditorSceneManager.GetActiveScene();
+        if (!openScene.isLoaded || string.IsNullOrEmpty(openScene.path)) { return; }
+        _mainScene = AssetDatabase.LoadAssetAtPath<SceneAsset>(openScene.path);
+        _sceneSelector.SetValueWithoutNotify(_mainScene);
     }
 
     private void OnUseActiveSceneClicked()
@@ -912,7 +911,7 @@ public class WorldPublisherUI : EditorWindow
         }
     }
 
-    // ---- Thumbnail: custom image > last Scene view capture > capture now ----
+    // ---- Thumbnail: custom image > saved Scene view capture > capture now (and save it) ----
 
     private void OnCaptureThumbnailClicked()
     {
@@ -922,6 +921,23 @@ public class WorldPublisherUI : EditorWindow
             EditorUtility.DisplayDialog("Thumbnail", "Couldn't capture. Open a Scene view on your world and try again.", "OK");
             return;
         }
+        KeepThumbnailCapture(capture);
+    }
+
+    // One capture per main scene. Library/ is per project, survives reloads and restarts, and is never source-controlled.
+    private string CapturePath()
+    {
+        string guid = _mainScene != null ? AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(_mainScene)) : null;
+        return string.IsNullOrEmpty(guid) ? null : Path.GetFullPath(Path.Combine("Library", "VVWorldThumbnails", guid + ".jpg"));
+    }
+
+    private void LoadThumbnailCapture() => SetThumbnailCapture(WorldThumbnail.LoadJpg(CapturePath()));
+
+    // Saved, so every publish reuses this exact image until the creator captures again.
+    private void KeepThumbnailCapture(Texture2D capture)
+    {
+        string path = CapturePath();
+        if (capture != null && path != null) { WorldThumbnail.SaveJpg(capture, path); }
         SetThumbnailCapture(capture);
     }
 
@@ -939,7 +955,7 @@ public class WorldPublisherUI : EditorWindow
         Texture2D shown = custom != null ? custom : _thumbnailCapture;
         _thumbnailPreview.style.backgroundImage = shown != null ? new StyleBackground(shown) : new StyleBackground(StyleKeyword.None);
         _thumbnailHint.text = custom != null ? "Your custom image is used (cropped to 16:9)."
-            : _thumbnailCapture != null ? "This Scene view capture is used."
+            : _thumbnailCapture != null ? "This Scene view capture is used until you capture again."
             : "Captured from the Scene view when you publish, if the scene is open.";
     }
 
@@ -954,8 +970,9 @@ public class WorldPublisherUI : EditorWindow
             if (customPath != null) { return customPath; }
         }
         // Never open scenes for the creator: only auto-capture when the main scene is already loaded.
-        if (_thumbnailCapture == null && SceneManager.GetSceneByPath(mainScenePath).isLoaded) { SetThumbnailCapture(WorldThumbnail.CaptureSceneView()); }
-        string path = WorldThumbnail.SaveJpg(_thumbnailCapture);
+        if (_thumbnailCapture == null && SceneManager.GetSceneByPath(mainScenePath).isLoaded) { KeepThumbnailCapture(WorldThumbnail.CaptureSceneView()); }
+        string saved = CapturePath();
+        string path = File.Exists(saved) ? WorldThumbnail.CopyToTemp(saved) : WorldThumbnail.SaveJpg(_thumbnailCapture);
         if (path == null) { Debug.Log("[WorldPublisher] Publishing without a thumbnail. Open the scene in the Scene view or pick a custom image to add one."); }
         return path;
     }

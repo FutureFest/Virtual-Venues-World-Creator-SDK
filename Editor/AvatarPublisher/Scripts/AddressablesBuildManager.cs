@@ -39,6 +39,9 @@ namespace VirtualVenues.Editor.AvatarPublisher
         public static AddressablesCatalogBuilder.BuildResult BuildForIOS(
             IProgress<(float progress, string message)> progress = null) => _impl.Build(BuildTargetGroup.iOS, BuildTarget.iOS, progress);
 
+        public static AddressablesCatalogBuilder.BuildResult BuildForTarget(BuildTarget target,
+            IProgress<(float progress, string message)> progress = null) => _impl.BuildForTarget(target, progress);
+
         public static string GetBuildOutputPath() => _impl.GetBuildOutputPath();
 
         public static List<AddressablesCatalogBuilder.BuildOutputFile> GetBuildOutputFiles() => _impl.GetBuildOutputFiles();

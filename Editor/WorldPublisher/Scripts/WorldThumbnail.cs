@@ -76,15 +76,14 @@ namespace WorldPublisher
             }
         }
 
-        /// <summary>Writes the JPEG under the project's Temp folder (survives the publish's domain reloads) and returns its path.</summary>
-        public static string SaveJpg(Texture2D tex)
+        /// <summary>Writes the JPEG to path, or to a new file under the project's Temp folder (survives the publish's domain reloads), and returns its path.</summary>
+        public static string SaveJpg(Texture2D tex, string path = null)
         {
             if (tex == null) { return null; }
             try
             {
-                string dir = Path.GetFullPath(Path.Combine("Temp", "VVWorldThumbnails"));
-                Directory.CreateDirectory(dir);
-                string path = Path.Combine(dir, Guid.NewGuid().ToString("N") + ".jpg");
+                path ??= NewTempPath();
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
                 File.WriteAllBytes(path, tex.EncodeToJPG(85));
                 return path;
             }
@@ -93,6 +92,46 @@ namespace WorldPublisher
                 Debug.LogWarning($"[WorldPublisher] Could not save the thumbnail: {ex.Message}");
                 return null;
             }
+        }
+
+        /// <summary>Copies a saved JPEG byte for byte to a new Temp file (the publish job deletes the file it is given).</summary>
+        public static string CopyToTemp(string path)
+        {
+            try
+            {
+                string copy = NewTempPath();
+                File.Copy(path, copy);
+                return copy;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[WorldPublisher] Could not copy the thumbnail: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>Loads a saved JPEG for the preview.</summary>
+        public static Texture2D LoadJpg(string path)
+        {
+            if (!File.Exists(path)) { return null; }
+            Texture2D tex = new Texture2D(2, 2) { hideFlags = HideFlags.HideAndDontSave };
+            try
+            {
+                if (tex.LoadImage(File.ReadAllBytes(path))) { return tex; }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[WorldPublisher] Could not load the saved thumbnail: {ex.Message}");
+            }
+            UnityEngine.Object.DestroyImmediate(tex);
+            return null;
+        }
+
+        private static string NewTempPath()
+        {
+            string dir = Path.GetFullPath(Path.Combine("Temp", "VVWorldThumbnails"));
+            Directory.CreateDirectory(dir);
+            return Path.Combine(dir, Guid.NewGuid().ToString("N") + ".jpg");
         }
 
         private static Texture2D ReadBack(RenderTexture rt)

@@ -1,18 +1,65 @@
-## 0.10.9
-
-- World Publisher thumbnails: capture from the Scene view or pick a custom image; a 1280x720 JPEG is uploaded with the world and shown while the world loads. Skipped automatically on backends without thumbnail support.
-- `WorldPublishJob.Start` takes an optional `thumbnailPath`; new `WorldPublisher.WorldThumbnail` helpers.
-
-## 0.10.8
-
-- Add optional native iOS world companions to World Publisher with isolated worker builds, additional scene support, manifest validation and SDK-contained publishing tools.
-- Preserve the existing desktop/server world workflow and the 0.10.7 avatar publishing features.
-
 # Changelog
 
 All notable changes to `com.virtualvenues.sdk`.
 
-## [Unreleased]
+## [0.10.11] - 2026-10-24
+
+0.10.10 was never published; its Collision Scope ships here.
+
+Needs the matching FutureFestXR player and server update. Ship UPC and UMS together: vehicles sync new state, so
+an old client on a new server (or the reverse) loses vehicle sync.
+
+### Added
+- **Admin Event** (**Add Component > VirtualVenues > Admin Event**, or **GameObject > VirtualVenues > New Admin
+  Event**): a named cue (e.g. `fireworks`) an admin fires for everyone in the world by typing `/event fireworks`
+  in chat; `/events` lists the cues in the world. Wire **On Everyone** to `Animator.SetTrigger`,
+  `ParticleSystem.Play` and the like. Names are case-insensitive, markers sharing a name fire together, the
+  cooldown (default 10 s) is enforced by the server, and players who join later don't replay it. **Fire now** in
+  the Inspector tests it in Play mode. See `Documentation~/Components.md` > Interaction.
+  - Needs the matching FutureFestXR player and server update.
+- **Vehicle events**: a `Vehicle`'s new **Events** foldout (Driver Enter/Exit, Throttle Start/Stop, Passenger
+  Enter/Exit, Enter/Exit Water for boats, On Speed with a Speed Output Range) runs on every player's game — hook
+  engine start, engine loop, rev and spray audio/VFX. Players who join mid-drive get Driver Enter / Throttle Start
+  so loops start. The TestPlayer fires Driver, Throttle and On Speed. See `Documentation~/Components.md` >
+  Vehicle events.
+- **Vehicle look-around**: the driver camera turns with the mouse by the control style, stays put, and swings
+  back behind the vehicle once you drive forward (also in the TestPlayer). `ControlStyleMath.StepVehicleOrbit`
+  holds the shared rule.
+  - Needs the matching FutureFestXR player update.
+- **Collision Scope** (**Add Component > VirtualVenues > Collision Scope**): tick what an object's solid colliders
+  stop — **Players**, **Camera**, **Vehicles**, any mix (e.g. invisible walls the camera passes through, a rock that
+  keeps the camera out while players walk through, kart-only barriers). Covers children; coloured gizmo. No layer
+  setup in your project. The TestPlayer follows Players and Camera in Play mode. See `Documentation~/Components.md`
+  > Collision.
+  - Needs the matching FutureFestXR player update.
+- `AddressablesBuildManager.BuildForTarget(target, progress)`: build the avatar catalog for one platform from code.
+
+### Fixed
+- **TestPlayer camera stuck at the spawn point**: the TestPlayer's camera rig is Cinemachine, but the SDK did not
+  depend on it, so in projects without Cinemachine its brain and follow camera were missing scripts. The SDK now
+  depends on `com.unity.cinemachine` 3.1.2 (Unity 6.6+ uses its built-in 6.6.0 instead).
+- **Pathway hang**: the Inspector's **+** on an empty rule list made a zeroed rule (Spacing 0) that froze the
+  editor. Such a rule now gets real defaults, and Spacing, size and corner angle are clamped when read too.
+- **World Publisher**: the thumbnail capture is saved per main scene under `Library/VVWorldThumbnails/`, so it
+  survives reloads and restarts and every publish reuses it until you capture again. The chosen main scene no
+  longer clears when publishing switches platform.
+
+## [0.10.9] - 2026-10-21
+
+- World Publisher thumbnails: capture from the Scene view or pick a custom image; a 1280x720 JPEG is uploaded with the world and shown while the world loads. Skipped automatically on backends without thumbnail support.
+- `WorldPublishJob.Start` takes an optional `thumbnailPath`; new `WorldPublisher.WorldThumbnail` helpers.
+
+## [0.10.8] - 2026-10-19
+
+- Add optional native iOS world companions to World Publisher with isolated worker builds, additional scene support, manifest validation and SDK-contained publishing tools.
+- Preserve the existing desktop/server world workflow and the 0.10.7 avatar publishing features.
+
+## [0.10.7] - 2026-10-09
+
+- Avatar Publisher **Also export iOS**: builds the catalog a second time for iOS under the same version
+  (`versions/{vid}/iOS/`); skipped on backends without iOS support. Fixed the recorded build target.
+
+## [0.10.6] - 2026-10-09
 
 ### Added
 - **Control styles**: `ControlStyle` assets describe how the camera turns, how it frames the player and which
@@ -21,6 +68,8 @@ All notable changes to `com.virtualvenues.sdk`.
   styles players may switch to, or forces one. The TestPlayer follows the active style (look + facing).
   `ControlStyleMath` holds the shared rules. See `Documentation~/Components.md` > Controls.
   - Needs a matching app build (new components).
+- **Custom Controls**: on-screen buttons while seated, after an interact, in range or in a zone (see
+  `Documentation~/Components.md` > Custom controls). Vehicle Push / Turn.
 - **Pathway** (**GameObject > VirtualVenues > New Pathway**): draw a spline, get a finished path — a ground strip
   plus props from your own prefabs, laid out by rules. See `Documentation~/Paths.md`.
   - Rules: Every / Segments (fences stretch to meet on curves) / Start / End / Corners; lanes Center, Left,
@@ -36,6 +85,7 @@ All notable changes to `com.virtualvenues.sdk`.
   - `SnapIgnoreRoot`: colliders under it are never ground (the web World Editor sets it to the placed object).
   - Pathway props handed over as inactive or hidden prototypes are switched on.
   - Needs a matching app build (new component).
+- Streaming-world pilot export / validate tools and per-entry avatar bundles.
 
 ## [0.10.5] - 2026-10-05
 

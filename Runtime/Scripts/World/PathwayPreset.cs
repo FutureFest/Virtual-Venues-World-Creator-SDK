@@ -34,5 +34,10 @@ namespace VirtualVenues.WorldCreator
             _rules = new List<PathwayRule>();
             foreach (PathwayRule rule in rules) { if (rule != null) { _rules.Add(rule.Clone()); } }
         }
+
+        private void OnValidate()
+        {
+            foreach (PathwayRule rule in _rules) { rule?.FixBlank(); }
+        }
     }
 }

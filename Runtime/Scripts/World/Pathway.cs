@@ -176,6 +176,7 @@ namespace VirtualVenues.WorldCreator
 
         private void OnValidate()
         {
+            foreach (PathwayRule rule in _rules) { rule?.FixBlank(); }
             QueueRebuild();
         }
 

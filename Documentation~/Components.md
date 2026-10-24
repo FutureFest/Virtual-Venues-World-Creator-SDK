@@ -60,13 +60,49 @@ Every world needs at least one. Nothing checks this at publish.
 |---|---|---|---|---|---|
 | `Interactable` | add component | `_interactionDisplayText` ("Press {0} to interact"), `_interactionCollider`, `_highlightRenderers`, `_onLocalInteract` UnityEvent | trigger collider | marker | yes (E key) |
 | `Seat` | **New Seat** (prefab `Seat`) | `_seatPoint` (default: self) | `Interactable` + trigger collider | marker | yes |
-| `Vehicle` | **New Go Kart** / **New Jet Ski** | `_vehicleType` Car/Boat, `_seats` (seat 0 drives), `_wheels`, `_stats` (topSpeed, acceleration, steer, grip, mass), `_boatStats` | `Interactable` + trigger collider; Boat needs a Swim Zone or water | marker | yes (arcade drive) |
+| `Vehicle` | **New Go Kart** / **New Jet Ski** | `_vehicleType` Car/Boat, `_seats` (seat 0 drives), `_wheels`, `_stats` (topSpeed, acceleration, steer, grip, mass), `_boatStats`, `_events` (see Vehicle events) | `Interactable` + trigger collider; Boat needs a Swim Zone or water | marker | yes (arcade drive, look-around, driver/throttle/speed events) |
 | `TriggerEvent` | **New Trigger Event** | `_onLocalPlayerEnter`, `_onEveryone` UnityEvents, `_cooldown`, `_once` | trigger BoxCollider | marker | yes |
+| `AdminEvent` | add component, or **New Admin Event** | `_eventName` ("fireworks", case-insensitive), `_onEveryone` UnityEvent, `_cooldown` (10 s), `_description` | — | marker | **Fire now** button in Play mode |
 | `CustomControls` | add component, or **New Custom Controls Zone** | `_showWhen` (WhileSeated / AfterInteract / WhileInRange / WhileInZone), `_controls[]` (label, icon, cooldown 0.2 s, `onPressed` + `onEveryone` UnityEvents) | a seat, an `Interactable`, or a trigger collider, depending on `_showWhen` | marker | yes (on-screen buttons) |
 | `BrowserBridgeInteractableData` | add next to `Interactable` | `_browserBridgePayloadJson` (sent to the web page) | `Interactable` | marker | no |
 
 `Seat` and `Vehicle` add their `Interactable` in `Reset()`, which runs from the menu or Inspector but **not** from
 `AddComponent` in code. Use the prefab, or add the `Interactable` and trigger collider yourself.
+
+### Vehicle events (engine audio, spray, lights)
+
+A `Vehicle`'s **Events** foldout runs on every player's game, so everyone hears and sees them. Cars and boats
+alike.
+
+- **Driver Enter / Exit**: e.g. an engine-start one-shot; an engine loop is Driver Enter → `AudioSource.Play`
+  (Loop on) and Driver Exit → `AudioSource.Stop`.
+- **Throttle Start / Stop**: the driver starts / stops pressing forward (rev sound, wake spray).
+- **Passenger Enter / Exit**: someone takes / leaves a seat other than seat 0.
+- **Enter / Exit Water**: boats only, when the hull lands in or lifts out of the water (splash).
+- **On Speed**: speed as a fraction of `_stats.topSpeed`, mapped into **Speed Output Range**. Pick
+  `AudioSource.pitch` from the *dynamic float* list with a range like 0.8–2 for an engine that revs with speed.
+  Boats don't use `topSpeed` to drive, so set it to the boat's real top speed for On Speed to reach 1.
+- Players who join while someone drives get Driver Enter (and Throttle Start if held) so loops start; one-shot
+  events (passenger, water) don't replay.
+- TestPlayer: Driver, Throttle and On Speed fire; Passenger and Water don't (one player, arcade boat).
+
+The driver can look around: the camera turns with the mouse by the world's control style (hold a mouse button in
+Classic/MMO, always in Shooter), stays where you leave it, and swings back behind the vehicle once you drive
+forward. `_cameraDistance` / `_cameraHeight` set where it rests.
+
+### Admin events (cues fired from chat)
+
+An `AdminEvent` is a named cue for a show moment: fireworks, a light change, a curtain drop. An admin types
+`/event fireworks` in chat and every player in the world runs **On Everyone** at the same time; `/events` lists the
+names (with descriptions) in the current world, visible only to the admin.
+
+- Wire **On Everyone** to plain targets such as `Animator.SetTrigger` or `ParticleSystem.Play`.
+- Names are case-insensitive. Several markers with the same name all fire (e.g. one per launch site).
+- The cooldown is enforced by the server, per name; markers sharing a name use the longest one.
+- One-shot: players who join after it fired don't replay it. Leave the end state of a cue in a shape that is fine
+  to miss.
+- Only admins can fire them; the server checks, not the player's app.
+- Test in Play mode with the **Fire now** button in the Inspector (runs every marker with that name, locally).
 
 ### Custom controls (on-screen buttons)
 
@@ -113,6 +149,29 @@ A zone = a GameObject with a trigger collider + `TriggerZone` (`_zoneName`) + on
 | `Billboard` | add component | `_upOverride`, `_lookOffset`, `_flipZ` | self-contained | yes |
 
 Turn off **Occlusion Static** on anything that moves.
+
+## Collision
+
+| Component | Add it | Key fields | Kind | Test player |
+|---|---|---|---|---|
+| `CollisionScope` | **Add Component > VirtualVenues > Collision Scope** | `_stopsPlayers` (default on), `_stopsCamera`, `_stopsVehicles` | marker | players + camera (see below) |
+
+- Tick what the object stops; anything unticked passes through. **Players**: players bump into it and stand on it.
+  **Camera**: the camera stops at it instead of going through. **Vehicles**: vehicles bump into it and drive on it.
+  Examples: invisible wall or rail = Players; keep the camera out of a rock = Camera; kart-only barrier = Vehicles;
+  road players and karts use but the camera ignores = Players + Vehicles. All three = a normal collider. None = it
+  stops no players, camera or vehicles (clicks and raycasts still hit it).
+- Covers every solid (non-trigger) collider on the object and its children. A `CollisionScope` further down owns its
+  own children. A solid collider on the same GameObject as a trigger is skipped (red in the Scene view) — move it
+  to its own child. Gizmo: blue = Players, yellow = Camera, green = Vehicles, mixed when several are ticked.
+- Don't set layers yourself; your project needs no extra layers. When the world loads the app sets each collider's
+  layer and its **Include / Exclude Layers** (Vehicle). Don't author those two lists yourself on scoped colliders.
+- **Static colliders only.** The boxes cover players, the camera and vehicles; other physics bodies (balls) follow the
+  layer the app picks, and a Rigidbody on a scoped object can fall through the floor.
+- Test player: colliders that stop the camera move to Default in Play mode, the rest to built-in layer 1
+  (TransparentFX, still solid and counted as ground), and the test character ignores colliders that don't stop
+  players. Inside such a box the character counts as grounded (it sinks slowly instead of falling); a collider
+  disabled and re-enabled in Play mode is solid again for the test character. **Vehicles is app only.**
 
 ## NFT minting (namespace `VirtualVenues.Plugins.Nmkr`)
 
