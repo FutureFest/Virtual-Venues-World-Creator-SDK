@@ -451,6 +451,8 @@ def world_mobile(args):
     # The worker is a full project copy with its own iOS Library (30+ GB). Publishing reads only release/.
     # A failed build keeps it for debugging.
     shutil.rmtree(worker, ignore_errors=True)
+    if worker.exists():
+        print("Warning: could not fully delete worker " + str(worker), flush=True)
     if args.publish:
         publish(argparse.Namespace(release=build_args.output / "release.json", api=args.api,
             token_env="VV_PUBLISH_TOKEN", dry_run=False, require_kind="world", require_platform="ios"))
