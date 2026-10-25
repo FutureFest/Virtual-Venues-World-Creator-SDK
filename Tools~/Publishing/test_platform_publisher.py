@@ -106,9 +106,11 @@ class WorkerPackageContracts(unittest.TestCase):
             job = root/'job.json'
             publisher.write(job, {'kind':'world','scene':'Assets/Main.unity','additionalScenes':['Assets/Extra.unity'],'assetId':'world-1','version':'build-1'})
             args = argparse.Namespace(source=root/'source', sdk_root=sdk, job=job, output=root/'output', unity=root/'Unity', publish=False, api=None)
-            with mock.patch.object(publisher, 'create_worker') as worker, mock.patch.object(publisher, 'build_content', return_value={'releaseId':'release-1'}) as build, mock.patch.object(publisher,'publish') as upload:
+            make_worker = lambda a: a.destination.mkdir(parents=True)
+            with mock.patch.object(publisher, 'create_worker', side_effect=make_worker) as worker, mock.patch.object(publisher, 'build_content', return_value={'releaseId':'release-1'}) as build, mock.patch.object(publisher,'publish') as upload:
                 publisher.world_mobile(args)
                 worker.assert_called_once()
+                self.assertFalse((args.output/'worker').exists())
                 selected = build.call_args.args[0]
                 self.assertEqual(selected.project_ios, args.output.resolve()/'worker')
                 self.assertIsNone(selected.project_desktop)
@@ -123,9 +125,11 @@ class WorkerPackageContracts(unittest.TestCase):
             publisher.write(sdk/'package.json', {'name':'com.virtualvenues.sdk','version':'0.10.5'})
             job = root/'job.json'; publisher.write(job, {'kind':'world','scene':'Assets/Main.unity','assetId':'world-1','version':'build-1'})
             args = argparse.Namespace(source=root/'source', sdk_root=sdk, job=job, output=root/'output', unity=root/'Unity', publish=True, api='https://api.test')
-            with mock.patch.object(publisher,'create_worker'), mock.patch.object(publisher,'build_content',side_effect=ValueError('failed')), mock.patch.object(publisher,'publish') as upload:
+            make_worker = lambda a: a.destination.mkdir(parents=True)
+            with mock.patch.object(publisher,'create_worker',side_effect=make_worker), mock.patch.object(publisher,'build_content',side_effect=ValueError('failed')), mock.patch.object(publisher,'publish') as upload:
                 with self.assertRaises(ValueError): publisher.world_mobile(args)
                 upload.assert_not_called()
+                self.assertTrue((args.output/'worker').exists())
                 self.assertFalse((args.output/'world-result.json').exists())
     def test_unity_workers_do_not_receive_the_publishing_token(self):
         with tempfile.TemporaryDirectory() as temp:

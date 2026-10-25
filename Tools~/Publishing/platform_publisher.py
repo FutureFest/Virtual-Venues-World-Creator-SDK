@@ -448,6 +448,9 @@ def world_mobile(args):
         asset_id=job["assetId"], version=job["version"], runtime_version="sdk-" + package["version"],
         release_id=None, core_profile=False, content_origin=None, owner_id=None)
     release = build_content(build_args)
+    # The worker is a full project copy with its own iOS Library (30+ GB). Publishing reads only release/.
+    # A failed build keeps it for debugging.
+    shutil.rmtree(worker, ignore_errors=True)
     if args.publish:
         publish(argparse.Namespace(release=build_args.output / "release.json", api=args.api,
             token_env="VV_PUBLISH_TOKEN", dry_run=False, require_kind="world", require_platform="ios"))

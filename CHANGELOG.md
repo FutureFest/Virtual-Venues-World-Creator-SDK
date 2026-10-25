@@ -4,6 +4,11 @@ All notable changes to `com.virtualvenues.sdk`.
 
 ## [Unreleased]
 
+### Fixed
+- **World Publisher no longer leaks 30+ GB per mobile publish**: the isolated iOS worker
+  (`Builds/WorldPublishing/<id>/mobile/worker`, a full project copy with its own Library) is deleted after a
+  successful iOS build. A failed build keeps it for debugging. The small `release/` folder (logs, receipt) stays.
+
 ## [0.10.13] - 2026-10-24
 
 Needs the matching FutureFestXR player update for RideSounds and audio channels (new components). Ship UPC and
