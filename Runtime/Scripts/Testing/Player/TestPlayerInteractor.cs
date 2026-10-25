@@ -298,9 +298,14 @@ namespace VirtualVenues.WorldCreator
             if (_animator != null && _hasSeatedParam) { _animator.SetBool(AnimSeated, false); }
         }
 
+        // Seats keep the on-foot look, as in the core project; only a vehicle's driver camera (OrbitVehicleCamera) replaces it.
         private void SetMovementEnabled(bool enabled)
         {
-            if (_thirdPerson != null) { _thirdPerson.enabled = enabled; }
+            if (_thirdPerson != null)
+            {
+                _thirdPerson.MovementLocked = !enabled;
+                _thirdPerson.enabled = enabled || _vehicle == null;
+            }
             if (_controller != null) { _controller.enabled = enabled; }
         }
 
@@ -396,7 +401,7 @@ namespace VirtualVenues.WorldCreator
 
         // Driver look-around, same rule as the core project's VehicleCameraLook. PlayerCameraRoot is a child of the
         // armature (snapped to the seat), so its local rotation is the orbit relative to the vehicle.
-        // ponytail: mouse only, and the cursor isn't locked while dragging (ThirdPersonController is off while seated).
+        // ponytail: mouse only, and the cursor isn't locked while dragging (ThirdPersonController is off while driving).
         private void OrbitVehicleCamera()
         {
             if (_thirdPerson == null || _thirdPerson.CinemachineCameraTarget == null || _input == null) { return; }

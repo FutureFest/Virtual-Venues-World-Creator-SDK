@@ -29,6 +29,14 @@ Lighting, sky and fog come from the main scene's own Lighting settings. The one 
 | `Fixture` | **Fixtures/Moving Head Fixture**; PAR and Strobe via the Stage's "+" scene gizmo; prefabs `Moving Head Fixture`, `PAR Fixture`, `Strobe Fixture` | `_stage`, `_type` PAR/MovingHead/Strobe, `_mirrorPanRotation` | under a Stage | marker (DMX) | no |
 | `RoomBoundary` | add component | `stageIndex`, `volume` Collider, `privacyBarrier` GameObject | a trigger volume | self-contained | no listener offline |
 | `RoomAmbientAudio` | add component | AudioSource min/max distance | `AudioSource` | self-contained | silent offline |
+| `AudioChannel` | add component | `_channel` id: `ambient-music`, `ambient-environment`, `sfx`, `rides` or a custom id | `AudioSource` here or below | marker | no (app mixer) |
+| `AudioChannelSet` | add component, one per world | `_channels`: id, display name, parent (one of the four above), default volume; max 8 | — | marker | no |
+
+**Audio channels.** Players set a volume per channel in the app. Every world has Master, Stream, Voice Chat,
+Ambient Music, Ambient Environment, Sound Effects, Rides and Vehicles and Interface. Untagged AudioSources go to
+Ambient Music (`RoomAmbientAudio`), Rides and Vehicles (`RideSounds`, `Vehicle`, `SplineRide`, `SplineMover`) or
+Sound Effects; `Speaker` sources always follow Stream. Tag others with `AudioChannel`; add your own channels with
+`AudioChannelSet`. The app only sets each source's mixer group; your volume, pitch and mute stay yours.
 
 Stage parts find their stage index from a parent `Stage` first, then their own `_stageIndex`. Visuals screens
 show black until the app's visuals stream is live. Shader `Custom/UnlitChromaKeyURP` keys out the artist video.
@@ -144,11 +152,20 @@ A zone = a GameObject with a trigger collider + `TriggerZone` (`_zoneName`) + on
 | `KeepUpright` | add component on a child of a spinner | `_carryPlayers` | self-contained | yes (carry) |
 | `SplineMover` | **New Spline Ride** | `_spline`, `_duration`, `_loopMode` Loop/PingPong/Once, `_alignToSpline`, `_carryPlayers` | self-contained | yes (carry) |
 | `SplineTrack`, `SplineRide`, `TrackSupportBlocker` | **New Roller Coaster**, **Support Blocker** | see `Rides.md` | self-contained | yes |
+| `RideSounds` | add component on a cart (next to `SplineMover`) | `_speedLayers[]` (AudioSource, min/max speed m/s, fade, pitch at min/max, max volume), `_lift`, `_booster`, `_brake`, `_stationStop`, `_stationLaunch` AudioSources | self-contained | yes |
 | `Pathway`, `PathwayPreset` (kit) | **New Pathway** | see `Paths.md` | self-contained | yes |
 | `PhysicsObject` | **New Physics Ball** | `_mass`, `_respawnBelowY`, `_respawnAfterIdle`, `_pushableByPlayers` | marker (server physics) | no |
 | `Billboard` | add component | `_upOverride`, `_lookOffset`, `_flipZ` | self-contained | yes |
 
 Turn off **Occlusion Static** on anything that moves.
+
+### Ride sounds (coaster carts)
+
+`RideSounds` makes a cart sound like it moves: looping layers fade in and out and rise in pitch with the cart's
+speed, a chain loop plays on Lift sections, and one-shots play on entering a Booster or Brake and when the cart
+stops and launches at a station. Everyone hears the same thing at the same moment from the shared ride clock;
+late joiners get no one-shots. Put it on the lead car (or each car you want heard) with 3D AudioSources on the
+cart. Details and API in `Rides.md`.
 
 ## Collision
 

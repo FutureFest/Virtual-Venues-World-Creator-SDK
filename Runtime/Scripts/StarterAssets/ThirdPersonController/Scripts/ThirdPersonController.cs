@@ -77,11 +77,27 @@ namespace StarterAssets
         public bool LockCameraPosition = false;
 
         [Header("Control Style")]
-        [Tooltip("Optional. Empty = the world's style (World Control Settings), else Classic. Camera framing (zoom, shoulder, FOV) is only applied in the live player.")]
+        [Tooltip("Optional. Empty = the world's style (World Control Settings), else Classic. Wheel zoom and first person work here too; shoulder side and FOV are only applied in the live player.")]
         public ControlStyle ControlStyleOverride = null;
 
         private ControlStyle Style => ControlStyleOverride != null ? ControlStyleOverride : ControlStyles.Active;
         private bool _styleCursorLocked = false;
+
+        /// <summary>Seated: no walking, jumping or gravity, but the camera still looks around (TestPlayerInteractor sets it).</summary>
+        public bool MovementLocked { get; set; }
+
+        // Wheel zoom, same rule as the live player: camera distance = zoom (0..1) x the style's zoomMax.
+        private const float ZoomStep = 0.18f;
+        private const float ZoomSmoothing = 5f;
+        private const float MinZoom = 0.01f;
+        private const float FirstPersonZoom = 0.05f;
+#pragma warning disable CS0618 // the Starter Assets rig still uses Cinemachine's older (deprecated) follow component
+        private Unity.Cinemachine.Cinemachine3rdPersonFollow _follow;
+#pragma warning restore CS0618
+        private Renderer[] _bodyRenderers;
+        private float _zoom;
+        private float _targetZoom;
+        private bool _thirdPersonView = true;
 
         // cinemachine
         private float _cinemachineTargetYaw;
@@ -155,6 +171,12 @@ namespace StarterAssets
 
             AssignAnimationIDs();
 
+#pragma warning disable CS0618
+            _follow = transform.root.GetComponentInChildren<Unity.Cinemachine.Cinemachine3rdPersonFollow>(true);
+#pragma warning restore CS0618
+            _bodyRenderers = GetComponentsInChildren<Renderer>();
+            _zoom = _targetZoom = Style.Camera.defaultZoom;
+
             // reset our timeouts on start
             _jumpTimeoutDelta = JumpTimeout;
             _fallTimeoutDelta = FallTimeout;
@@ -162,6 +184,7 @@ namespace StarterAssets
 
         private void Update()
         {
+            if (MovementLocked) { return; } // the CharacterController is off while seated
             _hasAnimator = TryGetComponent(out _animator);
 
             JumpAndGravity();
@@ -173,6 +196,29 @@ namespace StarterAssets
         {
             UpdateStyleCursor();
             CameraRotation();
+            Zoom();
+        }
+
+        // Wheel forward zooms in. All the way in hides the character (first person) if the style allows it.
+        private void Zoom()
+        {
+            if (_follow == null) { return; }
+            CameraModule cam = Style.Camera;
+#if ENABLE_INPUT_SYSTEM
+            float scroll = Mouse.current != null ? Mouse.current.scroll.ReadValue().y : 0f;
+#else
+            float scroll = Input.mouseScrollDelta.y;
+#endif
+            if (scroll != 0f) { _targetZoom -= Mathf.Sign(scroll) * ZoomStep; }
+            float min = cam.allowFirstPerson ? MinZoom : FirstPersonZoom * 1.5f;
+            _targetZoom = Mathf.Clamp(_targetZoom, min, 1f);
+            _zoom = Mathf.Lerp(_zoom, _targetZoom, Time.deltaTime * ZoomSmoothing);
+            _follow.CameraDistance = _zoom * cam.zoomMax;
+
+            bool thirdPerson = _zoom >= FirstPersonZoom;
+            if (thirdPerson == _thirdPersonView) { return; }
+            _thirdPersonView = thirdPerson;
+            foreach (Renderer r in _bodyRenderers) { if (r != null) { r.enabled = thirdPerson; } }
         }
 
         private bool LeftHeld

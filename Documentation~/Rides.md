@@ -15,8 +15,41 @@ Menu: **GameObject > VirtualVenues > New Roller Coaster / Support Blocker**.
 | `SplineContainer` (Unity Splines) | the track object | The track shape. Knot roll = banking. |
 | `SplineTrack` | the track object | The generated mesh: rails, ties, **support posts**. |
 | `SplineRide` | the track object | Ride physics (gravity, Lift/Booster/Brake/Station sections, track events). |
-| `SplineMover` | each cart | Moves the cart along the container. |
+| `SplineMover` | each cart | Moves the cart along the container. Reports `Speed`, `Section`, `Resynced`. |
+| `RideSounds` | a cart (usually the lead car) | Speed-driven loops, lift chain loop, booster / brake / station one-shots. |
 | `TrackSupportBlocker` | any object with a `Collider` | Whether support posts stop on that collider. |
+
+## Ride sounds
+
+`RideSounds` on a cart reads its `SplineMover` every frame, on every player's game, from the shared ride clock
+(no network traffic, no track events needed):
+
+- **Speed Layers**: looping AudioSources, each with a speed band in m/s (**Min / Max Speed**), a **Fade** width at
+  both edges, a pitch at each end of the band and a **Max Volume**. Loops play from load and are silent outside
+  their band or when the cart stops. Overlap two or three layers (slow rumble, wheels, wind) for a full sound.
+- **Lift**: a loop that plays only while the cart is in a Lift section (chain clack).
+- **Booster / Brake**: one-shots when the cart enters a section of that type.
+- **Station Stop / Station Launch**: one-shots when the cart stops and when it moves off again
+  (Launch empty = Stop plays both times).
+- No one-shots on a resync (first frame, a late join, the local → network clock switch), so nobody hears a
+  burst of brakes on joining. Loops just pick up at the right volume.
+
+Only the AudioSources' clip, 3D settings and loudness matter; `RideSounds` sets volume, pitch, Play and Stop from
+code (no persistent UnityEvents, nothing for code stripping to drop). No mixer or effects, so it is web-safe.
+The inspector shows live speed, section and each layer's volume and pitch in Play mode.
+
+```csharp
+// SplineMover, as of its last Apply (read only)
+float Speed { get; }             // m/s; 0 while held in a station or at the end of a Once ride
+TrackSection Section { get; }    // ride.SectionAt(cart metres), or null
+bool Resynced { get; }           // the clock jumped (> MaxEventStep, backwards, or first frame)
+SplineRide Ride { get; }
+
+// RideSounds (requires SplineMover)
+List<RideSpeedLayer> SpeedLayers { get; }   // new RideSpeedLayer(source, minSpeed, maxSpeed, fade, pitchAtMin, pitchAtMax, maxVolume)
+void Refresh();                              // runs every frame; call after SplineMover.Apply from code
+static event Action<RideSounds, RideSoundCue> OnCue;   // BoosterEnter, BrakeEnter, StationStop, StationLaunch
+```
 
 ## The support-post rule
 

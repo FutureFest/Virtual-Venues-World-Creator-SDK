@@ -2,6 +2,38 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [Unreleased]
+
+## [0.10.13] - 2026-10-24
+
+Needs the matching FutureFestXR player update for RideSounds and audio channels (new components). Ship UPC and
+UMS together.
+
+### Added
+- **Audio channels**: `AudioChannel` sends the AudioSources on an object and its children to a channel players
+  can turn up or down on its own (web overlay mixer widget or in-game menu). Defaults in every world: Master,
+  Stream, Voice Chat, Ambient Music, Ambient Environment, Sound Effects, Rides and Vehicles, Interface
+  (ids in `AudioChannels`). `AudioChannelSet` adds up to 8 custom channels, each under one of the four
+  assignable defaults. Inspector dropdown and warnings. Needs a matching app build (new components).
+- **TestPlayer mouse-wheel zoom**, same rule as the live player: wheel forward zooms in, distance = zoom x the
+  control style's **Zoom Max**, starting at its **Default Zoom**. All the way in hides the character (first person)
+  when the style allows it. Works on foot and seated, not while driving. Shoulder side and FOV are still live-only.
+  The SDK runtime assembly now references Cinemachine (already a package dependency).
+- **RideSounds**: speed-driven ride sounds on a `SplineMover` cart, like the old FutureFest coaster cart. Speed
+  layers (looping AudioSources with a m/s band, edge fade, pitch at each end, max volume) set their volume and
+  pitch every frame; a Lift loop plays only on Lift sections; one-shots on entering a Booster or Brake and when
+  the cart stops and launches at a station. Runs from the shared ride clock on every player's game, no network
+  traffic; no one-shots on a resync (late join, clock switch). Play-mode inspector readout of speed, section and
+  each layer. Replaces per-train ride copies with pitch and volume track events.
+  - `SplineMover` now reports `Speed` (m/s), `Section` (the `TrackSection` it is in), `Resynced` and `Ride`.
+  - Needs a matching app build (new component).
+
+### Fixed
+- **TestPlayer can look around while seated** (ride seats, benches, coaster and Ferris seats): sitting used to switch
+  off the whole third-person controller, camera included, so the view stayed fixed to the seat. Now only walking,
+  jumping and gravity stop; the camera turns by the control style as on foot, like the live player. Driving a
+  vehicle still uses the driver look-around.
+
 ## [0.10.12] - 2026-10-24
 
 Editor only: no player or server update needed.

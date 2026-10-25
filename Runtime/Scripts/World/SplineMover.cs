@@ -47,10 +47,11 @@ namespace VirtualVenues.WorldCreator
         private bool _pingPongWarned = false;
         private SplineContainer _rideFor = null;
         private SplineRide _ride = null;
-        // Last frame's ride position, for firing track events. Cleared on enable.
+        // Last frame's clock and ride position, for firing track events and spotting resyncs. Cleared on enable.
         private bool _hasPrev = false;
         private double _prevTime = 0d;
-        private float _prevMetres = 0f;
+        private float _prevMetres = float.NaN;
+        private float _plainLength = -1f;
 
         /// <summary>A clock jump bigger than this (seconds) repositions the cart without firing the events it skipped.</summary>
         public const double MaxEventStep = 2d;
@@ -64,6 +65,15 @@ namespace VirtualVenues.WorldCreator
         public bool AlignToSpline => _alignToSpline;
         public bool KeepUpright => _keepUpright;
         public bool CarryPlayers => _carryPlayers;
+
+        /// <summary>Current speed in m/s, as of the last <see cref="Apply"/>. 0 while stopped (station hold, end of a Once ride).</summary>
+        public float Speed { get; private set; }
+        /// <summary>The <see cref="TrackSection"/> this object is in, as of the last <see cref="Apply"/>. Null off a SplineRide track or between sections.</summary>
+        public TrackSection Section { get; private set; }
+        /// <summary>True when the last <see cref="Apply"/> jumped the clock (first frame, backwards, or more than <see cref="MaxEventStep"/>): don't play one-shots.</summary>
+        public bool Resynced { get; private set; } = true;
+        /// <summary>The SplineRide on this object's track, or null.</summary>
+        public SplineRide Ride => _ride;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStatics()
@@ -84,6 +94,7 @@ namespace VirtualVenues.WorldCreator
             // Once is local-only, so it keeps local time: the shared Clock can swap domains mid-ride (on connect).
             _enableTime = Time.timeAsDouble;
             _hasPrev = false;
+            _prevMetres = float.NaN;
         }
 
         private void OnDestroy()
@@ -121,13 +132,32 @@ namespace VirtualVenues.WorldCreator
         /// <summary>Places the object where the ride is at <paramref name="time"/>. Absolute, not integrated.</summary>
         public void Apply(double time)
         {
+            // Resync on time, not distance: the local → network clock swap on connect jumps the train anywhere.
+            bool resync = !_hasPrev || time < _prevTime || time - _prevTime > MaxEventStep;
+            _hasPrev = true;
+            _prevTime = time;
+            Resynced = resync;
+            Speed = 0f;
+            Section = null;
+
             SplineContainer spline = ResolveSpline();
             if (spline == null) { return; }
 
             bool reverse = false;
-            float t = _ride != null && _ride.isActiveAndEnabled && _ride.LapTime > 0d
-                ? RideT(_ride, time)
-                : EvaluateT(time, _duration, _startOffset, _loopMode, out reverse);
+            float t;
+            if (_ride != null && _ride.isActiveAndEnabled && _ride.LapTime > 0d)
+            {
+                t = RideT(_ride, time, resync);
+            }
+            else
+            {
+                _prevMetres = float.NaN;
+                t = EvaluateT(time, _duration, _startOffset, _loopMode, out reverse);
+                // ponytail: length cached per track; a track reshaped in Play mode keeps its old speed readout.
+                if (_plainLength < 0f) { _plainLength = spline.CalculateLength(); }
+                bool finished = _loopMode == SplineLoopMode.Once && (t >= 1f || t <= 0f);
+                Speed = finished ? 0f : _plainLength / Mathf.Max(0.1f, _duration);
+            }
             if (!spline.Evaluate(t, out var position, out var tangent, out var up)) { return; }
 
             Vector3 forward = (Vector3)tangent;
@@ -142,7 +172,7 @@ namespace VirtualVenues.WorldCreator
         }
 
         // Physics ride: where the train is at this time, from the ride's baked time → metres table.
-        private float RideT(SplineRide ride, double time)
+        private float RideT(SplineRide ride, double time, bool resync)
         {
             double lap = ride.LapTime;
             double rideTime;
@@ -162,17 +192,16 @@ namespace VirtualVenues.WorldCreator
             }
 
             float metres = ride.MetresAt(rideTime) - _gapMetres;
+            bool parked = metres < 0f && !(ride.Closed && _loopMode != SplineLoopMode.Once);
             metres = ride.Closed && _loopMode != SplineLoopMode.Once ? Mathf.Repeat(metres, ride.Length) : Mathf.Max(0f, metres);
 
-            if (_fireEvents)
-            {
-                // Resync on time, not distance: the local → network clock swap on connect jumps the train anywhere.
-                bool resync = !_hasPrev || time < _prevTime || time - _prevTime > MaxEventStep;
-                if (!resync) { ride.FirePassed(_prevMetres, metres, this); }
-                _hasPrev = true;
-                _prevTime = time;
-                _prevMetres = metres;
-            }
+            // A Once ride sits still before it starts (gap cars) and after it ends.
+            bool ended = _loopMode == SplineLoopMode.Once && rideTime >= lap;
+            Speed = parked || ended ? 0f : ride.SpeedAt(rideTime);
+            Section = ride.SectionAt(metres);
+
+            if (_fireEvents && !resync && !float.IsNaN(_prevMetres)) { ride.FirePassed(_prevMetres, metres, this); }
+            _prevMetres = metres;
             return ride.ToNormalized(metres);
         }
 
@@ -183,6 +212,7 @@ namespace VirtualVenues.WorldCreator
             if (_spline != _rideFor)
             {
                 _rideFor = _spline;
+                _plainLength = -1f;
                 _ride = _spline != null ? _spline.GetComponent<SplineRide>() : null;
             }
             if (_spline != null && !ownTrack && _spline.Spline != null && _spline.Spline.Count > 1) { return _spline; }
