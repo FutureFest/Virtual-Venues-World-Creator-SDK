@@ -4,6 +4,8 @@ All notable changes to `com.virtualvenues.sdk`.
 
 ## [Unreleased]
 
+## [0.10.14] - 2026-10-25
+
 ### Fixed
 - **World Publisher no longer leaks 30+ GB per mobile publish**: the isolated iOS worker
   (`Builds/WorldPublishing/<id>/mobile/worker`, a full project copy with its own Library) is deleted after a
