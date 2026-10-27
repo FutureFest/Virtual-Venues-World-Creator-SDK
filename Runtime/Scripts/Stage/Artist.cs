@@ -20,7 +20,10 @@ namespace VirtualVenues.WorldCreator
         private Vector2 _tilingScale = new Vector2(1f, 0.5f);
         private Vector2 _textureOffset = new Vector2(0f, -0.5f);
 
-        [SerializeField] private string _speakerSource = "";
+        [Tooltip("Which of the stage's streams this artist cut-out shows. Stream 0 used to be called Artist.")]
+        [SerializeField, Min(0)] private int _streamIndex = 0;
+        // Legacy layout string ("Artist", "Visuals", or digits). Read once into _streamIndex.
+        [SerializeField, HideInInspector] private string _speakerSource = "";
 
         public static List<Artist> Instances => _instances;
         public static Action<Artist> onArtistAdded = null;
@@ -41,17 +44,21 @@ namespace VirtualVenues.WorldCreator
         public Vector2 TextureOffset => _textureOffset;
         public Vector2 TextureTiling => _tilingScale;
         public Transform Pivot => _pivot;
-        public string SpeakerSource => _speakerSource;
+        public int StreamIndex => string.IsNullOrEmpty(_speakerSource) ? _streamIndex : StageStreams.Parse(_speakerSource);
+        [Obsolete("Use StreamIndex.")]
+        public string SpeakerSource => StageStreams.Format(StreamIndex);
 
         /// <summary>
         /// Initializes this artist from layout data. Safe to call after Awake/AddComponent.
         /// stageIndex is the explicit target stage (ignored when nested under a Stage);
-        /// artistPivotOffset is applied to the pivot's local position when a pivot is assigned.
+        /// artistPivotOffset is applied to the pivot's local position when a pivot is assigned;
+        /// speakerSource names the stream (see StageStreams).
         /// </summary>
         public void Configure(int stageIndex, Vector3 artistPivotOffset, string speakerSource)
         {
             _stageIndex = stageIndex;
-            _speakerSource = speakerSource;
+            _streamIndex = StageStreams.Parse(speakerSource);
+            _speakerSource = string.Empty;
             if (_pivot != null) { _pivot.localPosition = artistPivotOffset; }
             // Register AFTER the authored stage index is set (the UWE LayoutLoader adds this component
             // then Configures); else StageCoreConnector would bind using the pre-Configure default.
@@ -62,6 +69,12 @@ namespace VirtualVenues.WorldCreator
         private void OnValidate()
         {
             if (_artistMesh != null) { _artistMesh.gameObject.hideFlags = HideFlags.HideInHierarchy; }
+            if (!string.IsNullOrEmpty(_speakerSource))
+            {
+                _streamIndex = StageStreams.Parse(_speakerSource);
+                _speakerSource = string.Empty;
+            }
+            if (_stage != null) { _stageIndex = _stage.StageIndex; }
         }
 
         private void Awake()
@@ -102,4 +115,13 @@ namespace VirtualVenues.WorldCreator
             _instances.Remove(this);
         }
     }
+
+#if UNITY_EDITOR
+    [UnityEditor.CustomEditor(typeof(Artist))]
+    [UnityEditor.CanEditMultipleObjects]
+    public class ArtistEditor : UnityEditor.Editor
+    {
+        public override void OnInspectorGUI() { StagePickerGUI.DrawInspector(serializedObject); }
+    }
+#endif
 }

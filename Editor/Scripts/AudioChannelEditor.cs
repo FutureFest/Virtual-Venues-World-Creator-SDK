@@ -27,7 +27,7 @@ namespace VirtualVenues.WorldCreator.Editor
             var labels = new List<string>();
             foreach (string id in ids) { labels.Add(AudioChannels.IsDefault(id) ? $"{AudioChannels.DefaultName(id)} ({id})" : $"Custom: {id}"); }
 
-            int index = ids.IndexOf(prop.stringValue);
+            int index = ids.IndexOf(AudioChannels.Canonical(prop.stringValue));  // old ids show as their new channel
             EditorGUI.showMixedValue = prop.hasMultipleDifferentValues;
             int picked = EditorGUILayout.Popup("Channel", index, labels.ToArray());
             EditorGUI.showMixedValue = false;

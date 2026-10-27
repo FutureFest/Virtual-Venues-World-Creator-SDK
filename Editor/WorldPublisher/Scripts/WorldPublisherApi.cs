@@ -36,6 +36,14 @@ namespace WorldPublisher
         public string worldName;
         public string iosReleaseId;
         public bool hasThumbnail;
+        public WorldStage[] stages; // the world's Stage markers; [] clears the venue's stored list
+    }
+
+    [Serializable]
+    public class WorldStage
+    {
+        public int index;
+        public string name;
     }
 
     [Serializable]
@@ -149,7 +157,7 @@ namespace WorldPublisher
         /// <summary>
         /// Confirm upload completion and finalize world publication
         /// </summary>
-        public static async Task ConfirmUploadAsync(string worldId, string umsName, string upcName, string worldName = null, string iosReleaseId = null, bool hasThumbnail = false)
+        public static async Task ConfirmUploadAsync(string worldId, string umsName, string upcName, string worldName = null, string iosReleaseId = null, bool hasThumbnail = false, WorldStage[] stages = null)
         {
             if (!IsTokenValid)
             {
@@ -163,7 +171,8 @@ namespace WorldPublisher
                 upcName = upcName,
                 worldName = worldName,
                 iosReleaseId = iosReleaseId,
-                hasThumbnail = hasThumbnail
+                hasThumbnail = hasThumbnail,
+                stages = stages ?? Array.Empty<WorldStage>()
             };
 
             string jsonData = JsonUtility.ToJson(request);
@@ -315,7 +324,7 @@ namespace WorldPublisher
         /// Complete upload workflow: get URLs, upload both bundles and the optional JPEG thumbnail, confirm
         /// </summary>
         public static async Task<World> UploadWorldAsync(string umsName, string upcName, byte[] umsData, byte[] upcData,
-            string worldName = null, IProgress<string> progress = null, string iosReleaseId = null, byte[] thumbnailJpg = null)
+            string worldName = null, IProgress<string> progress = null, string iosReleaseId = null, byte[] thumbnailJpg = null, WorldStage[] stages = null)
         {
             try
             {
@@ -343,7 +352,7 @@ namespace WorldPublisher
                 }
 
                 progress?.Report("Confirming upload...");
-                await ConfirmUploadAsync(uploadUrls.worldId, umsName, upcName, worldName, iosReleaseId, hasThumbnail);
+                await ConfirmUploadAsync(uploadUrls.worldId, umsName, upcName, worldName, iosReleaseId, hasThumbnail, stages);
 
                 progress?.Report("Fetching world info...");
                 var worlds = await GetAllWorldsAsync();

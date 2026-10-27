@@ -2,7 +2,43 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
-## [Unreleased]
+## [0.10.15] - 2026-10-26
+
+Needs the matching FutureFestXR player update for the new channel ids, Ambient Audio and Stage Streams. Ship UPC
+and UMS together.
+
+### Added
+- **Stage Streams**: a `Stage` can show any number of streams. Each `Screen`, `Speaker` and `Artist` picks its stage
+  from a Stage picker and its stream by number, and a Stage can switch a stream's video or audio off. Signed-in
+  creators see their venue's stage and stream names in the pickers, and the World Publisher sends the world's stage
+  list to the venue. Old Artist and Visuals worlds still work.
+- **Water Waves**: rolling waves on a water surface. Put it on the water's Renderer over a Swim Zone (`_height`
+  crest to trough 0.4 m, `_length` 10 m, `_speed` 1.5 m/s, `_direction` 45°). Boats ride them, bobbing and
+  tilting with the swell, in the app and with the TestPlayer. The water itself shows them when its shader includes
+  `Runtime/Shaders/VVWaterWaves.hlsl` (Custom Function `VVWaterWaves`, or call `VVWaterWaves()` from HLSL); the
+  surface needs enough vertices (about one every 2 m). In the app the waves follow the network clock, so every
+  player sees the same crests. Needs a matching app build.
+- **Ambient Audio** (`AmbientAudio`, **VirtualVenues > Ambient Audio**): the new name of Room Ambient Audio, with the
+  same behaviour (fades with the player's distance, quiet inside a room). Its AudioSource goes to the Ambient Audio
+  channel. `RoomAmbientAudio` stays as an obsolete subclass, hidden from Add Component, so published worlds that
+  use it still load and fade.
+
+### Changed
+- **Audio channels renamed, Rides removed**: the default channels are now Master, Stream, Voice Chat, Background
+  Music (`background-music`), Ambient Audio (`ambient-audio`), Sound Effects and Interface. Ride, vehicle and other
+  untagged sounds go to Sound Effects; Background Music is only used through an `AudioChannel` marker. Old ids
+  still work on markers and custom-channel parents, with no warning: `rides` = `sfx`, `ambient-music` =
+  `background-music`, `ambient-environment` = `ambient-audio`. Old ids can't be custom channel ids.
+
+### Fixed
+- **TestPlayer boats float and collide**: a Boat `Vehicle` driven by the TestPlayer used to slide at a fixed
+  height through terrain, docks and other boats, with no float. It now floats on its Swim Zone with the same model
+  as the app (lift, upright torque, water drag, thrust, leaning turns) and collides with everything solid. It keeps
+  floating after you get out, and Enter / Exit Water fire. The model is the new `BoatFloat`, which the app's boat
+  code now calls too, so both behave the same. Cars still use the arcade drive.
+- **Boats no longer drive up beaches**: a boat only thrusts and steers while its keel touches the water (it used to
+  keep full thrust until the keel was ~0.8 m above the water line, so it climbed beaches, shelves and dock decks).
+  Enter / Exit Water now fire when the keel touches / leaves the water. In the app this needs a new player build.
 
 ## [0.10.14] - 2026-10-25
 

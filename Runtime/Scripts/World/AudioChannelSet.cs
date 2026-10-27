@@ -64,9 +64,9 @@ namespace VirtualVenues.WorldCreator
                 CustomAudioChannel c = _channels[i];
                 string at = $"Channel {i + 1}";
                 if (!AudioChannels.IsValidId(c.id)) { problems.Add($"{at}: id '{c.id}' must be lowercase letters, digits and '-', up to 32 characters."); continue; }
-                if (AudioChannels.IsDefault(c.id)) { problems.Add($"{at}: '{c.id}' is a default channel id."); continue; }
+                if (AudioChannels.IsDefault(AudioChannels.Canonical(c.id))) { problems.Add($"{at}: '{c.id}' is a default channel id (or an old one)."); continue; }
                 if (!seen.Add(c.id)) { problems.Add($"{at}: '{c.id}' is listed twice."); continue; }
-                if (!AudioChannels.IsAssignable(c.parent)) { problems.Add($"{at}: parent must be one of {string.Join(", ", AudioChannels.Assignable)}."); }
+                if (!AudioChannels.IsAssignable(AudioChannels.Canonical(c.parent))) { problems.Add($"{at}: parent must be one of {string.Join(", ", AudioChannels.Assignable)}."); }
                 if (i >= AudioChannels.MaxCustom) { problems.Add($"{at}: only the first {AudioChannels.MaxCustom} custom channels are used."); }
             }
         }

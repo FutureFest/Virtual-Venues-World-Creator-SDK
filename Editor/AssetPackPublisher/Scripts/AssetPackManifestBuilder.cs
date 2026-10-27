@@ -409,7 +409,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             {
                 MfComponent c = DefaultComponent("screen");
                 c.stageMedia.stageIndex = screen.StageIndex;
-                c.stageMedia.screenSource = screen.ScreenSource;
+                c.stageMedia.screenSource = StageStreams.Format(screen.StreamIndex);
                 list.Add(c);
             }
 
@@ -418,7 +418,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             {
                 MfComponent c = DefaultComponent("speaker");
                 c.stageMedia.stageIndex = speaker.StageIndex;
-                c.stageMedia.speakerSource = speaker.Source.ToString();
+                c.stageMedia.speakerSource = StageStreams.Format(speaker.StreamIndex);
                 c.stageMedia.speakerChannel = (int)speaker.Channel;
                 list.Add(c);
             }
@@ -437,7 +437,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
             {
                 MfComponent c = DefaultComponent("artist");
                 c.stageMedia.stageIndex = artist.StageIndex;
-                c.stageMedia.speakerSource = artist.SpeakerSource;
+                c.stageMedia.speakerSource = StageStreams.Format(artist.StreamIndex);
                 if (artist.Pivot != null)
                 {
                     Vector3 p = artist.Pivot.localPosition;

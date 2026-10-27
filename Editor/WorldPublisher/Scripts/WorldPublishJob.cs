@@ -58,6 +58,7 @@ namespace WorldPublisher
             public string umsPath;
             public string upcPath;
             public string thumbnailPath; // JPEG in Temp/, optional
+            public WorldStage[] stages; // the world's Stage markers, sent with the upload
             public BuildTarget originalTarget;
             public BuildTargetGroup originalGroup;
             public bool awaitingReload;
@@ -147,6 +148,7 @@ namespace WorldPublisher
                 upload = upload,
                 includeMobile = includeMobile,
                 thumbnailPath = thumbnailPath,
+                stages = CollectStages(scenes),
                 bundleBase = GenerateVersionedBundleName(mainScenePath),
                 originalTarget = EditorUserBuildSettings.activeBuildTarget,
                 originalGroup = EditorUserBuildSettings.selectedBuildTargetGroup,
@@ -414,7 +416,7 @@ namespace WorldPublisher
 
                 var progress = new Progress<string>(message => Progress(0.6f + UploadProgress(message) * 0.4f, message));
                 World world = await WorldPublisherApi.UploadWorldAsync(
-                    Path.GetFileName(job.umsPath), Path.GetFileName(job.upcPath), umsData, upcData, job.worldName, progress, job.iosReleaseId, thumbnail);
+                    Path.GetFileName(job.umsPath), Path.GetFileName(job.upcPath), umsData, upcData, job.worldName, progress, job.iosReleaseId, thumbnail, job.stages);
 
                 Cleanup(job);
                 Succeed(job, world, "Publishing Complete!");
@@ -495,6 +497,42 @@ namespace WorldPublisher
         private static void SaveJob(Job job) => SessionState.SetString(JOB_KEY, JsonUtility.ToJson(job));
 
         // EditorAuthToken is a plain static, so every domain reload wipes it; refill it from the cached sign-in.
+        // The world's stages (number + the creator's name) so the venue dashboard can list them before any
+        // stream exists. Scenes not already open are opened additively and closed again, like the NMKR check.
+        private static WorldStage[] CollectStages(List<string> scenes)
+        {
+            var names = new SortedDictionary<int, string>();
+            foreach (string path in scenes)
+            {
+                UnityEngine.SceneManagement.Scene scene = UnityEngine.SceneManagement.SceneManager.GetSceneByPath(path);
+                bool opened = false;
+                if (!scene.IsValid() || !scene.isLoaded)
+                {
+                    scene = UnityEditor.SceneManagement.EditorSceneManager.OpenScene(path, UnityEditor.SceneManagement.OpenSceneMode.Additive);
+                    opened = true;
+                }
+                try
+                {
+                    foreach (GameObject root in scene.GetRootGameObjects())
+                    {
+                        foreach (var stage in root.GetComponentsInChildren<VirtualVenues.WorldCreator.Stage>(true))
+                        {
+                            names.TryGetValue(stage.StageIndex, out string known);
+                            if (string.IsNullOrEmpty(known)) { names[stage.StageIndex] = stage.DisplayName ?? string.Empty; }
+                        }
+                    }
+                }
+                finally
+                {
+                    if (opened) { UnityEditor.SceneManagement.EditorSceneManager.CloseScene(scene, true); }
+                }
+            }
+            // The backend keeps up to 64 stages numbered 0-999, names up to 64 characters.
+            return names.Where(n => n.Key >= 0 && n.Key <= 999).Take(64)
+                .Select(n => new WorldStage { index = n.Key, name = n.Value.Length > 64 ? n.Value.Substring(0, 64) : n.Value })
+                .ToArray();
+        }
+
         private static void RestoreToken()
         {
             if (WorldPublisherApi.IsTokenValid) { return; }

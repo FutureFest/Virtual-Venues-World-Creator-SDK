@@ -95,6 +95,7 @@ stage video, voice and NMKR only work in the real app — see the **Test player*
   More in `Rides.md`.
 - **Turn off Occlusion Static** on anything that moves.
 - **One `NMKR_Plugin` per scene** if the world mints NFTs; publishing is blocked until it's configured.
-- **`RoomAmbientAudio` is silent in the editor** — it waits for the app to report the listener position.
+- **`AmbientAudio` (old name `RoomAmbientAudio`) is silent in the editor** — it waits for the app to report the
+  listener position.
 - **Additional scenes** (loaded additively with the main one) can be published together; lighting comes from
   the main scene only.

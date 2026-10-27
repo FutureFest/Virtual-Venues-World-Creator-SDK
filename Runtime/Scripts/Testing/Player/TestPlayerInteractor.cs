@@ -9,8 +9,8 @@ namespace VirtualVenues.WorldCreator
 {
     /// <summary>
     /// Local, offline stand-in for the core project's interaction runtime so creators can test a world with the
-    /// TestPlayer: nearest-Interactable prompt + E, Seats, TriggerEvents, carry-platform SplineMovers and a simple
-    /// Vehicle drive (driver look-around + driver/throttle/speed <see cref="VehicleEvents"/>). Lives on the TestPlayer's PlayerArmature (PlayerInput sends OnInteract here).
+    /// TestPlayer: nearest-Interactable prompt + E, Seats, TriggerEvents, carry-platform SplineMovers and
+    /// Vehicle drive (boats float via <see cref="TestBoat"/>, cars arcade; driver look-around + driver/throttle/speed <see cref="VehicleEvents"/>). Lives on the TestPlayer's PlayerArmature (PlayerInput sends OnInteract here).
     /// Runs after SplineMover (-50) so riders read this frame's pose, before ThirdPersonController (0).
     /// </summary>
     [DefaultExecutionOrder(-10)]
@@ -51,6 +51,7 @@ namespace VirtualVenues.WorldCreator
         private Interactable _pinnedTarget = null;
         private Transform _seatPoint = null;
         private Vehicle _vehicle = null;
+        private TestBoat _boat = null;
         private float _vehicleSpeed = 0f;
         private float _vehicleRideHeight = 0f;
         private float _vehicleYawRate = 0f;
@@ -154,6 +155,7 @@ namespace VirtualVenues.WorldCreator
             if (target.TryGetComponent(out Vehicle vehicle))
             {
                 _vehicle = vehicle;
+                _boat = vehicle.VehicleType == VehicleType.Boat ? TestBoat.Attach(vehicle) : null;
                 _vehicleSpeed = 0f;
                 Vector3 start = vehicle.transform.position;
                 _vehicleRideHeight = TryGroundHeight(start, vehicle.transform, out float groundY) ? start.y - groundY : 0f;
@@ -288,11 +290,13 @@ namespace VirtualVenues.WorldCreator
                 _vehicle.Events.onDriverExit.Invoke();
                 _vehicle.Events.RaiseSpeed(0f); // the arcade drive stops dead when you get out
                 _vehicleThrottling = false;
+                if (_boat != null) { _boat.SetInput(false, false, 0f); } // a boat coasts and keeps floating
             }
             _seatControls = null;
             _seatPoint = null;
             _pinnedTarget = null;
             _vehicle = null;
+            _boat = null;
             transform.SetPositionAndRotation(exit, facing);
             SetMovementEnabled(true);
             if (_animator != null && _hasSeatedParam) { _animator.SetBool(AnimSeated, false); }
@@ -372,31 +376,40 @@ namespace VirtualVenues.WorldCreator
             return t.TryGetComponent(out KeepUpright upright) && upright.CarryPlayers;
         }
 
-        // ---- Vehicles: arcade drive from the driver seat.
-        // ponytail: no physics/wheels/passengers, so handling won't match the core project's Rigidbody vehicle; port its model if creators need to tune handling here.
+        // ---- Vehicles: boats float and drive with the core project's model (TestBoat); cars use an arcade drive.
+        // ponytail: cars have no physics/wheels, so they pass through walls and other vehicles and won't handle like the core project's Rigidbody kart; port its model if creators need to tune cars here.
 
         private void DriveVehicle()
         {
             if (_input == null) { return; }
-            Transform t = _vehicle.transform;
-            bool boat = _vehicle.VehicleType == VehicleType.Boat;
             VehicleStats stats = _vehicle.Stats;
-            float accel = boat ? _vehicle.BoatStats.enginePower : stats.acceleration;
-            float turn = boat ? _vehicle.BoatStats.turnPower : stats.steer;
-
-            _vehicleSpeed = Mathf.MoveTowards(_vehicleSpeed, _input.move.y * stats.topSpeed, accel * Time.deltaTime);
-            float turnScale = Mathf.Clamp01(Mathf.Abs(_vehicleSpeed) / 2f) * Mathf.Sign(_vehicleSpeed);
-            t.Rotate(0f, (_input.move.x * turn * 20f * turnScale + _vehicleYawRate) * Time.deltaTime, 0f, Space.World);
-            _vehicleYawRate = Mathf.MoveTowards(_vehicleYawRate, 0f, 180f * Time.deltaTime);
-
-            Vector3 pos = t.position + t.forward * (_vehicleSpeed * Time.deltaTime);
-            if (!boat && TryGroundHeight(pos, t, out float groundY)) { pos.y = groundY + _vehicleRideHeight; }
-            t.position = pos;
+            if (_boat != null)
+            {
+                _boat.SetInput(_input.move.y > 0f, _input.move.y < 0f, _input.move.x); // the core project's VehicleController input
+                _vehicleSpeed = _boat.ForwardSpeed;
+            }
+            else
+            {
+                DriveCar(stats);
+            }
 
             bool throttling = _input.move.y > 0f;
             if (throttling != _vehicleThrottling) { (throttling ? _vehicle.Events.onThrottleStart : _vehicle.Events.onThrottleStop).Invoke(); }
             _vehicleThrottling = throttling;
             _vehicle.Events.RaiseSpeed(Mathf.Abs(_vehicleSpeed) / Mathf.Max(0.1f, stats.topSpeed));
+        }
+
+        private void DriveCar(VehicleStats stats)
+        {
+            Transform t = _vehicle.transform;
+            _vehicleSpeed = Mathf.MoveTowards(_vehicleSpeed, _input.move.y * stats.topSpeed, stats.acceleration * Time.deltaTime);
+            float turnScale = Mathf.Clamp01(Mathf.Abs(_vehicleSpeed) / 2f) * Mathf.Sign(_vehicleSpeed);
+            t.Rotate(0f, (_input.move.x * stats.steer * 20f * turnScale + _vehicleYawRate) * Time.deltaTime, 0f, Space.World);
+            _vehicleYawRate = Mathf.MoveTowards(_vehicleYawRate, 0f, 180f * Time.deltaTime);
+
+            Vector3 pos = t.position + t.forward * (_vehicleSpeed * Time.deltaTime);
+            if (TryGroundHeight(pos, t, out float groundY)) { pos.y = groundY + _vehicleRideHeight; }
+            t.position = pos;
         }
 
         // Driver look-around, same rule as the core project's VehicleCameraLook. PlayerCameraRoot is a child of the
@@ -438,11 +451,18 @@ namespace VirtualVenues.WorldCreator
             }
         }
 
-        // ponytail: arcade stand-in for the runtime's VelocityChange impulse; the push decays at the drive's
-        // acceleration and the spin at 180°/s², so it feels shorter than the Rigidbody version.
+        // Boats: the runtime's VelocityChange impulse. Cars (ponytail): arcade stand-in; the push decays at the
+        // drive's acceleration and the spin at 180°/s², so it feels shorter than the Rigidbody version.
         private void OnVehicleNudge(Vehicle vehicle, float metersPerSecond, float degreesPerSecond)
         {
             if (vehicle == null || vehicle != _vehicle) { return; }
+            if (_boat != null)
+            {
+                Transform t = vehicle.transform;
+                _boat.Body.AddForce(t.forward * metersPerSecond, ForceMode.VelocityChange);
+                _boat.Body.AddTorque(t.up * (degreesPerSecond * Mathf.Deg2Rad), ForceMode.VelocityChange);
+                return;
+            }
             _vehicleSpeed += metersPerSecond;
             _vehicleYawRate += degreesPerSecond;
         }

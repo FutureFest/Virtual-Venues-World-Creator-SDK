@@ -1,13 +1,34 @@
 using System.Collections.Generic;
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace VirtualVenues.WorldCreator
 {
+    [Obsolete("Screens, speakers and artists pick a stream by number (StreamIndex). Artist is stream 0, Visuals is stream 1.")]
     public enum SpeakerSource
     {
         Artist,
         Visuals
+    }
+
+    /// <summary>
+    /// A stage's streams are numbered 0, 1, 2... Layout data stores the number as a string: "Artist" for 0
+    /// and "Visuals" for 1 (UPC builds that only know those two names keep working), digits from 2 up.
+    /// </summary>
+    public static class StageStreams
+    {
+        public static int Parse(string value)
+        {
+            if (value == "Visuals") { return 1; }
+            return int.TryParse(value, out int index) && index > 0 ? index : 0;
+        }
+
+        public static string Format(int streamIndex)
+        {
+            if (streamIndex == 1) { return "Visuals"; }
+            return streamIndex > 1 ? streamIndex.ToString() : "Artist";
+        }
     }
 
     public enum SpeakerChannel
@@ -25,7 +46,9 @@ namespace VirtualVenues.WorldCreator
         [SerializeField] private Stage _stage = null;
         [SerializeField] private int _stageIndex = 0;
         [Space]
-        [SerializeField] private SpeakerSource _source = SpeakerSource.Artist;
+        [Tooltip("Which of the stage's streams this speaker plays. Stream 0 used to be called Artist, stream 1 Visuals.")]
+        [FormerlySerializedAs("_source")]
+        [SerializeField, Min(0)] private int _streamIndex = 0;
         [SerializeField] private SpeakerChannel _channel = SpeakerChannel.Mono;
 
         private AudioSource _audioSource = null;
@@ -43,7 +66,9 @@ namespace VirtualVenues.WorldCreator
                 return _stage != null ? _stage.StageIndex : _stageIndex;
             }
         }
-        public SpeakerSource Source => _source;
+        public int StreamIndex => _streamIndex;
+        [Obsolete("Use StreamIndex.")]
+        public SpeakerSource Source => _streamIndex == 1 ? SpeakerSource.Visuals : SpeakerSource.Artist;
         public SpeakerChannel Channel => _channel;
         public AudioSource AudioSource => _audioSource;
 
@@ -67,24 +92,18 @@ namespace VirtualVenues.WorldCreator
         /// <summary>
         /// Initializes this speaker from layout data. Safe to call after Awake/AddComponent.
         /// stageIndex is the explicit target stage (ignored when nested under a Stage);
-        /// speakerSource is "Artist" or "Visuals"; speakerChannel maps to the SpeakerChannel enum order
-        /// (0 = Mono, 1 = StereoLeft, 2 = StereoRight).
+        /// speakerSource names the stream (see StageStreams); speakerChannel maps to the SpeakerChannel enum
+        /// order (0 = Mono, 1 = StereoLeft, 2 = StereoRight).
         /// </summary>
         public void Configure(int stageIndex, string speakerSource, int speakerChannel)
         {
             _stageIndex = stageIndex;
-            _source = ParseSource(speakerSource);
+            _streamIndex = StageStreams.Parse(speakerSource);
             _channel = ParseChannel(speakerChannel);
             // Register AFTER the authored stage/source/channel are set (the UWE LayoutLoader adds this
             // component then Configures one step later); else StageCoreConnector would bind the
             // pre-Configure defaults. Idempotent — the Start() fallback no-ops once this has run.
             AddSpeaker(this);
-        }
-
-        private static SpeakerSource ParseSource(string speakerSource)
-        {
-            if (speakerSource == "Visuals") { return SpeakerSource.Visuals; }
-            return SpeakerSource.Artist;
         }
 
         private static SpeakerChannel ParseChannel(int speakerChannel)
@@ -100,6 +119,7 @@ namespace VirtualVenues.WorldCreator
             {
                 _stage = this.gameObject.GetComponentInParent<Stage>();
             }
+            if (_stage != null) { _stageIndex = _stage.StageIndex; }
         }
 
         private static void AddSpeaker(Speaker speaker)
@@ -117,4 +137,13 @@ namespace VirtualVenues.WorldCreator
             _instances.Remove(this);
         }
     }
+
+#if UNITY_EDITOR
+    [UnityEditor.CustomEditor(typeof(Speaker))]
+    [UnityEditor.CanEditMultipleObjects]
+    public class SpeakerEditor : UnityEditor.Editor
+    {
+        public override void OnInspectorGUI() { StagePickerGUI.DrawInspector(serializedObject); }
+    }
+#endif
 }

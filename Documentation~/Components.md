@@ -28,15 +28,20 @@ Lighting, sky and fog come from the main scene's own Lighting settings. The one 
 | `StageTrigger` | **Stage Trigger** (20×10×20 box) | `_stage` (auto: nearest), `_activateOnInitialize` | `Collider` (trigger) | marker | no |
 | `Fixture` | **Fixtures/Moving Head Fixture**; PAR and Strobe via the Stage's "+" scene gizmo; prefabs `Moving Head Fixture`, `PAR Fixture`, `Strobe Fixture` | `_stage`, `_type` PAR/MovingHead/Strobe, `_mirrorPanRotation` | under a Stage | marker (DMX) | no |
 | `RoomBoundary` | add component | `stageIndex`, `volume` Collider, `privacyBarrier` GameObject | a trigger volume | self-contained | no listener offline |
-| `RoomAmbientAudio` | add component | AudioSource min/max distance | `AudioSource` | self-contained | silent offline |
-| `AudioChannel` | add component | `_channel` id: `ambient-music`, `ambient-environment`, `sfx`, `rides` or a custom id | `AudioSource` here or below | marker | no (app mixer) |
-| `AudioChannelSet` | add component, one per world | `_channels`: id, display name, parent (one of the four above), default volume; max 8 | — | marker | no |
+| `AmbientAudio` | add component (**Ambient Audio**) | AudioSource min/max distance | `AudioSource` | self-contained | silent offline |
+| `AudioChannel` | add component | `_channel` id: `background-music`, `ambient-audio`, `sfx` or a custom id | `AudioSource` here or below | marker | no (app mixer) |
+| `AudioChannelSet` | add component, one per world | `_channels`: id, display name, parent (one of the three above), default volume; max 8 | — | marker | no |
+
+`RoomAmbientAudio` is the old name of `AmbientAudio`: it still works in published worlds but is hidden from Add
+Component. Use `AmbientAudio` in new worlds.
 
 **Audio channels.** Players set a volume per channel in the app. Every world has Master, Stream, Voice Chat,
-Ambient Music, Ambient Environment, Sound Effects, Rides and Vehicles and Interface. Untagged AudioSources go to
-Ambient Music (`RoomAmbientAudio`), Rides and Vehicles (`RideSounds`, `Vehicle`, `SplineRide`, `SplineMover`) or
-Sound Effects; `Speaker` sources always follow Stream. Tag others with `AudioChannel`; add your own channels with
-`AudioChannelSet`. The app only sets each source's mixer group; your volume, pitch and mute stay yours.
+Background Music, Ambient Audio, Sound Effects and Interface. Untagged AudioSources go to Ambient Audio (under an
+`AmbientAudio`) or Sound Effects (everything else, rides and vehicles too); `Speaker` sources always follow Stream.
+Background Music has no automatic rule: tag music with an `AudioChannel` set to `background-music`. Add your own
+channels with `AudioChannelSet`. The app only sets each source's mixer group; your volume, pitch and mute stay yours.
+Old ids from SDK 0.10.13–0.10.14 still work: `rides` = `sfx`, `ambient-music` = `background-music`,
+`ambient-environment` = `ambient-audio`.
 
 Stage parts find their stage index from a parent `Stage` first, then their own `_stageIndex`. Visuals screens
 show black until the app's visuals stream is live. Shader `Custom/UnlitChromaKeyURP` keys out the artist video.
@@ -68,7 +73,7 @@ Every world needs at least one. Nothing checks this at publish.
 |---|---|---|---|---|---|
 | `Interactable` | add component | `_interactionDisplayText` ("Press {0} to interact"), `_interactionCollider`, `_highlightRenderers`, `_onLocalInteract` UnityEvent | trigger collider | marker | yes (E key) |
 | `Seat` | **New Seat** (prefab `Seat`) | `_seatPoint` (default: self) | `Interactable` + trigger collider | marker | yes |
-| `Vehicle` | **New Go Kart** / **New Jet Ski** | `_vehicleType` Car/Boat, `_seats` (seat 0 drives), `_wheels`, `_stats` (topSpeed, acceleration, steer, grip, mass), `_boatStats`, `_events` (see Vehicle events) | `Interactable` + trigger collider; Boat needs a Swim Zone or water | marker | yes (arcade drive, look-around, driver/throttle/speed events) |
+| `Vehicle` | **New Go Kart** / **New Jet Ski** | `_vehicleType` Car/Boat, `_seats` (seat 0 drives), `_wheels`, `_stats` (topSpeed, acceleration, steer, grip, mass), `_boatStats`, `_events` (see Vehicle events) | `Interactable` + trigger collider; Boat needs a Swim Zone or water | marker | yes (boats float on the Swim Zone and collide like the app; cars use an arcade drive with no collisions; look-around, driver/throttle/speed/water events) |
 | `TriggerEvent` | **New Trigger Event** | `_onLocalPlayerEnter`, `_onEveryone` UnityEvents, `_cooldown`, `_once` | trigger BoxCollider | marker | yes |
 | `AdminEvent` | add component, or **New Admin Event** | `_eventName` ("fireworks", case-insensitive), `_onEveryone` UnityEvent, `_cooldown` (10 s), `_description` | — | marker | **Fire now** button in Play mode |
 | `CustomControls` | add component, or **New Custom Controls Zone** | `_showWhen` (WhileSeated / AfterInteract / WhileInRange / WhileInZone), `_controls[]` (label, icon, cooldown 0.2 s, `onPressed` + `onEveryone` UnityEvents) | a seat, an `Interactable`, or a trigger collider, depending on `_showWhen` | marker | yes (on-screen buttons) |
@@ -92,7 +97,7 @@ alike.
   Boats don't use `topSpeed` to drive, so set it to the boat's real top speed for On Speed to reach 1.
 - Players who join while someone drives get Driver Enter (and Throttle Start if held) so loops start; one-shot
   events (passenger, water) don't replay.
-- TestPlayer: Driver, Throttle and On Speed fire; Passenger and Water don't (one player, arcade boat).
+- TestPlayer: Driver, Throttle, On Speed and (boats) Enter / Exit Water fire; Passenger doesn't (one player).
 
 The driver can look around: the camera turns with the mouse by the world's control style (hold a mouse button in
 Classic/MMO, always in Shooter), stays where you leave it, and swings back behind the vehicle once you drive
@@ -142,6 +147,13 @@ A zone = a GameObject with a trigger collider + `TriggerZone` (`_zoneName`) + on
 | `RespawnZoneData` | **Respawn Zone** | `_respawnPoint` (empty = a spawn point), `_affectsPlayers`, `_affectsVehicles` | no |
 | `VoiceZoneData` | add to a **Trigger Zone** | `_conversationalDistance` 5, `_audibleDistance` 32 | no |
 | `AreaZoneData` | add to a **Trigger Zone** | `_areaId`, `_prompt`, `_targetRoomId` | no |
+
+**Waves:** add `WaterWaves` (**VirtualVenues/Water Waves**) to the water surface's Renderer over a Swim Zone:
+`_height` (crest to trough, 0.4 m), `_length` 10 m, `_speed` 1.5 m/s, `_direction` 45° (0 = +Z, 90 = +X). Boats ride
+them in the app and the test player. The water shows them only if its shader includes
+`Runtime/Shaders/VVWaterWaves.hlsl` (Shader Graph Custom Function `VVWaterWaves`: world position in, height and
+world normal out; add the height to the vertex y) and the mesh has about one vertex every 2 m. A water Renderer
+without `WaterWaves` stays flat, so pools can share the lake's material.
 
 ## Things that move
 

@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System;
 using UnityEngine;
-using System.Linq;
+using UnityEngine.Serialization;
 
 namespace VirtualVenues.WorldCreator
 {
@@ -17,11 +17,10 @@ namespace VirtualVenues.WorldCreator
         private string _texturePropertyName = "_BaseMap";
         private Vector2 _screenTilingScale = new Vector2(1f, 0.5f);
         private Vector2 _screenTextureOffset = Vector2.zero;
-        [SerializeField] private string _screenSource = "";
-        // Defaults to Artist: the visuals stream is not opened on the rig yet (NetStage's HLS path
-        // combines into one feed and its realtime path joins only the artist participant), so a
-        // Visuals screen would render black until that plumbing lands. See plan Phase 2 §A.
-        [SerializeField] private SpeakerSource _source = SpeakerSource.Artist;
+        [SerializeField, HideInInspector] private string _screenSource = "";
+        [Tooltip("Which of the stage's streams this screen shows. Stream 0 used to be called Artist, stream 1 Visuals.")]
+        [FormerlySerializedAs("_source")]
+        [SerializeField, Min(0)] private int _streamIndex = 0;
 
         public static List<Screen> Instances => _instances;
         public static Action<Screen> onScreenAdded = null;
@@ -43,18 +42,20 @@ namespace VirtualVenues.WorldCreator
         public Vector2 TextureOffset => _screenTextureOffset;
         public Vector2 TextureTiling => _screenTilingScale;
         public string ScreenSource => _screenSource;
-        public SpeakerSource Source => _source;
+        public int StreamIndex => _streamIndex;
+        [Obsolete("Use StreamIndex.")]
+        public SpeakerSource Source => _streamIndex == 1 ? SpeakerSource.Visuals : SpeakerSource.Artist;
 
         /// <summary>
         /// Initializes this screen from layout data. Safe to call after Awake/AddComponent.
-        /// stageIndex is the explicit target stage (ignored when nested under a Stage); source is
-        /// "Artist" or "Visuals" (which stream this screen displays).
+        /// stageIndex is the explicit target stage (ignored when nested under a Stage); source names the
+        /// stream this screen displays (see StageStreams).
         /// </summary>
         public void Configure(int stageIndex, string source)
         {
             _stageIndex = stageIndex;
             _screenSource = source;
-            _source = ParseSource(source);
+            _streamIndex = StageStreams.Parse(source);
             // Register only AFTER the authored values are set. The UWE LayoutLoader AddComponents this
             // marker (firing Awake) and THEN calls Configure one step later; registering in Awake would
             // make StageCoreConnector bind using the pre-Configure defaults (stageIndex 0 / Artist)
@@ -63,11 +64,12 @@ namespace VirtualVenues.WorldCreator
             AddScreen(this);
         }
 
-        private static SpeakerSource ParseSource(string source)
+#if UNITY_EDITOR
+        private void OnValidate()
         {
-            if (source == "Visuals") { return SpeakerSource.Visuals; }
-            return SpeakerSource.Artist;
+            if (_stage != null) { _stageIndex = _stage.StageIndex; }
         }
+#endif
 
         private void Awake()
         {
@@ -107,4 +109,13 @@ namespace VirtualVenues.WorldCreator
             _instances.Remove(this);
         }
     }
+
+#if UNITY_EDITOR
+    [UnityEditor.CustomEditor(typeof(Screen))]
+    [UnityEditor.CanEditMultipleObjects]
+    public class ScreenEditor : UnityEditor.Editor
+    {
+        public override void OnInspectorGUI() { StagePickerGUI.DrawInspector(serializedObject); }
+    }
+#endif
 }
