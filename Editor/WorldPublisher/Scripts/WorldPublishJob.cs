@@ -48,6 +48,7 @@ namespace WorldPublisher
         [Serializable]
         private class Job
         {
+            public string previousWorldId;
             public List<string> scenes = new List<string>(); // main scene first
             public string worldName;
             public bool upload;
@@ -102,7 +103,7 @@ namespace WorldPublisher
         /// upload:false builds both bundles and stops — no sign-in needed.
         /// thumbnailPath: optional JPEG (see <see cref="WorldThumbnail"/>) uploaded with the world; the job deletes it when done.
         /// </summary>
-        public static void Start(string mainScenePath, IList<string> additionalScenePaths, string worldName, bool upload = true, bool includeMobile = false, string thumbnailPath = null)
+        public static void Start(string mainScenePath, IList<string> additionalScenePaths, string worldName, bool upload = true, bool includeMobile = false, string thumbnailPath = null, string previousWorldId = null)
         {
             if (IsRunning || VirtualVenues.Editor.Publishing.PlatformPublisherProcess.IsRunning || (VirtualVenues.Editor.Publishing.PlatformPublisherProcess.ExternalBuildRunning?.Invoke() ?? false))
             { throw new InvalidOperationException("Wait for the current build or publishing operation to finish."); }
@@ -143,6 +144,7 @@ namespace WorldPublisher
 
             var job = new Job
             {
+                previousWorldId = previousWorldId,
                 scenes = scenes,
                 worldName = worldName,
                 upload = upload,
@@ -416,7 +418,7 @@ namespace WorldPublisher
 
                 var progress = new Progress<string>(message => Progress(0.6f + UploadProgress(message) * 0.4f, message));
                 World world = await WorldPublisherApi.UploadWorldAsync(
-                    Path.GetFileName(job.umsPath), Path.GetFileName(job.upcPath), umsData, upcData, job.worldName, progress, job.iosReleaseId, thumbnail, job.stages);
+                    Path.GetFileName(job.umsPath), Path.GetFileName(job.upcPath), umsData, upcData, job.worldName, progress, job.iosReleaseId, thumbnail, job.stages, job.previousWorldId);
 
                 Cleanup(job);
                 Succeed(job, world, "Publishing Complete!");

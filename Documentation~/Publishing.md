@@ -101,3 +101,19 @@ In **VirtualVenues > World Publisher**, check **Include mobile (iOS)** to publis
 For scripts, pass `includeMobile: true` to `WorldPublishJob.Start`; `upload: false` builds locally without signing in. The SDK prepares an isolated iOS worker, preserves the main scene and additional scenes, and validates the manifest and bundles before uploading. The publishing job then completes the ordinary Linux/WebGL flow and confirms one world record with the iOS release reference. Tools ship inside this package; the core app's Build Uploader is not required.
 
 This publishes native iOS world content. A compatible backend and native UPC are required; the native UPC must support the world manifest/additional scenes and match its runtime and Unity version. The publisher rejects a backend without mobile companion support. Publishing does not distribute the native application or change event assignments. Keep the normal unchecked workflow for desktop/server-only worlds.
+
+## Publish another version
+
+In World Publisher, **Publish as** defaults to **New world (version 1)**. Choose
+an existing world to publish its next numbered version. A same-name publish asks
+whether to release the next version or create a separate world; ambiguous matches
+must be selected explicitly. Numbering is assigned by the API, so a failed upload
+can leave a gap. Each version retains its own desktop/server/iOS URLs. Venues keep
+their selected release until a host chooses another version and applies it on VV.
+
+From code, pass `previousWorldId: "<published-world-id>"` to
+`WorldPublishJob.Start(...)`. It survives target-switch/domain reloads in the job.
+The updated API must be deployed first. Avatar Publisher already supports existing
+catalogs and version tags; Asset Pack Publisher's published-pack edit flow already
+increments the patch version. Use those flows to extend a release history rather
+than creating another unrelated asset with the same name.

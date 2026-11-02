@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using UnityEditor.UIElements;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using System.Linq;
@@ -32,6 +33,8 @@ public class WorldPublisherUI : EditorWindow
     private Label _authResult;
 
     private TextField _worldNameField;
+    private DropdownField _releaseTarget;
+    private World[] _releaseTargets = Array.Empty<World>();
     private Label _worldNameError;
     private VisualElement _worldListContainer;
     private Label _worldListEmptyLabel;
@@ -169,6 +172,10 @@ public class WorldPublisherUI : EditorWindow
         // World name input
         _worldNameField = root.Q<TextField>("world-name-field");
         _worldNameError = root.Q<Label>("world-name-error");
+        _releaseTarget = root.Q<DropdownField>("release-target-field");
+        _releaseTarget.choices = new List<string> { "New world (version 1)" };
+        _releaseTarget.index = 0;
+
 
         // World list
         _worldListContainer = root.Q<VisualElement>("world-list-container");
@@ -656,6 +663,13 @@ public class WorldPublisherUI : EditorWindow
         if (_worldListContainer == null) { return; }
 
         _worldListContainer.Clear();
+        if (_releaseTarget != null)
+        {
+            _releaseTargets = _worlds.Where(w => !w.isDefault && !w.isShared).GroupBy(w => w.userId + "#" + (string.IsNullOrEmpty(w.seriesId) ? w.worldId : w.seriesId)).Select(g => g.OrderByDescending(w => w.versionNumber).First()).OrderBy(w => w.worldName).ToArray();
+            _releaseTarget.choices = new List<string> { "New world (version 1)" };
+            _releaseTarget.choices.AddRange(_releaseTargets.Select(w => $"{w.worldName} · v{Math.Max(1, w.versionNumber)} · {w.worldId.Substring(0, Math.Min(8, w.worldId.Length))}"));
+            _releaseTarget.index = 0;
+        }
         if (_worldsTitle != null) { _worldsTitle.text = $"Published Worlds ({_worlds.Length})"; }
 
         if (_worlds.Length == 0)
@@ -718,7 +732,7 @@ public class WorldPublisherUI : EditorWindow
             var infoContainer = new VisualElement();
             infoContainer.AddToClassList("world-card-info");
 
-            var nameLabel = new Label(world.worldName ?? "Unnamed World");
+            var nameLabel = new Label($"{world.worldName ?? "Unnamed World"} · v{Math.Max(1, world.versionNumber)}");
             nameLabel.AddToClassList("world-name");
             infoContainer.Add(nameLabel);
 
@@ -887,6 +901,23 @@ public class WorldPublisherUI : EditorWindow
             return;
         }
 
+        if (_releaseTarget != null && _releaseTarget.index == 0)
+        {
+            var matches = _releaseTargets.Where(w => string.Equals(w.worldName, worldName, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (matches.Length == 1)
+            {
+                int choice = EditorUtility.DisplayDialogComplex("World already published",
+                    $"A world named \"{worldName}\" already exists. Publish its next version, or create a separate world? Existing venues keep their selected version.",
+                    "Next version", "Cancel", "Separate world");
+                if (choice == 1) { return; }
+                if (choice == 0) { _releaseTarget.index = Array.IndexOf(_releaseTargets, matches[0]) + 1; }
+            }
+            else if (matches.Length > 1)
+            {
+                ShowWorldNameError("Several worlds have this name. Choose the world under Publish as, or use a different name for a separate world.");
+                return;
+            }
+        }
         _publishWorldName = worldName;
         EditorPrefs.SetString(WORLD_NAME_KEY, worldName);
         ClearWorldNameError();
@@ -983,7 +1014,8 @@ public class WorldPublisherUI : EditorWindow
         try
         {
             WorldPublishJob.Start(paths[0], paths.Skip(1).ToList(), _publishWorldName, includeMobile: _includeMobile,
-                thumbnailPath: SaveThumbnailForPublish(paths[0]));
+                thumbnailPath: SaveThumbnailForPublish(paths[0]),
+                previousWorldId: _releaseTarget != null && _releaseTarget.index > 0 ? _releaseTargets[_releaseTarget.index - 1].worldId : null);
         }
         catch (Exception ex)
         {

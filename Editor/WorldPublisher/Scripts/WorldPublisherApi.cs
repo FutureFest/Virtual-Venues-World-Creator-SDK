@@ -11,6 +11,7 @@ namespace WorldPublisher
     [Serializable]
     public class UploadUrlsRequest
     {
+        public string previousWorldId;
         public string umsName;
         public string upcName;
         public string worldName;
@@ -25,6 +26,9 @@ namespace WorldPublisher
         public string uploadUrlUpc;
         public string uploadUrlThumbnail; // empty on backends without world thumbnails
         public bool mobileSupported;
+        public bool versioningSupported;
+        public string seriesId;
+        public int versionNumber;
     }
 
     [Serializable]
@@ -49,11 +53,14 @@ namespace WorldPublisher
     [Serializable]
     public class World
     {
+        public string seriesId;
+        public int versionNumber;
         public string worldId;
         public string worldName;
         public string userId;
         public string updatedAt;
         public bool isDefault;
+        public bool isShared;
         public string iosUrl;
         public string iosReleaseId;
         public string thumbnailUrl;
@@ -89,7 +96,7 @@ namespace WorldPublisher
         /// <summary>
         /// Request presigned S3 URLs for uploading UMS and UPC bundles
         /// </summary>
-        public static async Task<UploadUrlsResponse> GetUploadUrlsAsync(string umsName, string upcName, string worldName = null, string iosReleaseId = null)
+        public static async Task<UploadUrlsResponse> GetUploadUrlsAsync(string umsName, string upcName, string worldName = null, string iosReleaseId = null, string previousWorldId = null)
         {
             if (!IsTokenValid)
             {
@@ -98,6 +105,7 @@ namespace WorldPublisher
 
             var request = new UploadUrlsRequest
             {
+                previousWorldId = previousWorldId,
                 umsName = umsName,
                 upcName = upcName,
                 worldName = worldName,
@@ -306,7 +314,7 @@ namespace WorldPublisher
                     {
                         var response = JsonUtility.FromJson<WorldListResponse>(www.downloadHandler.text);
                         // Filter out default/system worlds - only show user's own worlds
-                        return response.worlds?.Where(w => !w.isDefault).ToArray() ?? Array.Empty<World>();
+                        return response.worlds?.Where(w => !w.isDefault && !w.isShared).ToArray() ?? Array.Empty<World>();
                     }
                     catch (Exception e)
                     {
@@ -324,12 +332,14 @@ namespace WorldPublisher
         /// Complete upload workflow: get URLs, upload both bundles and the optional JPEG thumbnail, confirm
         /// </summary>
         public static async Task<World> UploadWorldAsync(string umsName, string upcName, byte[] umsData, byte[] upcData,
-            string worldName = null, IProgress<string> progress = null, string iosReleaseId = null, byte[] thumbnailJpg = null, WorldStage[] stages = null)
+            string worldName = null, IProgress<string> progress = null, string iosReleaseId = null, byte[] thumbnailJpg = null, WorldStage[] stages = null, string previousWorldId = null)
         {
             try
             {
                 progress?.Report("Requesting upload URLs...");
-                var uploadUrls = await GetUploadUrlsAsync(umsName, upcName, worldName, iosReleaseId);
+                var uploadUrls = await GetUploadUrlsAsync(umsName, upcName, worldName, iosReleaseId, previousWorldId);
+                if (!string.IsNullOrEmpty(previousWorldId) && !uploadUrls.versioningSupported)
+                { throw new InvalidOperationException("This API does not support world versions yet. Update the API before publishing a new version."); }
                 if (!string.IsNullOrEmpty(iosReleaseId) && !uploadUrls.mobileSupported)
                 { throw new InvalidOperationException("This API has not enabled mobile world publishing yet."); }
 

@@ -205,6 +205,7 @@ ObjectField {
 }
 
 .field-row > .world-name-input,
+.field-row > .release-target-input,
 .field-row > ObjectField {
     flex-grow: 1;
     flex-shrink: 1;
@@ -457,4 +458,20 @@ Button {
 .mobile-checkbox {
     margin: 12px 0 0 90px;
     color: var(--vv-text);
+}
+
+/* Keep the release selector independent of the world-name row, including long
+   published world names in narrow editor windows. */
+.release-target-input .unity-base-popup-field__text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.release-help {
+    margin: 2px 0 8px 90px;
+    white-space: normal;
+    min-width: 0;
+    flex-shrink: 1;
+    font-size: 11px;
+    color: var(--vv-text-muted);
 }

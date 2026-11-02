@@ -2,6 +2,22 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.10.16] - 2026-11-02
+
+### Added
+- **World release versions**: choose an existing world under **Publish as** to publish
+  its next numbered release. Matching names prompt for a next version or a separate
+  world. Each release keeps its own world ID and desktop/server/iOS content links;
+  venues keep their selected release until a host applies another version.
+- The script publishing API accepts optional `previousWorldId`, retained across
+  build-target switches. Requires the matching backend versioning update; older
+  backends are rejected before the desktop/server bundle upload.
+
+### Fixed
+- **World Publisher layout**: World Name and Publish as use separate rows. Long
+  release names truncate within the dropdown, and the explanatory text wraps
+  below it instead of overflowing the window.
+
 ## [0.10.15] - 2026-10-26
 
 Needs the matching FutureFestXR player update for the new channel ids, Ambient Audio and Stage Streams. Ship UPC

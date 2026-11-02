@@ -32,6 +32,11 @@
                 </ui:VisualElement>
                 <ui:Label name="world-name-error" class="error-label" />
                 <ui:VisualElement class="field-row">
+                    <ui:Label text="Publish as:" class="field-row-label" />
+                    <ui:DropdownField name="release-target-field" class="release-target-input" />
+                </ui:VisualElement>
+                <ui:Label name="release-help" class="release-help" text="Choose an existing world to publish its next version. Venues keep their selected version until changed." />
+                <ui:VisualElement class="field-row">
                     <ui:Label text="Scene:" class="field-row-label" />
                     <uie:ObjectField name="scene-selector" type="UnityEditor.SceneAsset, UnityEditor" allow-scene-objects="false" />
                     <ui:Button name="use-active-scene-button" text="Use Active Scene" class="use-active-scene-button" />
