@@ -26,6 +26,22 @@ namespace VirtualVenues.Tests
             for (int i = 0; i < 12; i++) { Assert.That(StageStreams.Parse(StageStreams.Format(i)), Is.EqualTo(i)); }
         }
 
+        [Test] public void NewStagesTakeTheLowestFreeNumberAndClashesAreFound()
+        {
+            var a = new GameObject("A").AddComponent<Stage>();
+            var b = new GameObject("B").AddComponent<Stage>();
+            var c = new GameObject("C").AddComponent<Stage>();
+            try
+            {
+                a.Configure(0); b.Configure(2); c.Configure(2);
+                Assert.That(StagePickerGUI.LowestFreeIndex(a.gameObject.scene, null), Is.EqualTo(1));
+                Assert.That(StagePickerGUI.LowestFreeIndex(a.gameObject.scene, a), Is.EqualTo(0));
+                Assert.That(StagePickerGUI.OtherStageWithIndex(b), Is.EqualTo(c));
+                Assert.That(StagePickerGUI.OtherStageWithIndex(a), Is.Null);
+            }
+            finally { Object.DestroyImmediate(a.gameObject); Object.DestroyImmediate(b.gameObject); Object.DestroyImmediate(c.gameObject); }
+        }
+
         [Test] public void LayoutConfigureSetsStreamIndex()
         {
             GameObject go = new GameObject("StageStreamsTest", typeof(AudioSource));

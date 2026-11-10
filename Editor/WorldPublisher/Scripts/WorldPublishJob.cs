@@ -44,6 +44,8 @@ namespace WorldPublisher
         private const double RELOAD_TIMEOUT_SECONDS = 120;
         private const int STEP_UPLOADING = 6;
         private const int STEP_MOBILE = 7;
+        public const int KeptPublishFolders = 3;
+        private static string PublishRoot => Path.GetFullPath(Path.Combine("Builds", "WorldPublishing"));
 
         [Serializable]
         private class Job
@@ -236,7 +238,7 @@ namespace WorldPublisher
         private static void StartMobile(Job job)
         {
             string id = Guid.NewGuid().ToString();
-            string folder = Path.GetFullPath(Path.Combine("Builds", "WorldPublishing", id));
+            string folder = Path.Combine(PublishRoot, id);
             Directory.CreateDirectory(folder);
             string request = Path.Combine(folder, "world-request.json");
             File.WriteAllText(request, JsonUtility.ToJson(new MobileRequest {
@@ -467,6 +469,38 @@ namespace WorldPublisher
             };
             Debug.Log($"[WorldPublishJob] SUCCEEDED {status}");
             SetStatus(status);
+            // Each mobile publish leaves a folder (logs, release receipt); keep only the newest few.
+            // Callers catch exceptions as a failed publish, so a cleanup error must stay a warning.
+            try { PrunePublishFolders(PublishRoot, KeptPublishFolders, string.IsNullOrEmpty(job.mobileOutput) ? null : Path.GetDirectoryName(job.mobileOutput)); }
+            catch (Exception e) { Debug.LogWarning($"[WorldPublishJob] Could not clean old publish folders: {e.Message}"); }
+        }
+
+        /// <summary>
+        /// Deletes all but the <paramref name="keep"/> newest publish folders (GUID-named, by last write time) directly
+        /// under <paramref name="root"/>. Never deletes <paramref name="current"/>. A folder that cannot be fully deleted
+        /// logs a warning.
+        /// </summary>
+        public static void PrunePublishFolders(string root, int keep, string current = null)
+        {
+            if (!Directory.Exists(root)) { return; }
+            current = current == null ? null : Path.GetFullPath(current);
+            DirectoryInfo[] old = new DirectoryInfo(root).GetDirectories()
+                .Where(d => Guid.TryParseExact(d.Name, "D", out _))
+                .OrderByDescending(d => d.LastWriteTimeUtc)
+                .Skip(keep)
+                .Where(d => !string.Equals(d.FullName, current, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            try
+            {
+                foreach (DirectoryInfo dir in old)
+                {
+                    // Folders from before 0.10.14 hold a 30+ GB iOS worker and take a while.
+                    EditorUtility.DisplayProgressBar("World Publisher", "Deleting old publish folder " + dir.Name, 1f);
+                    try { dir.Delete(true); }
+                    catch (Exception e) { Debug.LogWarning($"[WorldPublishJob] Could not fully delete old publish folder {dir.FullName}: {e.Message}"); }
+                }
+            }
+            finally { if (old.Length > 0) { EditorUtility.ClearProgressBar(); } }
         }
 
         private static void Fail(string message)

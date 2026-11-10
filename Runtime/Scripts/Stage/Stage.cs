@@ -51,7 +51,13 @@ namespace VirtualVenues.WorldCreator
 
         public static Action<Stage> onStageAdded = null;
 
-
+#if UNITY_EDITOR
+        // A Stage added in the editor takes the lowest stage number no other Stage in its scene uses.
+        private void Reset()
+        {
+            _stageIndex = StagePickerGUI.LowestFreeIndex(gameObject.scene, this);
+        }
+#endif
 
         private void Start()
         {
@@ -188,34 +194,15 @@ namespace VirtualVenues.WorldCreator
             SerializedProperty indexProp = so.FindProperty("_stageIndex");
 
             EditorGUI.BeginChangeCheck();
-            EditorGUILayout.PropertyField(stageProp, new GUIContent("Stage", "Drag a Stage marker here, or pick one below."));
+            EditorGUILayout.PropertyField(stageProp, new GUIContent("Stage", "Drag a Stage marker here, or pick one with the circle button."));
             if (EditorGUI.EndChangeCheck() && stageProp.objectReferenceValue is Stage dragged)
             {
                 indexProp.intValue = dragged.StageIndex;
             }
 
-            List<Stage> stages = FindSceneStages(marker.gameObject.scene);
-            string[] labels = new string[stages.Count + 1];
-            labels[0] = "Pick a stage";
-            int current = 0;
-            for (int i = 0; i < stages.Count; i++)
-            {
-                labels[i + 1] = StageLabel(stages[i].StageIndex, stages[i].DisplayName);
-                if (stageProp.objectReferenceValue == stages[i]) { current = i + 1; }
-            }
-
-            EditorGUI.showMixedValue = stageProp.hasMultipleDifferentValues;
-            int picked = EditorGUILayout.Popup(" ", current, labels);
-            EditorGUI.showMixedValue = false;
-            if (picked != current && picked > 0)
-            {
-                stageProp.objectReferenceValue = stages[picked - 1];
-                indexProp.intValue = stages[picked - 1].StageIndex;
-            }
-
             if (stageProp.objectReferenceValue == null && !stageProp.hasMultipleDifferentValues)
             {
-                string hint = stages.Count == 0
+                string hint = FindSceneStages(marker.gameObject.scene).Count == 0
                     ? "Pick a stage. This scene has no Stage marker yet: add one with GameObject > VirtualVenues > New Stage."
                     : "Pick a stage. Without one, this won't show or play any stream.";
                 EditorGUILayout.HelpBox(hint, MessageType.Warning);
@@ -233,6 +220,60 @@ namespace VirtualVenues.WorldCreator
             }
             stages.Sort((a, b) => a.StageIndex.CompareTo(b.StageIndex));
             return stages;
+        }
+
+        /// <summary>The lowest stage number no other Stage in the scene uses (0, 1, 2... in creation order).</summary>
+        public static int LowestFreeIndex(UnityEngine.SceneManagement.Scene scene, Stage except)
+        {
+            HashSet<int> used = new HashSet<int>();
+            foreach (Stage stage in FindSceneStages(scene)) { if (stage != except) { used.Add(stage.StageIndex); } }
+            int index = 0;
+            while (used.Contains(index)) { index++; }
+            return index;
+        }
+
+        /// <summary>Another Stage in the same scene with this Stage's number, or null.</summary>
+        public static Stage OtherStageWithIndex(Stage stage)
+        {
+            foreach (Stage other in FindSceneStages(stage.gameObject.scene))
+            {
+                if (other != stage && other.StageIndex == stage.StageIndex) { return other; }
+            }
+            return null;
+        }
+    }
+
+    // A Stage dragged in, duplicated, pasted or spawned from the menu takes the next free number when its own
+    // number is already taken, so new stages come out 0, 1, 2... The creator can still change it afterwards.
+    [InitializeOnLoad]
+    internal static class StageAutoNumber
+    {
+        static StageAutoNumber()
+        {
+            ObjectChangeEvents.changesPublished += OnChangesPublished;
+        }
+
+        private static void OnChangesPublished(ref ObjectChangeEventStream stream)
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode) { return; } // runtime stages number themselves
+            for (int i = 0; i < stream.length; i++)
+            {
+                if (stream.GetEventType(i) != ObjectChangeKind.CreateGameObjectHierarchy) { continue; }
+                stream.GetCreateGameObjectHierarchyEvent(i, out CreateGameObjectHierarchyEventArgs created);
+#if UNITY_6000_3_OR_NEWER
+                GameObject root = EditorUtility.EntityIdToObject(created.entityId) as GameObject;
+#else
+                GameObject root = EditorUtility.InstanceIDToObject(created.instanceId) as GameObject;
+#endif
+                if (root == null) { continue; }
+                foreach (Stage stage in root.GetComponentsInChildren<Stage>(true))
+                {
+                    if (StagePickerGUI.OtherStageWithIndex(stage) == null) { continue; }
+                    SerializedObject so = new SerializedObject(stage);
+                    so.FindProperty("_stageIndex").intValue = StagePickerGUI.LowestFreeIndex(stage.gameObject.scene, stage);
+                    so.ApplyModifiedProperties();
+                }
+            }
         }
     }
 
@@ -258,23 +299,18 @@ namespace VirtualVenues.WorldCreator
             return true;
         }
 
-        // Signed in with a preview venue, the stage number is picked from the venue's named stages and the
-        // venue's streams for it are listed; otherwise the default fields show.
+        // The stage number is a plain field. A clash with another Stage is allowed but warned about; signed in
+        // with a preview venue, the venue's streams for this stage are listed underneath.
         public override void OnInspectorGUI()
         {
             serializedObject.Update();
             StagePickerGUI.DrawVenuePicker?.Invoke();
-            KeyValuePair<int, string>[] venueStages = StagePickerGUI.VenueStages?.Invoke();
             SerializedProperty it = serializedObject.GetIterator();
             for (bool enter = true; it.NextVisible(enter); enter = false)
             {
                 if (it.name == "m_Script") { continue; }
-                if (it.name == "_stageIndex" && venueStages != null && venueStages.Length > 0 && !it.hasMultipleDifferentValues)
-                {
-                    DrawVenueStageIndex(it, venueStages);
-                    continue;
-                }
                 EditorGUILayout.PropertyField(it, true);
+                if (it.name == "_stageIndex" && !it.hasMultipleDifferentValues) { DrawIndexClashWarning(); }
             }
             serializedObject.ApplyModifiedProperties();
 
@@ -287,29 +323,14 @@ namespace VirtualVenues.WorldCreator
             }
         }
 
-        private static void DrawVenueStageIndex(SerializedProperty indexProp, KeyValuePair<int, string>[] venueStages)
+        private void DrawIndexClashWarning()
         {
-            // The venue only knows the stages of its published world, so a new stage takes "Another number".
-            List<int> values = new List<int>();
-            List<GUIContent> labels = new List<GUIContent>();
-            int highest = -1;
-            foreach (KeyValuePair<int, string> stage in venueStages)
-            {
-                values.Add(stage.Key);
-                labels.Add(new GUIContent(string.IsNullOrEmpty(stage.Value) ? $"Stage {stage.Key}" : $"Stage {stage.Key} · {stage.Value}"));
-                highest = Mathf.Max(highest, stage.Key);
-            }
-            labels.Add(new GUIContent("Another number"));
-            int other = values.Count;
-            int current = values.IndexOf(indexProp.intValue);
-            if (current < 0) { current = other; }
-
-            int picked = EditorGUILayout.Popup(new GUIContent("Stage", indexProp.tooltip), current, labels.ToArray());
-            if (picked < other) { indexProp.intValue = values[picked]; return; }
-            if (current != other) { indexProp.intValue = highest + 1; }
-            EditorGUI.indentLevel++;
-            EditorGUILayout.PropertyField(indexProp, new GUIContent("Number"));
-            EditorGUI.indentLevel--;
+            Stage stage = (Stage)target;
+            Stage other = StagePickerGUI.OtherStageWithIndex(stage);
+            if (other == null) { return; }
+            int free = StagePickerGUI.LowestFreeIndex(stage.gameObject.scene, stage);
+            EditorGUILayout.HelpBox($"'{other.name}' already uses stage {stage.StageIndex}. Two stages with the same number share " +
+                $"one set of streams and lights. Stage {free} is free.", MessageType.Warning);
         }
 
         private void OnSceneGUI()

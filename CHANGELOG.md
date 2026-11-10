@@ -2,6 +2,19 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.10.17] - 2026-11-09
+
+### Changed
+- **Stage number is a plain field again**: a new `Stage` takes the next free number, and the inspector warns when
+  another Stage already has that number. `Screen`, `Speaker` and `Artist` pick their stage only through the Stage
+  slot (the extra stage dropdown is gone).
+
+### Fixed
+- **World Publisher keeps only the 3 newest publish folders**: after a successful publish it deletes the older
+  `Builds/WorldPublishing/<id>` folders (0.2-0.4 GB each, or 30+ GB for folders from before 0.10.14). Only
+  GUID-named folders are touched and the folder of the publish that just finished always stays. A folder that
+  cannot be fully deleted logs a warning and the publish still succeeds.
+
 ## [0.10.16] - 2026-11-02
 
 ### Added

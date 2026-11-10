@@ -120,5 +120,29 @@ namespace VirtualVenues.Tests
             Assert.That(prefixed, Is.EqualTo(address));
             Assert.That(existingId, Is.EqualTo(gameId));
         }
+        [Test] public void PublishFolderPruneKeepsNewestThreeAndCurrent()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "vv-prune-" + Guid.NewGuid());
+            try
+            {
+                string[] ids = Enumerable.Range(0, 6).Select(_ => Guid.NewGuid().ToString()).ToArray();
+                for (int i = 0; i < ids.Length; i++)
+                {
+                    string dir = Path.Combine(root, ids[i]);
+                    Directory.CreateDirectory(Path.Combine(dir, "mobile"));
+                    File.WriteAllText(Path.Combine(dir, "mobile", "world-result.json"), "{}");
+                    Directory.SetLastWriteTimeUtc(dir, DateTime.UtcNow.AddDays(i - 10)); // ids[5] is the newest
+                }
+                string other = Path.Combine(root, "not-a-publish");
+                Directory.CreateDirectory(other);
+                Directory.SetLastWriteTimeUtc(other, DateTime.UtcNow.AddDays(-30));
+
+                WorldPublisher.WorldPublishJob.PrunePublishFolders(root, 3, Path.Combine(root, ids[0]));
+
+                Assert.That(Directory.GetDirectories(root).Select(Path.GetFileName),
+                    Is.EquivalentTo(new[] { ids[0], ids[3], ids[4], ids[5], "not-a-publish" }));
+            }
+            finally { if (Directory.Exists(root)) { Directory.Delete(root, true); } }
+        }
     }
 }
