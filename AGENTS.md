@@ -14,5 +14,6 @@ Read in this order:
 4. `Documentation~/Rides.md` — spline tracks, roller coasters, support posts.
 5. `Documentation~/Paths.md` — pathways: a ground strip plus lamp posts, fences and plants laid out along a spline.
 5. `Documentation~/Paths.md` — pathways: ground strip + lamp posts, fences, plants laid out along a spline.
+6. `Documentation~/Water-and-Boats.md` — swim zones, swim floors, waves, boat wakes, jetski handling and FX: what a world can tune and what only the app can.
 
 The human-facing overview is `README.md`; publish requirements are in `REQUIREMENTS.md`.

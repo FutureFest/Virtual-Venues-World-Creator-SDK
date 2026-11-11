@@ -39,6 +39,7 @@ namespace VirtualVenues.WorldCreator
             boat._body.isKinematic = false;
             boat._body.useGravity = true;
             boat._body.interpolation = RigidbodyInterpolation.Interpolate;
+            BoatFloat.PassThroughSwimFloors(vehicle.transform);
             return boat;
         }
 

@@ -10,6 +10,9 @@ namespace VirtualVenues.WorldCreator
     /// SDK's <c>Runtime/Shaders/VVWaterWaves.hlsl</c>: this component hands the Renderer <c>_VVWaveA</c> and
     /// <c>_VVWaveB</c> every frame, and a water Renderer without it stays flat. Two sine swells: the main one along
     /// Direction, and a smaller, shorter one at an angle so the surface doesn't look combed.
+    /// <para><b>Wakes</b> (Play mode): boats on this water leave real ripples (<see cref="WaterWakeSim"/>). They bend
+    /// the surface and leave foam through the same shader file (<c>_VVWakeTex</c>), and other boats ride them.
+    /// The component finds the world's Boat <see cref="Vehicle"/>s by itself; nothing to wire.</para>
     /// </summary>
     [ExecuteAlways]
     [AddComponentMenu("VirtualVenues/Water Waves")]
@@ -21,6 +24,13 @@ namespace VirtualVenues.WorldCreator
         private const float MainShare = 0.35f;   // amplitude = share × height; the two shares add up to half the height
         private const float CrossShare = 0.15f;
         private const double TwoPi = Math.PI * 2.0;
+        private const float WakeStep = 0.04f;          // ripple simulation step, seconds
+        private const int WakeMaxSteps = 2;            // per frame: a long frame drops ripple time instead of stalling
+        private const float WakeFoamFade = 0.45f;      // per second
+        private const float WakeReach = 1.5f;          // a hull this far above/below the surface makes no wake, metres
+        private const float TeleportSpeed = 45f;       // m/s: faster than this is a respawn, not a boat
+        /// <summary>Hull push per unit of Wake Strength.</summary>
+        public const float WakeGain = 10f;             // tuned so Wake Strength 1 = about 0.2 m behind a jetski at 11 m/s
 
         [Tooltip("Crest to trough, metres. 0 = flat water.")]
         [Min(0f)] [SerializeField] private float _height = 0.4f;
@@ -30,16 +40,47 @@ namespace VirtualVenues.WorldCreator
         [Min(0f)] [SerializeField] private float _speed = 1.5f;
         [Tooltip("Compass direction the waves travel in, degrees: 0 = world +Z, 90 = world +X.")]
         [SerializeField] private float _direction = 45f;
+        [Header("Boat wakes")]
+        [Tooltip("Boats leave ripples that bend the water and rock other boats.")]
+        [SerializeField] private bool _wakes = true;
+        [Tooltip("How hard a hull pushes the water. 1 = a jetski at full speed raises about 0.2 m.")]
+        [Min(0f)] [SerializeField] private float _wakeStrength = 1f;
+        [Tooltip("How fast wake ripples spread, metres per second. Faster = a wider V behind the boat.")]
+        [Range(1f, 6f)] [SerializeField] private float _wakeSpeed = 3.5f;
+        [Tooltip("How quickly wake ripples die out. Higher = shorter wakes.")]
+        [Range(0.1f, 3f)] [SerializeField] private float _wakeFade = 0.5f;
+        [Tooltip("The tallest a wake ripple may get, metres.")]
+        [Range(0.05f, 1f)] [SerializeField] private float _wakeHeight = 0.3f;
 
         /// <summary>The wave clock, seconds. The app points it at the network clock, so every player sees the same crests.</summary>
         public static Func<double> Clock = () => Time.timeAsDouble;
 
         private static readonly int WaveA = Shader.PropertyToID("_VVWaveA");
         private static readonly int WaveB = Shader.PropertyToID("_VVWaveB");
+        private static readonly int WakeTex = Shader.PropertyToID("_VVWakeTex");
+        private static readonly int WakeRect = Shader.PropertyToID("_VVWakeRect");
+        private static readonly int WakeCell = Shader.PropertyToID("_VVWakeCell");
         private static readonly List<WaterWaves> _instances = new List<WaterWaves>();
 
         private Renderer _renderer = null;
         private MaterialPropertyBlock _block = null;
+        private WaterWakeSim _wake = null;
+        private Texture2D _wakeTexture = null;
+        private ushort[] _wakePixels = null;
+        private float _wakeTime = 0f;
+        private readonly Dictionary<Vehicle, WakeSource> _wakeSources = new Dictionary<Vehicle, WakeSource>();
+        private readonly List<Vehicle> _wakeGone = new List<Vehicle>();
+
+        private struct WakeSource
+        {
+            public Vector3 position;
+            public Vector3 velocity;
+            public float radius;
+            public int frame;
+        }
+
+        /// <summary>The wake simulation while playing, else null.</summary>
+        public WaterWakeSim Wake => _wake;
 
         public float Height => _height;
         public float Length => _length;
@@ -58,16 +99,23 @@ namespace VirtualVenues.WorldCreator
             if (!_instances.Contains(this)) { _instances.Add(this); }
             _renderer = GetComponent<Renderer>();
             if (_renderer == null) { Debug.LogWarning($"[WaterWaves] '{name}' has no Renderer. Put Water Waves on the water surface.", this); }
+            if (Application.isPlaying && _wakes && _renderer != null) { StartWakes(); }
             Push(Clock());
         }
 
         private void OnDisable()
         {
             _instances.Remove(this);
+            _wake = null;
+            _wakePixels = null;
+            _wakeSources.Clear();
+            if (_wakeTexture != null) { Destroy(_wakeTexture); _wakeTexture = null; }
             if (_renderer == null || _block == null) { return; }
             _renderer.GetPropertyBlock(_block);
             _block.SetVector(WaveA, Vector4.zero);
             _block.SetVector(WaveB, Vector4.zero);
+            _block.SetTexture(WakeTex, Texture2D.blackTexture);
+            _block.SetVector(WakeRect, Vector4.zero);
             _renderer.SetPropertyBlock(_block);
         }
 
@@ -76,9 +124,97 @@ namespace VirtualVenues.WorldCreator
             if (isActiveAndEnabled) { Push(Clock()); }
         }
 
+        private void Update()
+        {
+            if (_wake != null) { StepWakes(Time.deltaTime); }
+        }
+
         private void LateUpdate()
         {
+            if (_wake != null && _wakeTexture != null && _wake.WriteHalfs(_wakePixels))
+            {
+                _wakeTexture.SetPixelData(_wakePixels, 0);
+                _wakeTexture.Apply(false);
+            }
             Push(Clock());
+        }
+
+        private void StartWakes()
+        {
+            _wake = new WaterWakeSim(_renderer.bounds);
+            _wakeTime = 0f;
+            if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null) { return; } // dedicated server: physics only
+            _wakeTexture = new Texture2D(_wake.Width, _wake.Height, TextureFormat.RGHalf, false, true)
+            {
+                name = "VVWake", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear, hideFlags = HideFlags.HideAndDontSave
+            };
+            _wakePixels = new ushort[_wake.Width * _wake.Height * 2];
+            _wakeTexture.SetPixelData(_wakePixels, 0);
+            _wakeTexture.Apply(false);
+        }
+
+        // Every Boat Vehicle on this surface pushes the water, on every player's game: the hull's speed is read from
+        // how far it moved since the last frame, which also works for boats the network moves.
+        private void StepWakes(float deltaTime)
+        {
+            if (deltaTime <= 0f) { return; }
+            Bounds area = _renderer.bounds;
+            float surface = area.center.y;
+            int frame = Time.frameCount;
+            List<Vehicle> vehicles = Vehicle.Tracker.Instances;
+            for (int i = 0; i < vehicles.Count; i++)
+            {
+                Vehicle vehicle = vehicles[i];
+                if (vehicle == null || vehicle.VehicleType != VehicleType.Boat || !vehicle.isActiveAndEnabled) { continue; }
+                Vector3 position = vehicle.transform.position;
+                if (position.x < area.min.x || position.x > area.max.x || position.z < area.min.z || position.z > area.max.z) { continue; }
+
+                bool known = _wakeSources.TryGetValue(vehicle, out WakeSource source);
+                if (!known) { source.radius = HullRadius(vehicle); }
+                Vector3 velocity = known ? (position - source.position) / deltaTime : Vector3.zero;
+                if (velocity.sqrMagnitude > TeleportSpeed * TeleportSpeed)
+                {
+                    // A respawn or a network snap: no wake along the jump, and no foam streak from distance-emitting particles.
+                    velocity = Vector3.zero;
+                    foreach (ParticleSystem particles in vehicle.GetComponentsInChildren<ParticleSystem>()) { particles.Clear(false); }
+                }
+                bool afloat = Mathf.Abs(position.y - surface) < WakeReach;
+                source.velocity = afloat ? velocity : Vector3.zero;
+                source.position = position;
+                source.frame = frame;
+                _wakeSources[vehicle] = source;
+            }
+
+            _wakeTime += deltaTime;
+            int steps = Mathf.Min(WakeMaxSteps, Mathf.FloorToInt(_wakeTime / WakeStep));
+            if (steps == 0) { return; }
+            _wakeTime = steps == WakeMaxSteps ? 0f : _wakeTime - steps * WakeStep;
+
+            _wakeGone.Clear();
+            foreach (KeyValuePair<Vehicle, WakeSource> pair in _wakeSources)
+            {
+                if (pair.Key == null || pair.Value.frame != frame) { _wakeGone.Add(pair.Key); }
+            }
+            foreach (Vehicle gone in _wakeGone) { _wakeSources.Remove(gone); }
+
+            for (int s = steps - 1; s >= 0; s--)
+            {
+                foreach (KeyValuePair<Vehicle, WakeSource> pair in _wakeSources)
+                {
+                    WakeSource source = pair.Value;
+                    // Where the hull was at this step, not where it is now: an even trail instead of blobs on slow frames.
+                    Vector3 at = source.position - source.velocity * (s * WakeStep);
+                    _wake.Disturb(new Vector2(at.x, at.z), new Vector2(source.velocity.x, source.velocity.z), source.radius, _wakeStrength * WakeGain, WakeStep);
+                }
+                _wake.Step(WakeStep, _wakeSpeed, _wakeFade, WakeFoamFade, _wakeHeight);
+            }
+        }
+
+        // Half the hull's beam: the narrower side of its renderers' bounds.
+        private static float HullRadius(Vehicle vehicle)
+        {
+            Bounds hull = BoatFloat.HullBounds(vehicle.transform);
+            return Mathf.Clamp(0.5f * Mathf.Min(hull.size.x, hull.size.z), 0.4f, 3f);
         }
 
         private void Push(double time)
@@ -89,6 +225,20 @@ namespace VirtualVenues.WorldCreator
             _renderer.GetPropertyBlock(_block);
             _block.SetVector(WaveA, a);
             _block.SetVector(WaveB, b);
+            if (_wake != null && _wakeTexture != null)
+            {
+                Vector2 origin = _wake.Origin;
+                float cell = _wake.Cell;
+                _block.SetTexture(WakeTex, _wakeTexture);
+                _block.SetVector(WakeRect, new Vector4(origin.x - cell * 0.5f, origin.y - cell * 0.5f, 1f / (_wake.Width * cell), 1f / (_wake.Height * cell)));
+                _block.SetFloat(WakeCell, cell);
+            }
+            else
+            {
+                _block.SetTexture(WakeTex, Texture2D.blackTexture);
+                _block.SetVector(WakeRect, Vector4.zero);
+                _block.SetFloat(WakeCell, 1f);
+            }
             _renderer.SetPropertyBlock(_block);
         }
 
@@ -131,7 +281,13 @@ namespace VirtualVenues.WorldCreator
                 Bounds b = waves._renderer.bounds;
                 if (point.x < b.min.x || point.x > b.max.x || point.z < b.min.z || point.z > b.max.z) { continue; }
                 waves.GetWaves(Clock(), out Vector4 a, out Vector4 c);
-                return Evaluate(a, c, point.x, point.z, out normal);
+                float height = Evaluate(a, c, point.x, point.z, out normal);
+                if (waves._wake == null || !waves._wake.Awake) { return height; }
+                float wake = waves._wake.Sample(point.x, point.z, out Vector2 slope);
+                if (wake == 0f && slope == Vector2.zero) { return height; }
+                // normal = (-dh/dx, 1, -dh/dz) before normalizing: add the wake's slope to the swell's.
+                normal = new Vector3(normal.x / normal.y - slope.x, 1f, normal.z / normal.y - slope.y).normalized;
+                return height + wake;
             }
             normal = Vector3.up;
             return 0f;

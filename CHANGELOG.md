@@ -2,6 +2,36 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.10.18] - 2026-11-11
+
+Needs the matching FutureFestXR player update for boats in the app. Ship UPC and UMS together.
+
+### Added
+- **Boat wakes** (`WaterWaves` > Boat wakes, on by default): boats leave real ripples on a Water Waves surface.
+  The ripples bend the water, leave foam and rock and push other boats. A small ripple simulation runs on the CPU
+  (`WaterWakeSim`, the wave-equation approach Crest uses), so it works on web, iOS and the server, and it sleeps
+  when no boat moves. Nothing to wire: the component finds the world's Boat Vehicles, on every player's game. A
+  water shader that already includes `VVWaterWaves.hlsl` shows the ripples with no change; call `VVWakeFoam(xz)` to
+  draw the foam. Knobs: `_wakeStrength`, `_wakeSpeed` (wider V), `_wakeFade`, `_wakeHeight` (cap).
+
+- **`Documentation~/Water-and-Boats.md`**: one guide for creators and AI agents to the water and boat system: the
+  rules, every tunable field, the shader include, FX recipes, how to test, and what needs an app build.
+
+### Changed
+- **Boats handle like jet boats**: steering bites with the throttle (some from speed alone, little standing still),
+  a hard turn at speed breaks the hull into a drift and it grips again as the slide dies, and swells and wakes push
+  the hull down their slope. The water now damps spin by itself, so a boat with a default Rigidbody no longer spins
+  like a top (a Rigidbody Angular Damping of 2 or more behaves as before).
+
+### Fixed
+- **No foam streak on respawn**: when a Boat teleports (respawn, network snap) its particle systems are cleared
+  and no wake is drawn along the jump.
+- **Boats float through swim floors**: a solid floor on Unity's built-in **Water** layer (the floor swimmers stand
+  on) no longer holds a Boat `Vehicle` up. With the floor at the water line the boat used to rest on it and slide
+  like a sled: about half speed, no draft, no lean, no bow lift, hardly any steering. Boats now ignore Water-layer
+  colliders (`BoatFloat.PassThroughSwimFloors`), in the app and with the TestPlayer. Terrain, docks and anything
+  on another layer still stop them.
+
 ## [0.10.17] - 2026-11-09
 
 ### Changed

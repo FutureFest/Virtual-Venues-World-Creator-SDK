@@ -8,20 +8,32 @@ namespace VirtualVenues.WorldCreator
     /// TestPlayer both use it, so a boat handles the same in Play mode and in the live world.
     /// <para>The boat floats on the top of the <see cref="SwimZoneData"/> trigger volume it is in, raised and tilted by
     /// the <see cref="WaterWaves"/> over it (none = flat): lift = buoyancy × depth³ at the hull probe, a torque that
-    /// lines the boat up with the water's normal, and water drag. It drives by thrust a little below the centre of
-    /// mass plus a steering torque that leans it into the turn.</para>
+    /// lines the boat up with the water's normal, water drag, and a push down the water's slope, so swells and other
+    /// boats' wakes rock it and shove it sideways.</para>
+    /// <para>It drives like a jet boat: thrust a little below the centre of mass, and steering that bites with the
+    /// throttle (a little with speed alone, hardly any standing still). The hull grips sideways until it is pushed
+    /// into a slide, then lets go and drifts, and grips again as the slide dies.</para>
     /// </summary>
     public static class BoatFloat
     {
         /// <summary>How deep the hull bottom rides at rest, metres.</summary>
         public const float Draft = 0.15f;
+        /// <summary>Unity's built-in Water layer: where a swim floor goes (the solid floor swimmers stand on).</summary>
+        public const int SwimFloorLayer = 4;
         private const float ForceHeightOffset = -0.1f;
         private const float TurningHeel = 0.35f;
         private const float BrakeThrottle = -0.5f;
         private const float WetTolerance = 0.1f;    // keel this far above the water line still counts as touching it
         private const float MaxLift = 100f;
         private const float UprightTorque = 8f;
-        private const float AngularDrag = 0.2f;
+        private const float AngularDrag = 2f;         // spin damping from the water, per second (less what the Rigidbody already has)
+        private const float SlopePush = 0.3f;         // share of gravity that pushes the hull down a water slope
+        private const float SlideStart = 1.5f;        // sideways speed where the hull starts to let go, m/s
+        private const float SlideFull = 6f;           // sideways speed where it is fully sliding, m/s
+        private const float SlideGrip = 0.45f;        // share of the sideways drag left in a full slide
+        private const float IdleSteer = 0.2f;         // steering left with no throttle and no speed
+        private const float HullSteer = 0.6f;         // steering the moving hull gives with no throttle
+        private const float HullSteerSpeed = 6f;      // forward speed where the hull gives all of that, m/s
 
         /// <summary>What a <see cref="Step"/> found.</summary>
         public enum Water { InWater, OutOfWater, NoWaterInWorld }
@@ -62,9 +74,14 @@ namespace VirtualVenues.WorldCreator
 
             body.AddForce(Vector3.ClampMagnitude(buoyancy * depth * depth * depth * Vector3.up, MaxLift), ForceMode.Acceleration);
             body.AddTorque(Vector3.Cross(t.up, waterUp) * UprightTorque, ForceMode.Acceleration);
-            body.AddTorque(-AngularDrag * body.angularVelocity);
+            // Without this a boat spins like a top: the Rigidbody's own damping is 0.05 unless the creator raised it.
+            body.AddTorque(-Mathf.Max(0f, AngularDrag - body.angularDamping) * body.angularVelocity, ForceMode.Acceleration);
+            // Down the slope of a swell or a wake.
+            body.AddForce(-Physics.gravity.y * SlopePush * new Vector3(waterUp.x, 0f, waterUp.z), ForceMode.Acceleration);
             Vector3 v = body.linearVelocity;
-            body.AddForce(drag.x * Vector3.Dot(t.right, -v) * t.right
+            float side = Vector3.Dot(t.right, v);
+            float grip = Mathf.Lerp(1f, SlideGrip, Mathf.InverseLerp(SlideStart, SlideFull, Mathf.Abs(side)));
+            body.AddForce(-drag.x * grip * side * t.right
                 + drag.y * Vector3.Dot(Vector3.up, -v) * Vector3.up
                 + drag.z * Vector3.Dot(t.forward, -v) * t.forward, ForceMode.Acceleration);
 
@@ -73,13 +90,30 @@ namespace VirtualVenues.WorldCreator
             return keelDepth > -WetTolerance ? Water.InWater : Water.OutOfWater;
         }
 
+        /// <summary>
+        /// Lets a boat float through swim floors: its solid colliders stop touching the built-in Water layer. A swim
+        /// floor can sit right at the water line, and a boat resting on it slides like a sled: no draft, no lean, no
+        /// bow lift, hardly any steering. Everything else still stops the boat.
+        /// </summary>
+        public static void PassThroughSwimFloors(Transform boat)
+        {
+            foreach (Collider col in boat.GetComponentsInChildren<Collider>(true))
+            {
+                if (!col.isTrigger) { col.excludeLayers |= 1 << SwimFloorLayer; }
+            }
+        }
+
         /// <summary>Engine and steering for one step. Only while <see cref="Step"/> returns InWater. Brake wins over accelerate and reverses at half thrust.</summary>
         public static void Drive(Rigidbody body, bool accelerate, bool brake, float turn, float enginePower, float turnPower)
         {
             Transform t = body.transform;
             float throttle = brake ? BrakeThrottle : accelerate ? 1f : 0f;
             body.AddForceAtPosition(enginePower * throttle * t.forward, body.worldCenterOfMass + ForceHeightOffset * Vector3.up, ForceMode.Acceleration);
-            body.AddTorque(turnPower * turn * (t.up + TurningHeel * t.forward), ForceMode.Acceleration);
+            // A jet steers with its thrust; the moving hull adds some; standing still there is almost nothing to push on.
+            float forward = Mathf.Abs(Vector3.Dot(body.linearVelocity, t.forward));
+            float hull = HullSteer * Mathf.Clamp01(forward / HullSteerSpeed);
+            float steer = Mathf.Max(IdleSteer, Mathf.Max(Mathf.Abs(throttle), hull));
+            body.AddTorque(turnPower * steer * turn * (t.up + TurningHeel * t.forward), ForceMode.Acceleration);
         }
 
         /// <summary>
@@ -121,13 +155,18 @@ namespace VirtualVenues.WorldCreator
             return Mathf.Pow(-Physics.gravity.y / Mathf.Max(0.01f, buoyancy), 1f / 3f);
         }
 
-        /// <summary>World renderer bounds of the boat. No renderers = a 1×1×2 hull centred on the pivot.</summary>
+        /// <summary>World bounds of the boat's meshes. None = a 1×1×2 hull centred on the pivot.</summary>
         public static Bounds HullBounds(Transform root)
         {
+            // Meshes only: a spray or wake particle system trails far behind the hull.
             Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
-            if (renderers.Length == 0) { return new Bounds(root.position, new Vector3(1f, 1f, 2f)); }
-            Bounds world = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++) { world.Encapsulate(renderers[i].bounds); }
+            bool any = false;
+            Bounds world = new Bounds(root.position, new Vector3(1f, 1f, 2f));
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                if (!(renderers[i] is MeshRenderer) && !(renderers[i] is SkinnedMeshRenderer)) { continue; }
+                if (any) { world.Encapsulate(renderers[i].bounds); } else { world = renderers[i].bounds; any = true; }
+            }
             return world;
         }
     }

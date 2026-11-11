@@ -148,12 +148,25 @@ A zone = a GameObject with a trigger collider + `TriggerZone` (`_zoneName`) + on
 | `VoiceZoneData` | add to a **Trigger Zone** | `_conversationalDistance` 5, `_audibleDistance` 32 | no |
 | `AreaZoneData` | add to a **Trigger Zone** | `_areaId`, `_prompt`, `_targetRoomId` | no |
 
+Full guide to water, waves, wakes and boats: `Water-and-Boats.md`.
+
+**Swim floor:** a Swim Zone does not hold players up, so worlds add a solid floor under (or at) the water line. Put
+that floor on Unity's built-in **Water** layer: boats float through Water-layer colliders, so the floor can sit at
+the water line without stopping them. A floor on any other layer stops boats like the ground does.
+
 **Waves:** add `WaterWaves` (**VirtualVenues/Water Waves**) to the water surface's Renderer over a Swim Zone:
 `_height` (crest to trough, 0.4 m), `_length` 10 m, `_speed` 1.5 m/s, `_direction` 45° (0 = +Z, 90 = +X). Boats ride
 them in the app and the test player. The water shows them only if its shader includes
 `Runtime/Shaders/VVWaterWaves.hlsl` (Shader Graph Custom Function `VVWaterWaves`: world position in, height and
 world normal out; add the height to the vertex y) and the mesh has about one vertex every 2 m. A water Renderer
 without `WaterWaves` stays flat, so pools can share the lake's material.
+
+**Boat wakes** (same component, on by default, Play mode): boats leave ripples that bend the water, leave foam and
+rock other boats. Nothing to wire. A shader that calls `VVWaterWaves` shows the ripples already; add
+`VVWakeFoam(worldPos.xz)` (0..1) to its foam. `_wakeStrength` 1 = about 0.2 m behind a jetski at full speed,
+`_wakeSpeed` 3.5 m/s (higher = wider V), `_wakeFade` 0.5, `_wakeHeight` 0.3 m cap (lower it if decks sit close to
+the water). The grid is at most 256 cells a side over the Renderer's bounds, so one cell is the surface's longer
+side / 256 (0.5 m at least).
 
 ## Things that move
 
