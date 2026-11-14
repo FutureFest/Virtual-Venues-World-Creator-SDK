@@ -14,24 +14,31 @@ namespace VirtualVenues.WorldCreator
         public const string Master = "master";
         public const string Stream = "stream";
         public const string Voice = "voice";
-        public const string BackgroundMusic = "background-music";
-        public const string AmbientAudio = "ambient-audio";
+        public const string Music = "music";
+        public const string Ambience = "ambience";
         public const string SoundEffects = "sfx";
         public const string Interface = "ui";
 
+        [Obsolete("Renamed to AudioChannels.Music (id \"music\"). The old id still routes there.")]
+        public const string BackgroundMusic = Music;
+        [Obsolete("Renamed to AudioChannels.Ambience (id \"ambience\"). The old id still routes there.")]
+        public const string AmbientAudio = Ambience;
+
         /// <summary>All default channels, in display order.</summary>
         public static readonly string[] Defaults =
-            { Master, Stream, Voice, BackgroundMusic, AmbientAudio, SoundEffects, Interface };
+            { Master, Stream, Voice, Music, Ambience, SoundEffects, Interface };
 
         /// <summary>Default channels a world's AudioSources (and custom channels) may use.</summary>
-        public static readonly string[] Assignable = { BackgroundMusic, AmbientAudio, SoundEffects };
+        public static readonly string[] Assignable = { Music, Ambience, SoundEffects };
 
-        // Ids from SDK 0.10.13-0.10.14, still accepted on markers and custom-channel parents.
+        // Ids from older SDKs (0.10.13-0.10.19), still accepted on markers and custom-channel parents.
         private static readonly Dictionary<string, string> _oldIds = new Dictionary<string, string>
         {
             { "rides", SoundEffects },
-            { "ambient-music", BackgroundMusic },
-            { "ambient-environment", AmbientAudio },
+            { "ambient-music", Music },
+            { "background-music", Music },
+            { "ambient-environment", Ambience },
+            { "ambient-audio", Ambience },
         };
 
         /// <summary>The current id for an id from an older SDK; any other id comes back unchanged.</summary>
@@ -55,8 +62,8 @@ namespace VirtualVenues.WorldCreator
                 case Master: return "Master";
                 case Stream: return "Stream";
                 case Voice: return "Voice Chat";
-                case BackgroundMusic: return "Background Music";
-                case AmbientAudio: return "Ambient Audio";
+                case Music: return "Music";
+                case Ambience: return "Ambience";
                 case SoundEffects: return "Sound Effects";
                 case Interface: return "Interface";
                 default: return id;
@@ -66,17 +73,17 @@ namespace VirtualVenues.WorldCreator
 
     /// <summary>
     /// Marker: send every AudioSource on this GameObject and its children to one audio channel, so players
-    /// can turn it up or down on its own. Use a default channel (Background Music, Ambient Audio, Sound Effects)
-    /// or a custom one from the world's <see cref="AudioChannelSet"/>. A nearer AudioChannel wins.
-    /// Untagged sources: under an <see cref="AmbientAudio"/> = Ambient Audio, everything else = Sound Effects.
-    /// Background Music is only used through this marker. Stage Speakers always use Stream. Old ids still work:
-    /// rides = Sound Effects, ambient-music = Background Music, ambient-environment = Ambient Audio.
+    /// can turn it up or down on its own. Use a built-in channel (Music, Ambience, Sound Effects) or a custom
+    /// one from the world's <see cref="AudioChannelSet"/>. A nearer AudioChannel wins.
+    /// Untagged sources: under an <see cref="AmbientAudio"/> component = Ambience, everything else = Sound Effects.
+    /// Music is only used through this marker. Stage Speakers always use Stream. Old ids still work:
+    /// background-music / ambient-music = Music, ambient-audio / ambient-environment = Ambience, rides = Sound Effects.
     /// The VirtualVenues app does the routing when the world loads; nothing changes at edit time.
     /// </summary>
     [AddComponentMenu("VirtualVenues/Audio Channel")]
     public class AudioChannel : MonoBehaviour
     {
-        [Tooltip("Channel id: background-music, ambient-audio, sfx, or a custom id from the Audio Channel Set.")]
+        [Tooltip("Channel id: music, ambience, sfx, or a custom id from the world's Audio Channel Set.")]
         [SerializeField] private string _channel = AudioChannels.SoundEffects;
 
         public string Channel => _channel;

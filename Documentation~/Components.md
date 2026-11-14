@@ -14,8 +14,8 @@ does nothing in your project except what the SDK test player simulates (column *
 Only scripts from this SDK and from Unity packages survive into the app. Any other script on a world object
 arrives as a missing script. New SDK components also need a matching app build — check `CHANGELOG.md`.
 
-Lighting, sky and fog come from the main scene's own Lighting settings. The one world-settings component is
-`WorldControlSettings` (below).
+Lighting, sky and fog come from the main scene's own Lighting settings. The world-settings components are
+`WorldControlSettings` and `WorldWind` (below).
 
 ## Stage, screens, sound, lights
 
@@ -29,19 +29,25 @@ Lighting, sky and fog come from the main scene's own Lighting settings. The one 
 | `Fixture` | **Fixtures/Moving Head Fixture**; PAR and Strobe via the Stage's "+" scene gizmo; prefabs `Moving Head Fixture`, `PAR Fixture`, `Strobe Fixture` | `_stage`, `_type` PAR/MovingHead/Strobe, `_mirrorPanRotation` | under a Stage | marker (DMX) | no |
 | `RoomBoundary` | add component | `stageIndex`, `volume` Collider, `privacyBarrier` GameObject | a trigger volume | self-contained | no listener offline |
 | `AmbientAudio` | add component (**Ambient Audio**) | AudioSource min/max distance | `AudioSource` | self-contained | silent offline |
-| `AudioChannel` | add component | `_channel` id: `background-music`, `ambient-audio`, `sfx` or a custom id | `AudioSource` here or below | marker | no (app mixer) |
-| `AudioChannelSet` | add component, one per world | `_channels`: id, display name, parent (one of the three above), default volume; max 8 | — | marker | no |
+| `AudioChannel` | add component | `_channel` id: `music`, `ambience`, `sfx` or a custom id | `AudioSource` here or below | marker | no (app mixer) |
+| `AudioChannelSet` | add component, one per world (or the **Add Audio Channel Set** button on an `AudioChannel`) | `_channels`: id, display name, parent (Music, Ambience or Sound Effects), default volume; max 8 | — | marker | no |
 
 `RoomAmbientAudio` is the old name of `AmbientAudio`: it still works in published worlds but is hidden from Add
 Component. Use `AmbientAudio` in new worlds.
 
-**Audio channels.** Players set a volume per channel in the app. Every world has Master, Stream, Voice Chat,
-Background Music, Ambient Audio, Sound Effects and Interface. Untagged AudioSources go to Ambient Audio (under an
-`AmbientAudio`) or Sound Effects (everything else, rides and vehicles too); `Speaker` sources always follow Stream.
-Background Music has no automatic rule: tag music with an `AudioChannel` set to `background-music`. Add your own
-channels with `AudioChannelSet`. The app only sets each source's mixer group; your volume, pitch and mute stay yours.
-Old ids from SDK 0.10.13–0.10.14 still work: `rides` = `sfx`, `ambient-music` = `background-music`,
-`ambient-environment` = `ambient-audio`.
+**Audio channels.** Players set a volume per channel in the app's audio mixer. Every world has the built-in
+channels Master, Stream, Voice Chat, Music (`music`), Ambience (`ambience`), Sound Effects (`sfx`) and Interface
+(`ui`); a world does not have to use any of them, and Music and Ambience only show in the players' mixer when
+the world sends sound to them (or has a custom channel under them). Untagged AudioSources go to Ambience (under
+an `AmbientAudio`) or Sound Effects (everything else, rides and vehicles too); `Speaker` sources always follow
+Stream. Music has no automatic rule: tag music with an `AudioChannel` set to `music`.
+
+**Custom channels.** Add an `AudioChannelSet` (one per world) and list up to 8 channels: an id (lowercase, e.g.
+`coaster-screams`), the name players see, a parent (Music, Ambience or Sound Effects) and a start volume. Each one
+is its own slider in the players' mixer, shown under its parent; the parent's slider turns it down too. Then pick
+the channel on an `AudioChannel`. The app only sets each source's mixer group; your volume, pitch and mute stay yours.
+Old ids still work on markers and custom-channel parents: `background-music` and `ambient-music` = `music`,
+`ambient-audio` and `ambient-environment` = `ambience`, `rides` = `sfx`. They can't be custom channel ids.
 
 Stage parts find their stage index from a parent `Stage` first, then their own `_stageIndex`. Visuals screens
 show black until the app's visuals stream is live. Shader `Custom/UnlitChromaKeyURP` keys out the artist video.
@@ -58,6 +64,27 @@ the cursor, always face the camera, sideways keys strafe, Ctrl frees the cursor)
 right-drag turns the character, both buttons run). The active style is `ControlStyles.Active`: the player's pick
 (when the world allows it) > the world's default > Classic. Styles are data only, so a custom one ships inside
 your world. Venue launch settings for zoom (`-zoomMax`, `-defaultZoomEval`) override a style's zoom.
+
+## World wind
+
+| Component | Add it | Key fields | Kind | Test player |
+|---|---|---|---|---|
+| `WorldWind` | **Add Component > VirtualVenues > World Wind** (one per world; adds a **Wind Zone**) | none of its own. On the Wind Zone: the object's rotation (the arrow = where the wind blows), **Main** = power (1 normal, 0 none, 2 double), **Turbulence**, **Pulse Magnitude**, **Pulse Frequency** | self-contained | yes (Editor too) |
+
+- Every frame, in the Editor too, it sets two shader globals: `_VVWind` = (direction x, direction z, power, 1) and
+  `_VVWindGust` = (turbulence, pulse magnitude, pulse frequency, 0). Direction = where the wind blows TO, world
+  x / z, length 1; only the heading counts (a tilted arrow blows level). Off or gone: both all 0, and
+  `_VVWind.w` = 0 means "no World Wind, use your own defaults". Two on at once: the last one turned on is used.
+- Shaders: `#include "Packages/com.virtualvenues.sdk/Runtime/Shaders/VVWind.hlsl"`, then `VVHasWind()`,
+  `VVWindDirection(fallback)`, `VVWindPower(fallback)` and `VVWindGust()`. Shader Graph: Custom Function, File
+  mode, this file, name `VVWind` (fallback direction and power in; direction, power, gust and has-wind out). They
+  are plain globals, not material properties, so the SRP Batcher is not touched: don't put them in
+  `UnityPerMaterial`, and don't declare them yourself in a shader that includes the file.
+- The Wind Zone on its own also pushes Particle Systems with **External Forces** on, and Unity terrain grass and
+  trees. Other shaders move only if they read `_VVWind`.
+- From code: `WorldWind.Active`, `.Direction`, `.Power`, `.Zone`. It has no `Configure`: set
+  `wind.Zone.windMain` (and the other Wind Zone values) and the object's rotation, then `SetDirty` and save.
+- App: the script ships with the SDK in the app, so worlds show it only after a UPC build with this SDK.
 
 ## Spawning
 

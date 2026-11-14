@@ -35,6 +35,12 @@ public class WorldPublisherUI : EditorWindow
     private TextField _worldNameField;
     private DropdownField _releaseTarget;
     private World[] _releaseTargets = Array.Empty<World>();
+    // Publish as survives world-list refreshes and domain reloads (publishing switches platforms). Pinned = the creator
+    // picked it or just published it; an empty id then means "New world". Unpinned = follow the World Name.
+    [SerializeField] private bool _releaseTargetPinned;
+    [SerializeField] private string _releaseTargetWorldId = string.Empty;
+    private bool _settingReleaseTarget; // programmatic selection must not count as the creator's pick
+    private bool _worldsLoaded; // until the list loads, Publish as can't know the next version, so publishing waits
     private Label _worldNameError;
     private VisualElement _worldListContainer;
     private Label _worldListEmptyLabel;
@@ -210,6 +216,20 @@ public class WorldPublisherUI : EditorWindow
     private void SetupEventHandlers()
     {
         _mobileCheckbox.RegisterValueChangedCallback(evt => _includeMobile = evt.newValue);
+        _releaseTarget.RegisterValueChangedCallback(evt =>
+        {
+            if (_settingReleaseTarget) { return; }
+            int i = _releaseTarget.index;
+            _releaseTargetPinned = true;
+            _releaseTargetWorldId = i > 0 && i <= _releaseTargets.Length ? _releaseTargets[i - 1].worldId : string.Empty;
+        });
+        // Editing the name hands Publish as back to the name match; picking a target afterwards pins it again.
+        _worldNameField.RegisterValueChangedCallback(evt =>
+        {
+            _releaseTargetPinned = false;
+            _releaseTargetWorldId = string.Empty;
+            ApplyReleaseTarget();
+        });
         _authButton.clicked += OnAuthButtonClicked;
         _verificationUrlButton.clicked += () => Application.OpenURL(_verificationUrlButton.text);
         _copyCodeButton.clicked += () => EditorGUIUtility.systemCopyBuffer = _userCodeField.value;
@@ -286,7 +306,7 @@ public class WorldPublisherUI : EditorWindow
         // Load saved world name
         if (_worldNameField != null)
         {
-            _worldNameField.value = EditorPrefs.GetString(WORLD_NAME_KEY, "");
+            _worldNameField.SetValueWithoutNotify(EditorPrefs.GetString(WORLD_NAME_KEY, ""));
         }
 
         // CheckAuth drives the world-list refresh (sync fast path + background), so no separate refresh here.
@@ -467,6 +487,7 @@ public class WorldPublisherUI : EditorWindow
         _credentials = null;
         _userInfo = null;
         _worlds = Array.Empty<World>();
+        _worldsLoaded = false;
         WorldPublisherApi.ClearToken();
         UpdateAuthUI(false);
         Debug.Log($"[Auth][WorldPublisher] CheckAuth done — not logged in, {sw.ElapsedMilliseconds}ms");
@@ -507,6 +528,7 @@ public class WorldPublisherUI : EditorWindow
                 _credentials = null;
                 _userInfo = null;
                 _worlds = Array.Empty<World>();
+                _worldsLoaded = false;
                 WorldPublisherApi.ClearToken();
                 UpdateAuthUI(false);
             }
@@ -558,6 +580,7 @@ public class WorldPublisherUI : EditorWindow
             AuthManager.Instance.Credentials.ClearCredentials();
             WorldPublisherApi.ClearToken();
             _worlds = Array.Empty<World>();
+            _worldsLoaded = false;
             ShowAuthResult("");
             AuthManager.NotifyAuthStateChanged(); // event drives CheckAuth in every window (incl. this one)
         }
@@ -647,6 +670,7 @@ public class WorldPublisherUI : EditorWindow
         try
         {
             _worlds = await WorldPublisherApi.GetAllWorldsAsync() ?? Array.Empty<World>();
+            _worldsLoaded = true;
             Debug.Log($"[Auth][WorldPublisher] RefreshWorldList complete — {sw.ElapsedMilliseconds}ms, count={_worlds.Length}");
             UpdateWorldListUI();
         }
@@ -654,6 +678,7 @@ public class WorldPublisherUI : EditorWindow
         {
             Debug.LogError($"[Auth][WorldPublisher] RefreshWorldList failed — {sw.ElapsedMilliseconds}ms: {ex.Message}");
             _worlds = Array.Empty<World>();
+            _worldsLoaded = false;
             UpdateWorldListUI();
         }
     }
@@ -665,10 +690,16 @@ public class WorldPublisherUI : EditorWindow
         _worldListContainer.Clear();
         if (_releaseTarget != null)
         {
-            _releaseTargets = _worlds.Where(w => !w.isDefault && !w.isShared).GroupBy(w => w.userId + "#" + (string.IsNullOrEmpty(w.seriesId) ? w.worldId : w.seriesId)).Select(g => g.OrderByDescending(w => w.versionNumber).First()).OrderBy(w => w.worldName).ToArray();
-            _releaseTarget.choices = new List<string> { "New world (version 1)" };
-            _releaseTarget.choices.AddRange(_releaseTargets.Select(w => $"{w.worldName} · v{Math.Max(1, w.versionNumber)} · {w.worldId.Substring(0, Math.Min(8, w.worldId.Length))}"));
-            _releaseTarget.index = 0;
+            // One row per series (its latest version); each row names the version a publish will create.
+            _releaseTargets = _worlds.Where(w => !w.isDefault && !w.isShared).GroupBy(SeriesKey).Select(g => g.OrderByDescending(w => w.versionNumber).First()).OrderBy(w => w.worldName).ToArray();
+            _settingReleaseTarget = true;
+            try
+            {
+                _releaseTarget.choices = new List<string> { "New world (version 1)" };
+                _releaseTarget.choices.AddRange(_releaseTargets.Select(w => $"{w.worldName} (version {NextVersion(w)}) · {w.worldId.Substring(0, Math.Min(8, w.worldId.Length))}"));
+            }
+            finally { _settingReleaseTarget = false; }
+            ApplyReleaseTarget();
         }
         if (_worldsTitle != null) { _worldsTitle.text = $"Published Worlds ({_worlds.Length})"; }
 
@@ -688,6 +719,40 @@ public class WorldPublisherUI : EditorWindow
             var card = CreateWorldCard(world);
             _worldListContainer.Add(card);
         }
+    }
+
+    private static string SeriesKey(World w) => w.userId + "#" + (string.IsNullOrEmpty(w.seriesId) ? w.worldId : w.seriesId);
+
+    private static int NextVersion(World latest) => Math.Max(1, latest.versionNumber) + 1;
+
+    // Default Publish as: the pinned world's series (picked, or just published), else the one world whose name
+    // matches World Name, else a new world. Matching by name is what stops a reload from creating a duplicate world.
+    private void ApplyReleaseTarget()
+    {
+        if (_releaseTarget == null) { return; }
+        int index = _releaseTargetPinned ? ReleaseTargetIndexOf(_releaseTargetWorldId) : -1;
+        if (index < 0)
+        {
+            string name = _worldNameField?.value?.Trim();
+            World[] matches = string.IsNullOrEmpty(name) ? Array.Empty<World>()
+                : _releaseTargets.Where(w => string.Equals(w.worldName, name, StringComparison.OrdinalIgnoreCase)).ToArray();
+            index = matches.Length == 1 ? Array.IndexOf(_releaseTargets, matches[0]) + 1 : 0;
+        }
+        _settingReleaseTarget = true;
+        try { _releaseTarget.index = index; }
+        finally { _settingReleaseTarget = false; }
+    }
+
+    // 0 = new world, -1 = that world isn't in the list (deleted, or not loaded yet), else 1 + its series' row.
+    // Matches any version of the series, so a pin on v2 still finds the series after v3 is published.
+    private int ReleaseTargetIndexOf(string worldId)
+    {
+        if (string.IsNullOrEmpty(worldId)) { return 0; }
+        World world = _worlds.FirstOrDefault(w => w.worldId == worldId);
+        if (world == null) { return -1; }
+        string key = SeriesKey(world);
+        int row = Array.FindIndex(_releaseTargets, t => SeriesKey(t) == key);
+        return row < 0 ? -1 : row + 1;
     }
 
     private VisualElement CreateWorldCard(World world)
@@ -901,6 +966,27 @@ public class WorldPublisherUI : EditorWindow
             return;
         }
 
+        if (!_worldsLoaded)
+        {
+            EditorUtility.DisplayDialog("Worlds still loading",
+                "Your published worlds haven't loaded yet, so Publish as can't pick the next version. Try again in a moment.", "OK");
+            RefreshWorldList();
+            return;
+        }
+
+        if (_releaseTarget != null && _releaseTarget.index > 0)
+        {
+            World target = _releaseTargets[_releaseTarget.index - 1];
+            if (!string.Equals(target.worldName, worldName, StringComparison.Ordinal))
+            {
+                int choice = EditorUtility.DisplayDialogComplex("Rename world?",
+                    $"Version {NextVersion(target)} of \"{target.worldName}\" will be named \"{worldName}\". Existing venues keep their selected version.",
+                    "Publish and rename", "Cancel", "Separate world");
+                if (choice == 1) { return; }
+                if (choice == 2) { _releaseTarget.index = 0; }
+            }
+        }
+
         if (_releaseTarget != null && _releaseTarget.index == 0)
         {
             var matches = _releaseTargets.Where(w => string.Equals(w.worldName, worldName, StringComparison.OrdinalIgnoreCase)).ToArray();
@@ -1039,6 +1125,12 @@ public class WorldPublisherUI : EditorWindow
         if (status.state == WorldPublishState.Succeeded)
         {
             _lastPublishedWorldId = status.worldId;
+            // The next publish from this window defaults to this world's next version.
+            if (!string.IsNullOrEmpty(status.worldId))
+            {
+                _releaseTargetPinned = true;
+                _releaseTargetWorldId = status.worldId;
+            }
             EditorApplication.delayCall += () =>
             {
                 RefreshWorldList();

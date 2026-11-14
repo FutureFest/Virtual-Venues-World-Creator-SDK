@@ -2,7 +2,33 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
-## [Unreleased]
+## [0.10.20] - 2026-11-14
+
+Needs the matching FutureFestXR player update (UPC and UMS) for the new channel ids. Ship UPC and UMS together.
+
+### Added
+- **World Wind** (`WorldWind`, **Add Component > VirtualVenues > World Wind**): one wind per world, set by the
+  creator in the Inspector. It sits on Unity's own **Wind Zone** (added with it): turn the object to aim the wind
+  (the Wind Zone's arrow), and **Main** is the power (1 = normal, 0 = none, 2 = double). It hands the wind to every
+  shader as two globals, every frame and in the Editor too: `_VVWind` = (direction x, direction z, power, 1) and
+  `_VVWindGust` = (turbulence, pulse magnitude, pulse frequency, 0). Direction is where the wind blows to, world
+  x / z, length 1. With no World Wind on, both are 0 and shaders keep their own defaults. Shaders include
+  `Runtime/Shaders/VVWind.hlsl` for `VVHasWind()`, `VVWindDirection(fallback)`, `VVWindPower(fallback)`,
+  `VVWindGust()` and the Shader Graph function `VVWind`. The Wind Zone still pushes particles with External Forces
+  and terrain grass by itself. The app shows it after a UPC build with this SDK.
+
+### Changed
+- **Audio channels follow the game-audio pillars**: Background Music is now **Music** (`music`) and Ambient Audio
+  is now **Ambience** (`ambience`); constants `AudioChannels.Music` and `AudioChannels.Ambience`
+  (`BackgroundMusic` and `AmbientAudio` stay as obsolete aliases). Old ids keep working on markers and
+  custom-channel parents, with no warning: `background-music` / `ambient-music` = `music`, `ambient-audio` /
+  `ambient-environment` = `ambience`. The app's mixer groups are unchanged.
+- **Unused Music and Ambience sliders are hidden**: the app leaves Music and Ambience out of the players' audio
+  mixer while the loaded world sends no sound to them and has no custom channel under them. Their volume is kept.
+- **Custom channels are easier to find**: an `AudioChannel` with no Audio Channel Set in the scene offers an
+  **Add Audio Channel Set** button (or **Edit custom channels** when there is one), its dropdown shows each custom
+  channel's display name, and a custom channel's parent is a dropdown of Music, Ambience and Sound Effects
+  instead of free text.
 
 ## [0.10.19] - 2026-11-13
 

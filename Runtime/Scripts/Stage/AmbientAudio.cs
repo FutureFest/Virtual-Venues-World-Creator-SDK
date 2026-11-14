@@ -5,7 +5,7 @@ namespace VirtualVenues.WorldCreator
     /// <summary>
     /// Ambient sound for an area. It fades out with the player's distance (the AudioSource's min/max distance)
     /// and goes quiet while the player is inside a <see cref="RoomBoundary"/> room. The app sends it to the
-    /// Ambient Audio channel. Silent in the editor: it waits for the app to report the player's position.
+    /// Ambience channel. Silent in the editor: it waits for the app to report the player's position.
     /// </summary>
     [AddComponentMenu("VirtualVenues/Ambient Audio")]
     [RequireComponent(typeof(AudioSource))]

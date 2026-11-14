@@ -11,15 +11,15 @@ namespace VirtualVenues.WorldCreator
         public string id = "";
         [Tooltip("Name players see in the volume panel.")]
         public string displayName = "";
-        [Tooltip("Default channel it sits under. The parent's volume also turns this one down.")]
+        [Tooltip("Built-in channel it sits under (music, ambience or sfx). The parent's volume also turns this one down.")]
         public string parent = AudioChannels.SoundEffects;
         [Range(0f, 1f)] public float defaultVolume = 1f;
     }
 
     /// <summary>
-    /// The world's own audio channels, on top of the defaults every world has. One per world.
-    /// Each custom channel shows in the players' volume panel under its parent. At most
-    /// <see cref="AudioChannels.MaxCustom"/>; the app ignores any past that.
+    /// The world's own audio channels, on top of the built-in ones every world has (a world does not have to
+    /// use any built-in one). One per world. Each custom channel shows as its own slider in the players' audio
+    /// mixer, under its parent. At most <see cref="AudioChannels.MaxCustom"/>; the app ignores any past that.
     /// </summary>
     [AddComponentMenu("VirtualVenues/Audio Channel Set")]
     [DisallowMultipleComponent]
