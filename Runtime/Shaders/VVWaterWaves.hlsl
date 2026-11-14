@@ -1,6 +1,8 @@
 // VirtualVenues Water Waves: the waves boats ride (WaterWaves.cs). Include it in a water shader so the surface
 // shows the same waves:  #include "Packages/com.virtualvenues.sdk/Runtime/Shaders/VVWaterWaves.hlsl"
 // The Renderer's WaterWaves component sets these every frame; a Renderer without one gets zeros = flat water.
+// That holds for the vectors and floats only: an unset TEXTURE is not black (it is whatever the engine binds), so the
+// wake texture is never sampled unless WaterWaves handed this Renderer one (_VVWakeRect.z > 0).
 // Keep VVWaterWaves() identical to WaterWaves.Evaluate, or boats bob out of step with the water.
 #ifndef VV_WATER_WAVES
 #define VV_WATER_WAVES
@@ -16,6 +18,7 @@ float _VVWakeCell;  // metres per texel
 
 float2 VVWakeSample(float2 xz)
 {
+    if (_VVWakeRect.z <= 0.0) { return 0.0; } // no wake on this Renderer (no WaterWaves, wakes off, or not playing)
     return _VVWakeTex.SampleLevel(vv_linear_clamp_sampler, (xz - _VVWakeRect.xy) * _VVWakeRect.zw, 0).rg;
 }
 
@@ -33,7 +36,8 @@ void VVWaterWaves(float2 xz, out float height, out float2 slope)
     height = _VVWaveA.z * sin(pa) + _VVWaveB.z * sin(pb);
     slope = _VVWaveA.z * cos(pa) * _VVWaveA.xy + _VVWaveB.z * cos(pb) * _VVWaveB.xy;
 
-    float c = _VVWakeCell;
+    if (_VVWakeRect.z <= 0.0) { return; }
+    float c = max(_VVWakeCell, 0.001);
     height += VVWakeSample(xz).r;
     slope += float2(VVWakeSample(xz + float2(c, 0)).r - VVWakeSample(xz - float2(c, 0)).r,
                     VVWakeSample(xz + float2(0, c)).r - VVWakeSample(xz - float2(0, c)).r) / (2.0 * c);

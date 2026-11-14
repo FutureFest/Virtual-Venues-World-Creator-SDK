@@ -2,6 +2,16 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [Unreleased]
+
+## [0.10.19] - 2026-11-13
+
+### Fixed
+- **Water without Water Waves broke with 0.10.18**: a water shader that includes `VVWaterWaves.hlsl` and is also
+  used on Renderers with no `WaterWaves` (pools next to a lake) read the wake texture there, where nothing sets
+  it. An unset texture is not black, so those surfaces were thrown out of place and turned white or black. The
+  wake texture is now only read on a Renderer that `WaterWaves` gave one to.
+
 ## [0.10.18] - 2026-11-11
 
 Needs the matching FutureFestXR player update for boats in the app. Ship UPC and UMS together.

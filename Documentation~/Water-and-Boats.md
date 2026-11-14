@@ -85,6 +85,9 @@ float foam = VVWakeFoam(positionWS.xz);       // 0..1, left behind by boats
   normal out).
 - The mesh needs vertices to bend: about one every 2 m. A Unity Plane scaled to a lake has 20 m cells and stays
   flat. Pad the mesh bounds by the wave height so it is not culled early.
+- One material can serve surfaces with and without `WaterWaves`: on a Renderer without it, `VVWaterWaves` returns 0
+  and `VVWakeFoam` returns 0. (SDK 0.10.18 only: it read an unset wake texture there and broke those surfaces; guard
+  your own calls with `if (_VVWakeCell > 0.0)` if a world must work on 0.10.18.)
 - The values arrive per Renderer through a MaterialPropertyBlock (`_VVWaveA`, `_VVWaveB`, `_VVWakeTex`,
   `_VVWakeRect`, `_VVWakeCell`). Do not declare them as material properties and do not set them yourself.
 - Web-safe: plain HLSL, one small RGHalf texture, no compute shaders, no keywords.
