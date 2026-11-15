@@ -190,7 +190,7 @@ namespace VirtualVenues.WorldCreator
 
 #if UNITY_EDITOR
         // Example zone (empty object + trigger box). Add buttons in the Inspector.
-        [UnityEditor.MenuItem("GameObject/VirtualVenues/New Custom Controls Zone", isValidateFunction: false, priority: 0)]
+        [UnityEditor.MenuItem(CreateMenu.ZonesMenu + "Custom Controls Zone", isValidateFunction: false, priority: CreateMenu.ZonesOrder + 5)]
         private static void CreateZone(UnityEditor.MenuCommand menuCommand)
         {
             GameObject go = new GameObject("CustomControlsZone");

@@ -67,7 +67,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 014140da5d93116449ace730540fd22e, type: 2}
+  - {fileID: 2100000, guid: 36dd0f4bb3074eb89ec69cbccae3313c, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -159,4 +159,5 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _stage: {fileID: 0}
   _screenMesh: {fileID: 767056658337824863}
-  _defaultTexture: {fileID: 2800000, guid: 782ccf9668ababa49925dc02f10cf8b2, type: 3}
+  _defaultTexture: {fileID: 0}
+  _streamLayout: 1

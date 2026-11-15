@@ -2,6 +2,42 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.10.21] - 2026-11-15
+
+### Changed
+- **GameObject > VirtualVenues is grouped** (the same menu as the Hierarchy right-click > VirtualVenues):
+  **Stage** (Stage, Stage Trigger, Screen, Artist, Fixtures), **World** (Spawn Point, Pathway, Seat, Animated
+  Object, Physics Ball), **Zones** (Trigger, Swim, Bounce Pad, Push, Respawn, Custom Controls), **Rides** (Roller
+  Coaster, Spline Ride, Support Blocker), **Vehicles** (Go Kart, Jet Ski), **Events** (Admin Event, Trigger Event),
+  **Avatar** (Avatar, Mount) and **Plugins**. The "New" prefixes are gone. A script that runs one with
+  `EditorApplication.ExecuteMenuItem` needs the new path, e.g. `GameObject/VirtualVenues/World/Spawn Point`.
+  The group paths and their order live in `CreateMenu` (`Runtime/Scripts/General/CreateMenu.cs`).
+
+### Added
+- **Stage > Screen**, **Stage > Artist** and **Stage > Fixtures > PAR / Strobe** menu items, for prefabs that
+  already shipped in `Runtime/Resources` but had no menu item.
+- **Stream Layout** on **Screen** and **Artist** (`StreamLayout`, Inspector popup under **Stream**). **Whole video** shows
+  the full frame: a movie, or a full-frame artist or visuals stream. **Stacked** is the old behavior and the
+  optimization: one video carries the artist on top and the visuals below, so one stream feeds both in perfect
+  sync. An Artist shows the top half and a Screen the bottom half. Changing it in the Inspector swaps only the
+  mesh's SDK material for the matching one, as one undoable change; a material of your own is left as it is.
+  For either value the world uses the mesh material's own tiling/offset (a custom tiling included) and, while no
+  stream plays, the material's own picture unless the marker's `Default Texture` is set (the SDK prefabs now leave
+  it empty), so the Scene view shows what the world will. Markers with no mesh material (layout-created) use the
+  whole frame for Whole video and their half for Stacked. New `Artist-Calibrate-UV-Whole` and
+  `Screen-Calibrate-UV-Whole` materials, with an `artist-calibrate-uv-test-virtualvenues.jpg` picture (the artist
+  half of the stacked test picture).
+  **Newly placed Screens and Artists start as Whole video** (the SDK `Screen`, `Artist` and `Stage` prefabs).
+  So a world republished with this SDK gets Whole video on Screen, Artist and Stage prefab instances that were not
+  set to Stacked: set Stream Layout to **Stacked** on those before publishing if their stream is stacked.
+  Already-published worlds keep playing stacked, and so do markers that are not instances of the SDK prefabs, or
+  are added from code. `StageStreamLayouts` holds the no-material tiling/offset and the layout string;
+  `Screen.Configure(stageIndex, source, streamLayout)` and
+  `Artist.Configure(stageIndex, artistPivotOffset, speakerSource, streamLayout)` set it from code. Layouts store it
+  as `stageMedia.streamLayout`: `"whole"` = Whole video; `""`, absent or any other value = Stacked. Screens and
+  artists newly added in the web world editor start as `"whole"`. It takes effect after the matching FutureFestXR
+  player update; an older player shows every surface stacked.
+
 ## [0.10.20] - 2026-11-14
 
 Needs the matching FutureFestXR player update (UPC and UMS) for the new channel ids. Ship UPC and UMS together.

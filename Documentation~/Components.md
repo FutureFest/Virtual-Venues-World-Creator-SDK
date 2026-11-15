@@ -22,8 +22,8 @@ Lighting, sky and fog come from the main scene's own Lighting settings. The worl
 | Component | Add it | Key fields | Needs | Kind | Test player |
 |---|---|---|---|---|---|
 | `Stage` | **New Stage** (prefab `Stage`: stage + screen + booths) | `_stageIndex` int, `_activateOnStart` (off = dark until someone enters a `StageTrigger`) | — | marker | no |
-| `Screen` | prefab `Screen` | `_stageIndex` (a parent `Stage` wins), `_screenMesh` Renderer, `_defaultTexture`, `_source` Artist/Visuals | parent Stage or index | marker | no |
-| `Artist` | prefab `Artist` | `_stageIndex`, `_artistMesh`, `_pivot`, `_speakerSource` | parent Stage or index | marker | no |
+| `Screen` | prefab `Screen` | `_stageIndex` (a parent `Stage` wins), `_screenMesh` Renderer, `_defaultTexture` (empty = the mesh material's picture), `_source` Artist/Visuals, `_streamLayout` Whole video (prefab default) / Stacked | parent Stage or index | marker | no |
+| `Artist` | prefab `Artist` | `_stageIndex`, `_artistMesh`, `_pivot`, `_speakerSource`, `_streamLayout` Whole video (prefab default) / Stacked | parent Stage or index | marker | no |
 | `Speaker` | add component | `_stageIndex`, `_source` Artist/Visuals, `_channel` Mono/StereoLeft/StereoRight | `AudioSource` | marker | no |
 | `StageTrigger` | **Stage Trigger** (20×10×20 box) | `_stage` (auto: nearest), `_activateOnInitialize` | `Collider` (trigger) | marker | no |
 | `Fixture` | **Fixtures/Moving Head Fixture**; PAR and Strobe via the Stage's "+" scene gizmo; prefabs `Moving Head Fixture`, `PAR Fixture`, `Strobe Fixture` | `_stage`, `_type` PAR/MovingHead/Strobe, `_mirrorPanRotation` | under a Stage | marker (DMX) | no |
@@ -48,6 +48,19 @@ is its own slider in the players' mixer, shown under its parent; the parent's sl
 the channel on an `AudioChannel`. The app only sets each source's mixer group; your volume, pitch and mute stay yours.
 Old ids still work on markers and custom-channel parents: `background-music` and `ambient-music` = `music`,
 `ambient-audio` and `ambient-environment` = `ambience`, `rides` = `sfx`. They can't be custom channel ids.
+
+**Whole video or stacked video.** **Stream Layout** (under **Stream**) says which part of the video frame a `Screen`
+or `Artist` shows. **Whole video** shows the full frame: a movie, or a full-frame artist or visuals stream. Newly
+placed Screens and Artists start as Whole video. **Stacked** is one video carrying two pictures, the artist on top
+and the visuals below, so one stream feeds both in perfect sync: an `Artist` shows the top half and a `Screen` the
+bottom half. Changing Stream Layout swaps the mesh to the matching SDK material (the Artist keeps its chroma key), as
+one undoable change, and nothing else. The world then uses the mesh material's own tiling/offset for the video,
+and while no stream plays it shows the material's own picture, so the Scene view shows what the world will. A
+material of your own is left as it is, and its tiling/offset is used as you set it. A `Default Texture` you set on
+the marker is still the no-stream picture; the SDK prefabs leave it empty. A marker with no mesh material (one
+created by a layout) shows the whole frame for Whole video and its half for Stacked. Markers that are not instances
+of the SDK prefabs, or are added from code, are Stacked until set. Older app builds ignore Stream Layout: they use the
+mesh material's tiling, a layout marker's half, and no no-stream picture when `Default Texture` is empty.
 
 Stage parts find their stage index from a parent `Stage` first, then their own `_stageIndex`. Visuals screens
 show black until the app's visuals stream is live. Shader `Custom/UnlitChromaKeyURP` keys out the artist video.
@@ -267,6 +280,10 @@ player at a random `SpawnPoint` and simulates what the **Test player** columns s
 
 Markers expose `Configure` so code can set them without `SerializedObject`:
 `Stage.Configure(int stageIndex, bool activateOnStart = true)`, `Screen.Configure(int stageIndex, string source)`,
+`Screen.Configure(int stageIndex, string source, string streamLayout)`,
+`Artist.Configure(int stageIndex, Vector3 artistPivotOffset, string speakerSource)`,
+`Artist.Configure(int stageIndex, Vector3 artistPivotOffset, string speakerSource, string streamLayout)`
+(`streamLayout`: `"whole"` = Whole video, `""` or anything else = Stacked; see `StageStreamLayouts.Parse` / `Format`),
 `Speaker.Configure(int stageIndex, string speakerSource, int speakerChannel)`,
 `SpawnPoint.Configure(bool isDefault, string team)`, `TriggerZone.Configure(string zoneName)`,
 `BounceZoneData.Configure(Transform direction, float force)`,

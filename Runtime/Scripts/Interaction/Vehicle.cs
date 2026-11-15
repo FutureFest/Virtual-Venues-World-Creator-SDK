@@ -265,14 +265,14 @@ namespace VirtualVenues.WorldCreator
 
 #if UNITY_EDITOR
         // Example kart (Resources/GoKart.prefab): primitive body, 4 wheels, driver seat, trigger approach volume.
-        [UnityEditor.MenuItem("GameObject/VirtualVenues/New Go Kart", isValidateFunction: false, priority: 0)]
+        [UnityEditor.MenuItem(CreateMenu.VehiclesMenu + "Go Kart", isValidateFunction: false, priority: CreateMenu.VehiclesOrder)]
         private static void CreateGoKart(UnityEditor.MenuCommand menuCommand)
         {
             EditorHelpers.SpawnEditorObject("GoKart", Vector3.zero);
         }
 
         // Example boat (Resources/JetSki.prefab): primitive hull, driver seat, trigger approach volume. Needs water.
-        [UnityEditor.MenuItem("GameObject/VirtualVenues/New Jet Ski", isValidateFunction: false, priority: 0)]
+        [UnityEditor.MenuItem(CreateMenu.VehiclesMenu + "Jet Ski", isValidateFunction: false, priority: CreateMenu.VehiclesOrder + 1)]
         private static void CreateJetSki(UnityEditor.MenuCommand menuCommand)
         {
             EditorHelpers.SpawnEditorObject("JetSki", Vector3.zero);

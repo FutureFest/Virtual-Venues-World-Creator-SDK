@@ -31,7 +31,7 @@ namespace VirtualVenues.WorldCreator
         }
 
 #if UNITY_EDITOR
-        [UnityEditor.MenuItem("GameObject/VirtualVenues/Push Zone", isValidateFunction: false, priority: 0)]
+        [UnityEditor.MenuItem(CreateMenu.ZonesMenu + "Push Zone", isValidateFunction: false, priority: CreateMenu.ZonesOrder + 3)]
         private static void CreatePushZone(UnityEditor.MenuCommand menuCommand)
         {
             EditorHelpers.SpawnEditorObject("PushZone", Vector3.zero);

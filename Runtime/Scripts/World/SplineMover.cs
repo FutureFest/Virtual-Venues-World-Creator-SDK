@@ -229,14 +229,14 @@ namespace VirtualVenues.WorldCreator
 
 #if UNITY_EDITOR
         // Example ride (Resources/SplineRide.prefab): a loop track with a platform child that carries players.
-        [UnityEditor.MenuItem("GameObject/VirtualVenues/New Spline Ride", isValidateFunction: false, priority: 0)]
+        [UnityEditor.MenuItem(CreateMenu.RidesMenu + "Spline Ride", isValidateFunction: false, priority: CreateMenu.RidesOrder + 1)]
         private static void CreateSplineRide(UnityEditor.MenuCommand menuCommand)
         {
             EditorHelpers.SpawnEditorObject("SplineRide", Vector3.zero);
         }
 
         // Example coaster (Resources/SplineCoaster.prefab): a SplineTrack with carts that tilt with the rails.
-        [UnityEditor.MenuItem("GameObject/VirtualVenues/New Roller Coaster", isValidateFunction: false, priority: 0)]
+        [UnityEditor.MenuItem(CreateMenu.RidesMenu + "Roller Coaster", isValidateFunction: false, priority: CreateMenu.RidesOrder)]
         private static void CreateRollerCoaster(UnityEditor.MenuCommand menuCommand)
         {
             EditorHelpers.SpawnEditorObject("SplineCoaster", Vector3.zero);

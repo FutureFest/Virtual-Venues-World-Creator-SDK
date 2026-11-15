@@ -148,6 +148,8 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         public string speakerSource;
         public int speakerChannel;
         public Vec3 artistPivotOffset;
+        /// <summary>Screen/Artist: "whole" = Whole video, "" = Stacked (StageStreamLayouts). Exported from the marker.</summary>
+        public string streamLayout;
         public bool startInactive;
     }
 
@@ -410,6 +412,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 MfComponent c = DefaultComponent("screen");
                 c.stageMedia.stageIndex = screen.StageIndex;
                 c.stageMedia.screenSource = StageStreams.Format(screen.StreamIndex);
+                c.stageMedia.streamLayout = StageStreamLayouts.Format(screen.StreamLayout);
                 list.Add(c);
             }
 
@@ -438,6 +441,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 MfComponent c = DefaultComponent("artist");
                 c.stageMedia.stageIndex = artist.StageIndex;
                 c.stageMedia.speakerSource = StageStreams.Format(artist.StreamIndex);
+                c.stageMedia.streamLayout = StageStreamLayouts.Format(artist.StreamLayout);
                 if (artist.Pivot != null)
                 {
                     Vector3 p = artist.Pivot.localPosition;
@@ -527,6 +531,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                     speakerSource = string.Empty,
                     speakerChannel = 0,
                     artistPivotOffset = new Vec3 { x = 0f, y = 0f, z = 0f },
+                    streamLayout = string.Empty,
                     startInactive = false,
                 },
                 light = new MfLightParams

@@ -121,6 +121,7 @@ namespace VirtualVenues.WorldCreator
             {
                 if (it.name == "m_Script" || it.name == "_stage" || it.name == "_stageIndex") { continue; }
                 if (it.name == "_streamIndex") { DrawStreamField(it, MarkerStageIndex(so.targetObject)); continue; }
+                if (it.name == "_streamLayout") { DrawStreamLayoutField(it, so); continue; }
                 EditorGUILayout.PropertyField(it, true);
             }
             so.ApplyModifiedProperties();
@@ -175,6 +176,51 @@ namespace VirtualVenues.WorldCreator
             streamProp.intValue = values[picked];
         }
 
+        private const string WholeLine = "Shows the whole video frame: a movie, or a full-frame artist/visuals stream.";
+        private const string StackedArtistLine = "Shows the top half of a stacked video (artist on top, visuals below). One stream carries both, in perfect sync.";
+        private const string StackedScreenLine = "Shows the bottom half of a stacked video (artist on top, visuals below). One stream carries both, in perfect sync.";
+        private const string CustomMaterialLine = " The mesh has its own material, so it was left as it is: its own tiling and offset are used when the world runs.";
+        private const string MixedLayoutLine = "The selected objects show different parts of the video.";
+        // Whole first: it is what a newly placed Screen or Artist starts with.
+        private static readonly GUIContent[] StreamLayoutLabels = { new GUIContent("Whole video"), new GUIContent("Stacked") };
+        private static readonly int[] StreamLayoutValues = { (int)StreamLayout.Whole, (int)StreamLayout.Stacked };
+
+        // The Screen/Artist "Stream Layout" popup, then one line on what the surface will show. Picking a stream layout also swaps
+        // the mesh's SDK stage material for the new stream layout's on every selected marker (StageStreamLayoutAssets), in one undo
+        // step; the world then uses that material's tiling/offset and picture. The swap writes through its own SerializedObjects; this one picks the change up next repaint.
+        private static void DrawStreamLayoutField(SerializedProperty layoutProp, SerializedObject so)
+        {
+            EditorGUI.showMixedValue = layoutProp.hasMultipleDifferentValues;
+            EditorGUI.BeginChangeCheck();
+            int picked = EditorGUILayout.IntPopup(new GUIContent("Stream Layout", layoutProp.tooltip), layoutProp.intValue, StreamLayoutLabels, StreamLayoutValues);
+            bool changed = EditorGUI.EndChangeCheck();
+            EditorGUI.showMixedValue = false;
+            if (changed)
+            {
+                Undo.IncrementCurrentGroup();
+                Undo.SetCurrentGroupName("Change Stream Layout");
+                int group = Undo.GetCurrentGroup();
+                foreach (UnityEngine.Object target in so.targetObjects) { StageStreamLayoutAssets.SetStreamLayout(target, (StreamLayout)picked); }
+                Undo.CollapseUndoOperations(group);
+            }
+            if (layoutProp.hasMultipleDifferentValues) { EditorGUILayout.HelpBox(MixedLayoutLine, MessageType.None); return; }
+
+            string line = null;
+            foreach (UnityEngine.Object target in so.targetObjects)
+            {
+                string targetLine = StreamLayoutHelpLine(target, (StreamLayout)layoutProp.intValue);
+                if (line != null && line != targetLine) { line = MixedLayoutLine; break; }
+                line = targetLine;
+            }
+            EditorGUILayout.HelpBox(line, MessageType.None);
+        }
+
+        private static string StreamLayoutHelpLine(UnityEngine.Object marker, StreamLayout streamLayout)
+        {
+            string line = streamLayout == StreamLayout.Whole ? WholeLine : marker is Artist ? StackedArtistLine : StackedScreenLine;
+            return StageStreamLayoutAssets.HasCustomMaterial(marker) ? line + CustomMaterialLine : line;
+        }
+
         private static void DrawStagePicker(SerializedObject so)
         {
             Component marker = so.targetObject as Component;
@@ -203,7 +249,7 @@ namespace VirtualVenues.WorldCreator
             if (stageProp.objectReferenceValue == null && !stageProp.hasMultipleDifferentValues)
             {
                 string hint = FindSceneStages(marker.gameObject.scene).Count == 0
-                    ? "Pick a stage. This scene has no Stage marker yet: add one with GameObject > VirtualVenues > New Stage."
+                    ? "Pick a stage. This scene has no Stage marker yet: add one with GameObject > VirtualVenues > Stage > Stage."
                     : "Pick a stage. Without one, this won't show or play any stream.";
                 EditorGUILayout.HelpBox(hint, MessageType.Warning);
             }
@@ -287,13 +333,13 @@ namespace VirtualVenues.WorldCreator
             "Strobe Fixture"
         };
 
-        [MenuItem("GameObject/VirtualVenues/New Stage", isValidateFunction: false, priority: 0)]
+        [MenuItem(CreateMenu.StageMenu + "Stage", isValidateFunction: false, priority: CreateMenu.StageOrder)]
         private static void CreateStage(MenuCommand menuCommand)
         {
             EditorHelpers.SpawnEditorObject("Stage", Vector3.zero);
         }
 
-        [MenuItem("GameObject/VirtualVenues/New Stage", isValidateFunction: true)]
+        [MenuItem(CreateMenu.StageMenu + "Stage", isValidateFunction: true)]
         private static bool ValidateCreateStage(MenuCommand menuCommand)
         {
             return true;

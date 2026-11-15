@@ -15,10 +15,10 @@ namespace VirtualVenues.Plugins.Nmkr.Editor
         private const string PLUGIN_PREFAB_NAME = "NMKR_Plugin";
         private const string MINT_INTERACTABLE_PREFAB_NAME = "NmkrMintInteractable";
 
-        private const string ADD_PLUGIN_MENU = "GameObject/VirtualVenues/Plugins/NMKR/Add NMKR Plugin";
-        private const string ADD_MINT_INTERACTABLE_MENU = "GameObject/VirtualVenues/Plugins/NMKR/Add Mint Interactable";
+        private const string ADD_PLUGIN_MENU = WorldCreator.CreateMenu.PluginsMenu + "NMKR/Add NMKR Plugin";
+        private const string ADD_MINT_INTERACTABLE_MENU = WorldCreator.CreateMenu.PluginsMenu + "NMKR/Add Mint Interactable";
 
-        [MenuItem(ADD_PLUGIN_MENU, isValidateFunction: false, priority: 0)]
+        [MenuItem(ADD_PLUGIN_MENU, isValidateFunction: false, priority: WorldCreator.CreateMenu.PluginsOrder)]
         private static void AddNmkrPlugin(MenuCommand menuCommand)
         {
             // Only one settings carrier is meaningful per scene — NmkrBuildProcessor
@@ -43,7 +43,7 @@ namespace VirtualVenues.Plugins.Nmkr.Editor
             return true;
         }
 
-        [MenuItem(ADD_MINT_INTERACTABLE_MENU, isValidateFunction: false, priority: 0)]
+        [MenuItem(ADD_MINT_INTERACTABLE_MENU, isValidateFunction: false, priority: WorldCreator.CreateMenu.PluginsOrder + 1)]
         private static void AddNmkrMintInteractable(MenuCommand menuCommand)
         {
             SpawnPrefab(MINT_INTERACTABLE_PREFAB_NAME, parent: menuCommand.context as GameObject);

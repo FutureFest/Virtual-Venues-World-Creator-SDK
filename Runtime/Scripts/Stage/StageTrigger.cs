@@ -128,7 +128,7 @@ namespace VirtualVenues.WorldCreator
             }
         }
 
-        [MenuItem("GameObject/VirtualVenues/Stage Trigger", isValidateFunction: false, priority: 0)]
+        [MenuItem(CreateMenu.StageMenu + "Stage Trigger", isValidateFunction: false, priority: CreateMenu.StageOrder + 1)]
         private static void CreateStageTrigger(MenuCommand menuCommand)
         {
             GameObject go = new GameObject("Stage Trigger");

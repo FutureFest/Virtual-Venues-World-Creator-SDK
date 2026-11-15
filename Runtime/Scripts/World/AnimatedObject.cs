@@ -146,7 +146,7 @@ namespace VirtualVenues.WorldCreator
 
 #if UNITY_EDITOR
         // Example bobbing cube (Resources/AnimatedObject.prefab).
-        [UnityEditor.MenuItem("GameObject/VirtualVenues/New Animated Object", isValidateFunction: false, priority: 0)]
+        [UnityEditor.MenuItem(CreateMenu.WorldMenu + "Animated Object", isValidateFunction: false, priority: CreateMenu.WorldOrder + 3)]
         private static void CreateAnimatedObject(UnityEditor.MenuCommand menuCommand)
         {
             EditorHelpers.SpawnEditorObject("AnimatedObject", Vector3.zero);

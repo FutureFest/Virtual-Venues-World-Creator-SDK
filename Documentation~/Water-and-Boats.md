@@ -4,7 +4,7 @@ How water works in a VV world, what a creator (or an AI agent working in a creat
 only the app can change. Namespace: `VirtualVenues.WorldCreator`. This package installs at
 `Packages/com.virtualvenues.sdk/`; its files are read-only in a creator project.
 
-Menu: **GameObject > VirtualVenues > Swim Zone / New Jet Ski**. Add Component: **VirtualVenues > Water Waves**.
+Menu: **GameObject > VirtualVenues > Zones > Swim Zone** and **GameObject > VirtualVenues > Vehicles > Jet Ski**. Add Component: **VirtualVenues > Water Waves**.
 
 ## The pieces
 

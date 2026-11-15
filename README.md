@@ -80,9 +80,9 @@ Create interactive performance stages with lighting and video screens.
 
 | Component | Description | Menu Path |
 |-----------|-------------|-----------|
-| **Stage** | Defines a performance stage area | `GameObject > VirtualVenues > New Stage` |
-| **Screen** | Video display surface for artist content | Child of Stage prefab |
-| **Fixture** | DMX lighting fixtures (PAR, Moving Head, Strobe) | `GameObject > VirtualVenues > Fixtures > *` |
+| **Stage** | Defines a performance stage area | `GameObject > VirtualVenues > Stage > Stage` |
+| **Screen** | Video display surface for artist content | Child of Stage prefab, or `GameObject > VirtualVenues > Stage > Screen` |
+| **Fixture** | DMX lighting fixtures (PAR, Moving Head, Strobe) | `GameObject > VirtualVenues > Stage > Fixtures > *` |
 
 **Quick Add Fixtures**: Select a Stage in the scene and click the floating "+" button to add fixtures.
 
@@ -92,8 +92,8 @@ Define player spawning and navigation areas.
 
 | Component | Description | Menu Path |
 |-----------|-------------|-----------|
-| **SpawnPoint** | Player spawn location with directional indicator | `GameObject > VirtualVenues > Spawn Point` |
-| **TriggerZone** | Area-based trigger for events | `GameObject > VirtualVenues > Trigger Zone` |
+| **SpawnPoint** | Player spawn location with directional indicator | `GameObject > VirtualVenues > World > Spawn Point` |
+| **TriggerZone** | Area-based trigger for events | `GameObject > VirtualVenues > Zones > Trigger Zone` |
 | **RotatingObject** | Animated rotating object with optional network sync | Add component manually |
 
 ### Interaction System
@@ -108,8 +108,8 @@ Create interactive objects in your world.
 
 1. **Set up the project**: `VirtualVenues > Project Setup` → Fix All (do this once per project)
 2. **Create a new scene** for your world
-3. **Add a Stage**: `GameObject > VirtualVenues > New Stage`
-4. **Add SpawnPoints**: `GameObject > VirtualVenues > Spawn Point` (add multiple for variety)
+3. **Add a Stage**: `GameObject > VirtualVenues > Stage > Stage`
+4. **Add SpawnPoints**: `GameObject > VirtualVenues > World > Spawn Point` (add multiple for variety)
 5. **Add Fixtures**: Click the "+" button on the Stage gizmo to add lighting
 6. **Test locally**: Add `TestPlayerSpawner` prefab from `Runtime/Prefabs/`
 7. **Publish**: Open `VirtualVenues > World Publisher`, login, and upload
@@ -222,7 +222,7 @@ Interactable.Tracker.onInstanceAdded += (obj) => { };
 
 ### Rides (SplineTrack, SplineRide, SplineMover, TrackSupportBlocker)
 
-Roller coasters and other track rides. Start from **GameObject > VirtualVenues > New Roller Coaster** or the
+Roller coasters and other track rides. Start from **GameObject > VirtualVenues > Rides > Roller Coaster** or the
 example scene `Runtime/Examples/RollerCoaster/RollerCoasterExample.unity`. Full guide (how the parts fit, the
 support-post rule, the script API and a build-from-code recipe): [`Documentation~/Rides.md`](Documentation~/Rides.md).
 

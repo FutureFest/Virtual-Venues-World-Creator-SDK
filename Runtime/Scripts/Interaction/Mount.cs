@@ -28,7 +28,7 @@ namespace VirtualVenues.WorldCreator
 
 #if UNITY_EDITOR
         // Example board (Resources/Mount.prefab): a flat deck with a DriverSeat child.
-        [UnityEditor.MenuItem("GameObject/VirtualVenues/New Mount", isValidateFunction: false, priority: 0)]
+        [UnityEditor.MenuItem(CreateMenu.AvatarMenu + "Mount", isValidateFunction: false, priority: CreateMenu.AvatarOrder + 1)]
         private static void CreateMount(UnityEditor.MenuCommand menuCommand)
         {
             EditorHelpers.SpawnEditorObject("Mount", Vector3.zero);

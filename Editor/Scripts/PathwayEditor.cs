@@ -258,7 +258,7 @@ namespace VirtualVenues.WorldCreator.Editor
             EditorUtility.SetDirty(path);
         }
 
-        [MenuItem("GameObject/VirtualVenues/New Pathway", isValidateFunction: false, priority: 0)]
+        [MenuItem(CreateMenu.WorldMenu + "Pathway", isValidateFunction: false, priority: CreateMenu.WorldOrder + 1)]
         private static void CreatePathway(MenuCommand command)
         {
             var go = new GameObject("Pathway", typeof(SplineContainer));

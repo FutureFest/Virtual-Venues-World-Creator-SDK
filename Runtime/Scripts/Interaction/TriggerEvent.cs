@@ -71,7 +71,7 @@ namespace VirtualVenues.WorldCreator
 
 #if UNITY_EDITOR
         // Example trigger volume (Resources/TriggerEvent.prefab).
-        [UnityEditor.MenuItem("GameObject/VirtualVenues/New Trigger Event", isValidateFunction: false, priority: 0)]
+        [UnityEditor.MenuItem(CreateMenu.EventsMenu + "Trigger Event", isValidateFunction: false, priority: CreateMenu.EventsOrder + 1)]
         private static void CreateTriggerEvent(UnityEditor.MenuCommand menuCommand)
         {
             EditorHelpers.SpawnEditorObject("TriggerEvent", Vector3.zero);

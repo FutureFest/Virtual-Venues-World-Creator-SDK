@@ -67,7 +67,7 @@ namespace VirtualVenues.WorldCreator
         }
 
 #if UNITY_EDITOR
-        [MenuItem("GameObject/VirtualVenues/Spawn Point", isValidateFunction: false, priority: 0)]
+        [MenuItem(CreateMenu.WorldMenu + "Spawn Point", isValidateFunction: false, priority: CreateMenu.WorldOrder)]
         private static void CreateSpawnPoint(MenuCommand menuCommand)
         {
             GameObject go = new GameObject("SpawnPoint");
@@ -84,7 +84,7 @@ namespace VirtualVenues.WorldCreator
             Selection.activeObject = go;
         }
 
-        [MenuItem("GameObject/VirtualVenues/Spawn Point", isValidateFunction: true)]
+        [MenuItem(CreateMenu.WorldMenu + "Spawn Point", isValidateFunction: true)]
         private static bool ValidateCreateSpawnPoint(MenuCommand menuCommand)
         {
             return true;

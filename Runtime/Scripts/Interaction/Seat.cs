@@ -86,7 +86,7 @@ namespace VirtualVenues.WorldCreator
 
 #if UNITY_EDITOR
         // Example chair (Resources/Seat.prefab): cushion + backrest, trigger approach volume, SeatPoint child.
-        [UnityEditor.MenuItem("GameObject/VirtualVenues/New Seat", isValidateFunction: false, priority: 0)]
+        [UnityEditor.MenuItem(CreateMenu.WorldMenu + "Seat", isValidateFunction: false, priority: CreateMenu.WorldOrder + 2)]
         private static void CreateSeat(UnityEditor.MenuCommand menuCommand)
         {
             EditorHelpers.SpawnEditorObject("Seat", Vector3.zero);

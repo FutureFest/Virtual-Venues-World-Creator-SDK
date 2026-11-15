@@ -11,7 +11,7 @@ namespace VirtualVenues.WorldCreator
         public override TriggerZoneType ZoneType => TriggerZoneType.Swim;
 
 #if UNITY_EDITOR
-        [UnityEditor.MenuItem("GameObject/VirtualVenues/Swim Zone", isValidateFunction: false, priority: 0)]
+        [UnityEditor.MenuItem(CreateMenu.ZonesMenu + "Swim Zone", isValidateFunction: false, priority: CreateMenu.ZonesOrder + 1)]
         private static void CreateSwimZone(UnityEditor.MenuCommand menuCommand)
         {
             EditorHelpers.SpawnEditorObject("SwimZone", Vector3.zero);

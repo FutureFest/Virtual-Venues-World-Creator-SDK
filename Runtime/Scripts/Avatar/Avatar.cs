@@ -215,7 +215,7 @@ namespace VirtualVenues
     [CustomEditor(typeof(Avatar))]
     public class AvatarEditor : Editor
     {
-        [MenuItem("GameObject/VirtualVenues/New Avatar", isValidateFunction: false, priority: 0)]
+        [MenuItem(WorldCreator.CreateMenu.AvatarMenu + "Avatar", isValidateFunction: false, priority: WorldCreator.CreateMenu.AvatarOrder)]
         private static void CreateAvatar(MenuCommand menuCommand)
         {
             GameObject go = new GameObject("Avatar");
@@ -228,7 +228,7 @@ namespace VirtualVenues
             Selection.activeObject = go;
         }
 
-        [MenuItem("GameObject/VirtualVenues/New Avatar", isValidateFunction: true)]
+        [MenuItem(WorldCreator.CreateMenu.AvatarMenu + "Avatar", isValidateFunction: true)]
         private static bool ValidateCreateAvatar(MenuCommand menuCommand)
         {
             return true;

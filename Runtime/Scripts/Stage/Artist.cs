@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace VirtualVenues.WorldCreator
 {
@@ -17,11 +18,18 @@ namespace VirtualVenues.WorldCreator
         [SerializeField] private Transform _pivot = null;
 
         private string _texturePropertyName = "_BaseMap";
-        private Vector2 _tilingScale = new Vector2(1f, 0.5f);
-        private Vector2 _textureOffset = new Vector2(0f, -0.5f);
+        // The mesh material's own tiling/offset, read in Awake. Without a mesh material the stream layout's code default applies.
+        private bool _hasMaterialTransform = false;
+        private Vector2 _tilingScale = Vector2.one;
+        private Vector2 _textureOffset = Vector2.zero;
 
         [Tooltip("Which of the stage's streams this artist cut-out shows. Stream 0 used to be called Artist.")]
         [SerializeField, Min(0)] private int _streamIndex = 0;
+        [Tooltip("Which part of the video frame this artist cut-out shows. Whole video: the full frame, for a full-frame artist stream. " +
+                 "Stacked: the top half of one video that carries the artist on top and the visuals below.")]
+        // Stacked (0) is also what an artist saved before this field existed reads, so published worlds keep playing stacked.
+        [FormerlySerializedAs("_videoArea")]
+        [SerializeField] private StreamLayout _streamLayout = StreamLayout.Stacked;
         // Legacy layout string ("Artist", "Visuals", or digits). Read once into _streamIndex.
         [SerializeField, HideInInspector] private string _speakerSource = "";
 
@@ -41,8 +49,11 @@ namespace VirtualVenues.WorldCreator
         public Renderer Renderer => _artistMesh;
         public Texture2D DefaultTexture => _defaultTexture;
         public string TexturePropertyName => _texturePropertyName;
-        public Vector2 TextureOffset => _textureOffset;
-        public Vector2 TextureTiling => _tilingScale;
+        // What Awake read from the mesh material (for either stream layout: in the SDK the stream layout picks the material), else
+        // the stream layout's code default (StageStreamLayouts): the whole frame, or the top half of a stacked video.
+        public Vector2 TextureOffset { get { GetTransform(out _, out Vector2 offset); return offset; } }
+        public Vector2 TextureTiling { get { GetTransform(out Vector2 tiling, out _); return tiling; } }
+        public StreamLayout StreamLayout => _streamLayout;
         public Transform Pivot => _pivot;
         public int StreamIndex => string.IsNullOrEmpty(_speakerSource) ? _streamIndex : StageStreams.Parse(_speakerSource);
         [Obsolete("Use StreamIndex.")]
@@ -64,6 +75,16 @@ namespace VirtualVenues.WorldCreator
             // then Configures); else StageCoreConnector would bind using the pre-Configure default.
             // Idempotent — the Start() fallback no-ops once this has run.
             AddArtist(this);
+        }
+
+        /// <summary>
+        /// As Configure(stageIndex, artistPivotOffset, speakerSource), plus the part of the video frame this artist
+        /// shows: "whole" = Whole video, anything else ("" included) = Stacked (see StageStreamLayouts).
+        /// </summary>
+        public void Configure(int stageIndex, Vector3 artistPivotOffset, string speakerSource, string streamLayout)
+        {
+            _streamLayout = StageStreamLayouts.Parse(streamLayout);
+            Configure(stageIndex, artistPivotOffset, speakerSource);
         }
 
         private void OnValidate()
@@ -89,8 +110,20 @@ namespace VirtualVenues.WorldCreator
             {
                 _tilingScale = _artistMesh.material.GetTextureScale(_texturePropertyName);
                 _textureOffset = _artistMesh.material.GetTextureOffset(_texturePropertyName);
+                _hasMaterialTransform = true;
             }
             // Registration intentionally deferred to Configure()/Start() — see Configure().
+        }
+
+        private void GetTransform(out Vector2 tiling, out Vector2 offset)
+        {
+            if (_hasMaterialTransform)
+            {
+                tiling = _tilingScale;
+                offset = _textureOffset;
+                return;
+            }
+            StageStreamLayouts.GetDefaultTransform(_streamLayout, true, out tiling, out offset);
         }
 
         private void Start()
@@ -122,6 +155,12 @@ namespace VirtualVenues.WorldCreator
     public class ArtistEditor : UnityEditor.Editor
     {
         public override void OnInspectorGUI() { StagePickerGUI.DrawInspector(serializedObject); }
+
+        [UnityEditor.MenuItem(CreateMenu.StageMenu + "Artist", isValidateFunction: false, priority: CreateMenu.StageOrder + 3)]
+        private static void CreateArtist(UnityEditor.MenuCommand menuCommand)
+        {
+            EditorHelpers.SpawnEditorObject("Artist", Vector3.zero);
+        }
     }
 #endif
 }

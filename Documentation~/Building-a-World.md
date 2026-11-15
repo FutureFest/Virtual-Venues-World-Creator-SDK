@@ -52,7 +52,7 @@ Prefab names are listed in `Components.md`.
 
 **Menu item (same as a human clicking it):**
 ```csharp
-UnityEditor.EditorApplication.ExecuteMenuItem("GameObject/VirtualVenues/Spawn Point");
+UnityEditor.EditorApplication.ExecuteMenuItem("GameObject/VirtualVenues/World/Spawn Point");
 var go = UnityEditor.Selection.activeGameObject; // the menu selects what it made
 go.transform.position = new UnityEngine.Vector3(0, 0, -5);
 ```

@@ -81,7 +81,7 @@ namespace VirtualVenues.WorldCreator
 
 #if UNITY_EDITOR
         // Example (Resources/PhysicsBall.prefab): a 2 m primitive ball to push around.
-        [UnityEditor.MenuItem("GameObject/VirtualVenues/New Physics Ball", isValidateFunction: false, priority: 0)]
+        [UnityEditor.MenuItem(CreateMenu.WorldMenu + "Physics Ball", isValidateFunction: false, priority: CreateMenu.WorldOrder + 4)]
         private static void CreatePhysicsBall(UnityEditor.MenuCommand menuCommand)
         {
             EditorHelpers.SpawnEditorObject("PhysicsBall", Vector3.zero);

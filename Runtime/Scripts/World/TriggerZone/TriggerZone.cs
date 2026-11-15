@@ -88,7 +88,7 @@ namespace VirtualVenues.WorldCreator
         }
 
 #if UNITY_EDITOR
-        [MenuItem("GameObject/VirtualVenues/Trigger Zone", isValidateFunction: false, priority: 0)]
+        [MenuItem(CreateMenu.ZonesMenu + "Trigger Zone", isValidateFunction: false, priority: CreateMenu.ZonesOrder)]
         private static void CreateTriggerZone(MenuCommand menuCommand)
         {
             GameObject go = new GameObject("TriggerZone");
@@ -110,7 +110,7 @@ namespace VirtualVenues.WorldCreator
             Selection.activeObject = go;
         }
 
-        [MenuItem("GameObject/VirtualVenues/Trigger Zone", isValidateFunction: true)]
+        [MenuItem(CreateMenu.ZonesMenu + "Trigger Zone", isValidateFunction: true)]
         private static bool ValidateCreateTriggerZone(MenuCommand menuCommand)
         {
             return true;

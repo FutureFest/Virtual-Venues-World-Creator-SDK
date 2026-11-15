@@ -30,7 +30,7 @@ namespace VirtualVenues.WorldCreator
         }
 
 #if UNITY_EDITOR
-        [UnityEditor.MenuItem("GameObject/VirtualVenues/Bounce Pad", isValidateFunction: false, priority: 0)]
+        [UnityEditor.MenuItem(CreateMenu.ZonesMenu + "Bounce Pad", isValidateFunction: false, priority: CreateMenu.ZonesOrder + 2)]
         private static void CreateBouncePad(UnityEditor.MenuCommand menuCommand)
         {
             EditorHelpers.SpawnEditorObject("BouncePad", Vector3.zero);

@@ -52,7 +52,7 @@ namespace VirtualVenues.WorldCreator
             return blocker;
         }
 
-        [UnityEditor.MenuItem("GameObject/VirtualVenues/Support Blocker", isValidateFunction: false, priority: 0)]
+        [UnityEditor.MenuItem(CreateMenu.RidesMenu + "Support Blocker", isValidateFunction: false, priority: CreateMenu.RidesOrder + 2)]
         private static void CreateFromMenu(UnityEditor.MenuCommand menuCommand)
         {
             Transform pivot = UnityEditor.SceneView.lastActiveSceneView != null ? UnityEditor.SceneView.lastActiveSceneView.camera.transform : null;

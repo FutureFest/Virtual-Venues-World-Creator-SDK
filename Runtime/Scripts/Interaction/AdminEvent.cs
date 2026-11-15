@@ -69,7 +69,7 @@ namespace VirtualVenues.WorldCreator
         }
 
 #if UNITY_EDITOR
-        [UnityEditor.MenuItem("GameObject/VirtualVenues/New Admin Event", isValidateFunction: false, priority: 0)]
+        [UnityEditor.MenuItem(CreateMenu.EventsMenu + "Admin Event", isValidateFunction: false, priority: CreateMenu.EventsOrder)]
         private static void CreateAdminEvent(UnityEditor.MenuCommand menuCommand)
         {
             GameObject go = new GameObject("Admin Event (fireworks)");

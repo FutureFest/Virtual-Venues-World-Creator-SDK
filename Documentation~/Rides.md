@@ -6,7 +6,7 @@ Namespace: `VirtualVenues.WorldCreator`.
 
 Example scene: `Runtime/Examples/RollerCoaster/RollerCoasterExample.unity`. It has a lift, a drop, banked turns,
 generated supports, and a guest tunnel under the lift hill that the supports stand on.
-Menu: **GameObject > VirtualVenues > New Roller Coaster / Support Blocker**.
+Menu: **GameObject > VirtualVenues > Rides > Roller Coaster / Support Blocker**.
 
 ## Components
 

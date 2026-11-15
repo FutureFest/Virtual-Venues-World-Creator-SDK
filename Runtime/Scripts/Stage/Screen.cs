@@ -15,12 +15,19 @@ namespace VirtualVenues.WorldCreator
         [SerializeField] private Renderer _screenMesh = null;
         [SerializeField] private Texture2D _defaultTexture = null;
         private string _texturePropertyName = "_BaseMap";
-        private Vector2 _screenTilingScale = new Vector2(1f, 0.5f);
+        // The mesh material's own tiling/offset, read in Awake. Without a mesh material the stream layout's code default applies.
+        private bool _hasMaterialTransform = false;
+        private Vector2 _screenTilingScale = Vector2.one;
         private Vector2 _screenTextureOffset = Vector2.zero;
         [SerializeField, HideInInspector] private string _screenSource = "";
         [Tooltip("Which of the stage's streams this screen shows. Stream 0 used to be called Artist, stream 1 Visuals.")]
         [FormerlySerializedAs("_source")]
         [SerializeField, Min(0)] private int _streamIndex = 0;
+        [Tooltip("Which part of the video frame this screen shows. Whole video: the full frame, for a movie or a full-frame visuals stream. " +
+                 "Stacked: the bottom half of one video that carries the artist on top and the visuals below.")]
+        // Stacked (0) is also what a screen saved before this field existed reads, so published worlds keep playing stacked.
+        [FormerlySerializedAs("_videoArea")]
+        [SerializeField] private StreamLayout _streamLayout = StreamLayout.Stacked;
 
         public static List<Screen> Instances => _instances;
         public static Action<Screen> onScreenAdded = null;
@@ -39,8 +46,11 @@ namespace VirtualVenues.WorldCreator
         public Renderer Renderer => _screenMesh;
         public Texture2D DefaultTexture => _defaultTexture;
         public string TexturePropertyName => _texturePropertyName;
-        public Vector2 TextureOffset => _screenTextureOffset;
-        public Vector2 TextureTiling => _screenTilingScale;
+        // What Awake read from the mesh material (for either stream layout: in the SDK the stream layout picks the material), else
+        // the stream layout's code default (StageStreamLayouts): the whole frame, or the bottom half of a stacked video.
+        public Vector2 TextureOffset { get { GetTransform(out _, out Vector2 offset); return offset; } }
+        public Vector2 TextureTiling { get { GetTransform(out Vector2 tiling, out _); return tiling; } }
+        public StreamLayout StreamLayout => _streamLayout;
         public string ScreenSource => _screenSource;
         public int StreamIndex => _streamIndex;
         [Obsolete("Use StreamIndex.")]
@@ -64,6 +74,16 @@ namespace VirtualVenues.WorldCreator
             AddScreen(this);
         }
 
+        /// <summary>
+        /// As Configure(stageIndex, source), plus the part of the video frame this screen shows:
+        /// "whole" = Whole video, anything else ("" included) = Stacked (see StageStreamLayouts).
+        /// </summary>
+        public void Configure(int stageIndex, string source, string streamLayout)
+        {
+            _streamLayout = StageStreamLayouts.Parse(streamLayout);
+            Configure(stageIndex, source);
+        }
+
 #if UNITY_EDITOR
         private void OnValidate()
         {
@@ -83,8 +103,20 @@ namespace VirtualVenues.WorldCreator
             {
                 _screenTilingScale = _screenMesh.material.GetTextureScale(_texturePropertyName);
                 _screenTextureOffset = _screenMesh.material.GetTextureOffset(_texturePropertyName);
+                _hasMaterialTransform = true;
             }
             // Registration intentionally deferred to Configure()/Start() — see Configure().
+        }
+
+        private void GetTransform(out Vector2 tiling, out Vector2 offset)
+        {
+            if (_hasMaterialTransform)
+            {
+                tiling = _screenTilingScale;
+                offset = _screenTextureOffset;
+                return;
+            }
+            StageStreamLayouts.GetDefaultTransform(_streamLayout, false, out tiling, out offset);
         }
 
         private void Start()
@@ -116,6 +148,12 @@ namespace VirtualVenues.WorldCreator
     public class ScreenEditor : UnityEditor.Editor
     {
         public override void OnInspectorGUI() { StagePickerGUI.DrawInspector(serializedObject); }
+
+        [UnityEditor.MenuItem(CreateMenu.StageMenu + "Screen", isValidateFunction: false, priority: CreateMenu.StageOrder + 2)]
+        private static void CreateScreen(UnityEditor.MenuCommand menuCommand)
+        {
+            EditorHelpers.SpawnEditorObject("Screen", Vector3.zero);
+        }
     }
 #endif
 }

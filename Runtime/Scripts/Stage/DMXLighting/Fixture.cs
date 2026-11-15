@@ -139,17 +139,29 @@ namespace VirtualVenues.WorldCreator
             }
         }
 
-        [MenuItem("GameObject/VirtualVenues/Fixtures/Moving Head Fixture", isValidateFunction: false, priority: 0)]
+        [MenuItem(CreateMenu.FixturesMenu + "Moving Head", isValidateFunction: false, priority: CreateMenu.StageOrder + 4)]
         private static void CreateMovingHeadFixture(MenuCommand menuCommand)
         {
             EditorHelpers.SpawnEditorObject("Moving Head Fixture", Vector3.zero);
         }
 
         // If you right-click in the Unity hierarchy or use the GameObject menu, this validation method ensures the "Moving Head Fixture" option is always available.
-        [MenuItem("GameObject/VirtualVenues/Fixtures/Moving Head Fixture", isValidateFunction: true)]
+        [MenuItem(CreateMenu.FixturesMenu + "Moving Head", isValidateFunction: true)]
         private static bool ValidateCreateMovingHeadFixture(MenuCommand menuCommand)
         {
             return true;
+        }
+
+        [MenuItem(CreateMenu.FixturesMenu + "PAR", isValidateFunction: false, priority: CreateMenu.StageOrder + 5)]
+        private static void CreateParFixture(MenuCommand menuCommand)
+        {
+            EditorHelpers.SpawnEditorObject("PAR Fixture", Vector3.zero);
+        }
+
+        [MenuItem(CreateMenu.FixturesMenu + "Strobe", isValidateFunction: false, priority: CreateMenu.StageOrder + 6)]
+        private static void CreateStrobeFixture(MenuCommand menuCommand)
+        {
+            EditorHelpers.SpawnEditorObject("Strobe Fixture", Vector3.zero);
         }
     }
 

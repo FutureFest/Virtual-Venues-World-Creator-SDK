@@ -1,7 +1,7 @@
 # Pathways
 
 `Pathway` (namespace `VirtualVenues.WorldCreator`) turns a spline into a finished path: a ground strip plus props
-(lamp posts, fences, plants, benches) laid out by rules. Add it with **GameObject > VirtualVenues > New Pathway**,
+(lamp posts, fences, plants, benches) laid out by rules. Add it with **GameObject > VirtualVenues > World > Pathway**,
 or `AddComponent<Pathway>()` on an object (it adds the `SplineContainer`, `MeshFilter` and `MeshRenderer` it needs).
 
 It is **self-contained**: only the spline, the rules and the seed are saved. The strip and props are rebuilt when

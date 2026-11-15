@@ -37,7 +37,7 @@ namespace VirtualVenues.WorldCreator
         }
 
 #if UNITY_EDITOR
-        [UnityEditor.MenuItem("GameObject/VirtualVenues/Respawn Zone", isValidateFunction: false, priority: 0)]
+        [UnityEditor.MenuItem(CreateMenu.ZonesMenu + "Respawn Zone", isValidateFunction: false, priority: CreateMenu.ZonesOrder + 4)]
         private static void CreateRespawnZone(UnityEditor.MenuCommand menuCommand)
         {
             EditorHelpers.SpawnEditorObject("RespawnZone", Vector3.zero);
