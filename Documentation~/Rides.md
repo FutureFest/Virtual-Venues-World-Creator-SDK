@@ -36,6 +36,8 @@ Menu: **GameObject > VirtualVenues > Rides > Roller Coaster / Support Blocker**.
 
 Only the AudioSources' clip, 3D settings and loudness matter; `RideSounds` sets volume, pitch, Play and Stop from
 code (no persistent UnityEvents, nothing for code stripping to drop). No mixer or effects, so it is web-safe.
+Audio priority (an `AudioChannel` Priority / Duck floor) works with it: the app scales the volume `RideSounds` sets,
+it does not replace it.
 The inspector shows live speed, section and each layer's volume and pitch in Play mode.
 
 ```csharp

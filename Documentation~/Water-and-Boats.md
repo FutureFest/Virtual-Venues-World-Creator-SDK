@@ -126,6 +126,9 @@ How it drives (fixed in the app and the TestPlayer, not editable from a world):
   Rigidbody mode emits nothing for them). Simulation Space World. On a `WaterWaves` surface they are cleared when the boat teleports (no foam streak on respawn).
 - **Engine and splash:** AudioSources driven by the `_events` (Driver Enter -> Play, Driver Exit -> Stop, On Speed ->
   `AudioSource.pitch` with a Speed Output Range like 0.6-1.8, Enter Water -> splash one-shot or particle burst).
+- **A boat with its own music or stage:** give its `Speaker` (or its music's `AudioChannel`) a higher **Priority** than
+  the areas it sails through (e.g. 2 against a main stage at 1). Near the boat, while its audio plays, the other audio
+  goes down to its own Duck floor; see "Audio priority" in Components.md.
 - Put particle renderers in the boat's LODGroup so they cull with the hull.
 
 ## Testing without the app

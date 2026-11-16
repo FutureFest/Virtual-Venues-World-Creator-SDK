@@ -13,6 +13,9 @@ namespace VirtualVenues.WorldCreator
         [SerializeField] private int _stageIndex = 0;
         [Space]
         [SerializeField] private Renderer _screenMesh = null;
+        [Tooltip("Which of the mesh's materials the stream goes on, for a mesh with several materials (e.g. 0 = the screen face, " +
+                 "1 = a frame). The other materials are left alone.")]
+        [SerializeField, Min(0)] private int _materialIndex = 0;
         [SerializeField] private Texture2D _defaultTexture = null;
         private string _texturePropertyName = "_BaseMap";
         // The mesh material's own tiling/offset, read in Awake. Without a mesh material the stream layout's code default applies.
@@ -28,7 +31,7 @@ namespace VirtualVenues.WorldCreator
         // Stacked (0) is also what a screen saved before this field existed reads, so published worlds keep playing stacked.
         [FormerlySerializedAs("_videoArea")]
         [SerializeField] private StreamLayout _streamLayout = StreamLayout.Stacked;
-        [Tooltip("What this screen shows. Visuals: the video as it is. Artist (green screen): the artist with the green screen keyed out, " +
+        [Tooltip("Screen Type. Visuals: the video as it is. Artist (green screen): the artist with the green screen keyed out, " +
                  "like the Artist cut-out, but flat. Put it in front of a visuals Screen.")]
         // Visuals (0) is also what a screen saved before this field existed reads, so published worlds keep the plain screen.
         [SerializeField] private ScreenContent _content = ScreenContent.Visuals;
@@ -48,6 +51,8 @@ namespace VirtualVenues.WorldCreator
             }
         }
         public Renderer Renderer => _screenMesh;
+        // The material slot the stream goes on, as authored. StageMaterialSlots.Clamp fits it to the mesh actually used.
+        public int MaterialIndex => _materialIndex;
         public Texture2D DefaultTexture => _defaultTexture;
         public string TexturePropertyName => _texturePropertyName;
         // What Awake read from the mesh material (for either stream layout: in the SDK the stream layout picks the material), else
@@ -101,6 +106,16 @@ namespace VirtualVenues.WorldCreator
             Configure(stageIndex, source, streamLayout);
         }
 
+        /// <summary>
+        /// As Configure(stageIndex, source, streamLayout, content), plus the mesh's material slot the stream goes on
+        /// (negative reads 0; past the mesh's last slot, the last slot is used).
+        /// </summary>
+        public void Configure(int stageIndex, string source, string streamLayout, string content, int materialIndex)
+        {
+            _materialIndex = Mathf.Max(0, materialIndex);
+            Configure(stageIndex, source, streamLayout, content);
+        }
+
 #if UNITY_EDITOR
         private void OnValidate()
         {
@@ -116,10 +131,12 @@ namespace VirtualVenues.WorldCreator
             }
             // Guard the mesh deref so a runtime-added Screen (e.g. via the UWE LayoutLoader, which
             // AddComponents onto a bare GameObject before assigning a mesh) does not NRE in Awake.
-            if (_screenMesh != null && _screenMesh.material != null)
+            // The material in the marker's Material Slot (clamped). Read from the shared material: same values, no instance.
+            Material material = StageMaterialSlots.SharedMaterial(_screenMesh, _materialIndex);
+            if (material != null)
             {
-                _screenTilingScale = _screenMesh.material.GetTextureScale(_texturePropertyName);
-                _screenTextureOffset = _screenMesh.material.GetTextureOffset(_texturePropertyName);
+                _screenTilingScale = material.GetTextureScale(_texturePropertyName);
+                _screenTextureOffset = material.GetTextureOffset(_texturePropertyName);
                 _hasMaterialTransform = true;
             }
             // Registration intentionally deferred to Configure()/Start() — see Configure().

@@ -13,6 +13,8 @@ namespace VirtualVenues.WorldCreator
         [SerializeField] private int _stageIndex = 0;
         [Space]
         [SerializeField] private Renderer _artistMesh = null;
+        [Tooltip("Which of the mesh's materials the stream goes on, for a mesh with several materials. The other materials are left alone.")]
+        [SerializeField, Min(0)] private int _materialIndex = 0;
         [SerializeField] private Texture2D _defaultTexture = null;
         [Space]
         [SerializeField] private Transform _pivot = null;
@@ -47,6 +49,8 @@ namespace VirtualVenues.WorldCreator
             }
         }
         public Renderer Renderer => _artistMesh;
+        // The material slot the stream goes on, as authored. StageMaterialSlots.Clamp fits it to the mesh actually used.
+        public int MaterialIndex => _materialIndex;
         public Texture2D DefaultTexture => _defaultTexture;
         public string TexturePropertyName => _texturePropertyName;
         // What Awake read from the mesh material (for either stream layout: in the SDK the stream layout picks the material), else
@@ -87,6 +91,16 @@ namespace VirtualVenues.WorldCreator
             Configure(stageIndex, artistPivotOffset, speakerSource);
         }
 
+        /// <summary>
+        /// As Configure(stageIndex, artistPivotOffset, speakerSource, streamLayout), plus the mesh's material slot the stream
+        /// goes on (negative reads 0; past the mesh's last slot, the last slot is used).
+        /// </summary>
+        public void Configure(int stageIndex, Vector3 artistPivotOffset, string speakerSource, string streamLayout, int materialIndex)
+        {
+            _materialIndex = Mathf.Max(0, materialIndex);
+            Configure(stageIndex, artistPivotOffset, speakerSource, streamLayout);
+        }
+
         private void OnValidate()
         {
             if (_artistMesh != null) { _artistMesh.gameObject.hideFlags = HideFlags.HideInHierarchy; }
@@ -106,10 +120,12 @@ namespace VirtualVenues.WorldCreator
             }
             // Guard the mesh deref so a runtime-added Artist (e.g. via the UWE LayoutLoader, which
             // AddComponents onto a bare GameObject before assigning a mesh) does not NRE in Awake.
-            if (_artistMesh != null && _artistMesh.material != null)
+            // The material in the marker's Material Slot (clamped). Read from the shared material: same values, no instance.
+            Material material = StageMaterialSlots.SharedMaterial(_artistMesh, _materialIndex);
+            if (material != null)
             {
-                _tilingScale = _artistMesh.material.GetTextureScale(_texturePropertyName);
-                _textureOffset = _artistMesh.material.GetTextureOffset(_texturePropertyName);
+                _tilingScale = material.GetTextureScale(_texturePropertyName);
+                _textureOffset = material.GetTextureOffset(_texturePropertyName);
                 _hasMaterialTransform = true;
             }
             // Registration intentionally deferred to Configure()/Start() — see Configure().

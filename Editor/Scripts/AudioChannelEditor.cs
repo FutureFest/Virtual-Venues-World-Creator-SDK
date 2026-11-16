@@ -43,12 +43,19 @@ namespace VirtualVenues.WorldCreator.Editor
                 EditorGUILayout.HelpBox($"'{prop.stringValue}' is not a built-in channel or a custom channel in this scene's Audio Channel Set. The app will use Sound Effects.", MessageType.Warning);
             }
 
+            AudioPriorityGUI.Draw(serializedObject);
+
             if (targets.Length == 1)
             {
                 ((AudioChannel)target).GetSources(_sources);
                 EditorGUILayout.HelpBox(_sources.Count == 0
                     ? "No AudioSource on this object or its children."
                     : $"Routes {_sources.Count} AudioSource(s) here and below.", _sources.Count == 0 ? MessageType.Warning : MessageType.Info);
+                int speakers = ((AudioChannel)target).GetComponentsInChildren<Speaker>(true).Length;
+                if (speakers > 0)
+                {
+                    EditorGUILayout.HelpBox($"{speakers} Speaker(s) below play the stage stream: they skip this channel and use their own Priority and Duck floor.", MessageType.Info);
+                }
                 DrawCustomChannelButton((AudioChannel)target, sets);
             }
             serializedObject.ApplyModifiedProperties();

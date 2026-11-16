@@ -80,25 +80,10 @@ namespace VirtualVenues.WorldCreator
             _instances.Remove(this);
         }
 
+        // The Stage this trigger sits under, else the nearest active Stage in its scene (Stage.FindFor).
         private void FindStageReference()
         {
-            var stages = FindObjectsByType<Stage>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-            float closestDistance = float.MaxValue;
-            Stage closestStage = null;
-
-            Vector3 currentPosition = transform.position;
-
-            foreach (var stage in stages)
-            {
-                float distance = Vector3.Distance(currentPosition, stage.transform.position);
-                if (distance < closestDistance)
-                {
-                    closestDistance = distance;
-                    closestStage = stage;
-                }
-            }
-
-            _stage = closestStage;
+            _stage = Stage.FindFor(this);
         }
     }
 

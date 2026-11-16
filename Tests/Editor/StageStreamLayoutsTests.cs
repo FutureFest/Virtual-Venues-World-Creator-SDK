@@ -539,6 +539,164 @@ namespace VirtualVenues.Tests
             }
         }
 
+        // ---- Material Slot (MaterialIndex): the mesh material the stream goes on ----
+
+        private static void SetMaterialIndexField(MonoBehaviour marker, int index)
+        {
+            var so = new SerializedObject(marker);
+            so.FindProperty("_materialIndex").intValue = index;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static int MaterialIndexOf(MonoBehaviour marker) => marker is Artist artist ? artist.MaterialIndex : ((Screen)marker).MaterialIndex;
+
+        [Test] public void MaterialSlotsClampToTheMesh()
+        {
+            Assert.That(StageMaterialSlots.Clamp(0, 3), Is.EqualTo(0));
+            Assert.That(StageMaterialSlots.Clamp(2, 1), Is.EqualTo(1));
+            Assert.That(StageMaterialSlots.Clamp(2, 7), Is.EqualTo(1), "past the last slot: the last slot");
+            Assert.That(StageMaterialSlots.Clamp(2, -1), Is.EqualTo(0));
+            Assert.That(StageMaterialSlots.Clamp((Renderer)null, 4), Is.EqualTo(0));
+            Assert.That(StageMaterialSlots.SharedMaterial(null, 0), Is.Null);
+        }
+
+        // Slot 0 by default (what published worlds read), on new components and on the SDK prefabs.
+        [TestCase("Screen", false)]
+        [TestCase("Artist", true)]
+        [TestCase("Stage", false)]
+        [TestCase("Stage", true)]
+        public void MaterialSlotDefaultsToZero(string prefabName, bool artist)
+        {
+            Assert.That(MaterialIndexOf(Marker(Resources.Load<GameObject>(prefabName), artist)), Is.EqualTo(0));
+            var go = new GameObject("MaterialSlotDefault");
+            try
+            {
+                Assert.That(go.AddComponent<Screen>().MaterialIndex, Is.EqualTo(0));
+                Assert.That(go.AddComponent<Artist>().MaterialIndex, Is.EqualTo(0));
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
+
+        // The newest Configure overloads set the slot (negative reads 0); the older ones leave it as it is.
+        [Test] public void ConfigureSetsTheMaterialSlot()
+        {
+            var go = new GameObject("MaterialSlotConfigure");
+            try
+            {
+                var screen = go.AddComponent<Screen>();
+                var artist = go.AddComponent<Artist>();
+                screen.Configure(0, "Artist", "whole", "", 2);
+                artist.Configure(0, Vector3.zero, "Artist", "whole", 1);
+                Assert.That(screen.MaterialIndex, Is.EqualTo(2));
+                Assert.That(artist.MaterialIndex, Is.EqualTo(1));
+                screen.Configure(0, "Artist", "whole", "artist");
+                artist.Configure(0, Vector3.zero, "Artist", "");
+                Assert.That(screen.MaterialIndex, Is.EqualTo(2));
+                Assert.That(artist.MaterialIndex, Is.EqualTo(1));
+                screen.Configure(0, "Artist", "whole", "", -4);
+                Assert.That(screen.MaterialIndex, Is.EqualTo(0));
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
+
+        // Awake reads tiling/offset from the material in the slot (a frame on slot 0, the screen face on slot 1), clamped.
+        [TestCase(false)]
+        [TestCase(true)]
+        public void AwakeReadsTheTransformFromTheChosenSlot(bool artist)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            Shader unlit = Shader.Find("Universal Render Pipeline/Unlit");
+            var frame = new Material(unlit) { name = "Frame" };
+            var face = new Material(unlit) { name = "Face" };
+            frame.SetTextureScale("_BaseMap", new Vector2(3f, 3f));
+            face.SetTextureScale("_BaseMap", Half);
+            face.SetTextureOffset("_BaseMap", TopOffset);
+            try
+            {
+                Renderer mesh = go.GetComponent<Renderer>();
+                mesh.sharedMaterials = new[] { frame, face };
+                MonoBehaviour marker = artist ? (MonoBehaviour)go.AddComponent<Artist>() : go.AddComponent<Screen>();
+                var so = new SerializedObject(marker);
+                so.FindProperty(artist ? "_artistMesh" : "_screenMesh").objectReferenceValue = mesh;
+                so.FindProperty("_streamLayout").intValue = (int)StreamLayout.Whole;
+                so.FindProperty("_materialIndex").intValue = 1;
+                so.ApplyModifiedPropertiesWithoutUndo();
+                RunAwake(marker);
+                Assert.That(Tiling(marker), Is.EqualTo(Half));
+                Assert.That(Offset(marker), Is.EqualTo(TopOffset));
+
+                SetMaterialIndexField(marker, 9); // past the last slot: the last one
+                RunAwake(marker);
+                Assert.That(Tiling(marker), Is.EqualTo(Half));
+
+                SetMaterialIndexField(marker, 0);
+                RunAwake(marker);
+                Assert.That(Tiling(marker), Is.EqualTo(new Vector2(3f, 3f)));
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+                Object.DestroyImmediate(frame);
+                Object.DestroyImmediate(face);
+            }
+        }
+
+        // Stream Layout and Content swap only the material in the marker's slot; a frame on another slot is left alone, and a
+        // creator's own material in the slot is still left alone.
+        [TestCase(false)]
+        [TestCase(true)]
+        public void TheSwapOnlyTouchesTheChosenSlot(bool artist)
+        {
+            var go = (GameObject)PrefabUtility.InstantiatePrefab(Resources.Load<GameObject>(artist ? "Artist" : "Screen"));
+            var frame = new Material(Shader.Find("Universal Render Pipeline/Unlit")) { name = "Frame" };
+            try
+            {
+                MonoBehaviour marker = Marker(go, artist);
+                Renderer mesh = Mesh(marker);
+                Material whole = StageStreamLayoutAssets.GetMaterial(artist, StreamLayout.Whole);
+                Material stacked = StageStreamLayoutAssets.GetMaterial(artist, StreamLayout.Stacked);
+
+                mesh.sharedMaterials = new[] { frame, whole };
+                SetMaterialIndexField(marker, 1);
+                Assert.That(StageStreamLayoutAssets.HasCustomMaterial(marker), Is.False);
+                StageStreamLayoutAssets.SetStreamLayout(marker, StreamLayout.Stacked);
+                Assert.That(mesh.sharedMaterials[0], Is.SameAs(frame));
+                Assert.That(mesh.sharedMaterials[1], Is.SameAs(stacked));
+                if (!artist)
+                {
+                    StageStreamLayoutAssets.SetScreenContent(marker, ScreenContent.Artist);
+                    Assert.That(mesh.sharedMaterials[0], Is.SameAs(frame));
+                    Assert.That(mesh.sharedMaterials[1], Is.SameAs(StageStreamLayoutAssets.GetMaterial(true, StreamLayout.Stacked)));
+                    StageStreamLayoutAssets.SetScreenContent(marker, ScreenContent.Visuals);
+                }
+
+                // Slot 0 holds the frame, the creator's own material: nothing is swapped.
+                SetMaterialIndexField(marker, 0);
+                Assert.That(StageStreamLayoutAssets.HasCustomMaterial(marker), Is.True);
+                StageStreamLayoutAssets.SetStreamLayout(marker, StreamLayout.Whole);
+                Assert.That(LayoutOf(marker), Is.EqualTo(StreamLayout.Whole));
+                Assert.That(mesh.sharedMaterials[0], Is.SameAs(frame));
+                Assert.That(mesh.sharedMaterials[1], Is.SameAs(stacked));
+
+                // Past the last slot: the last slot is swapped.
+                SetMaterialIndexField(marker, 5);
+                StageStreamLayoutAssets.SetStreamLayout(marker, StreamLayout.Whole);
+                Assert.That(mesh.sharedMaterials[0], Is.SameAs(frame));
+                Assert.That(mesh.sharedMaterials[1], Is.SameAs(whole));
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+                Object.DestroyImmediate(frame);
+            }
+        }
+
+        // The Inspector label of Screen.Content ("Screen Type") is one constant (the owner may rename it again).
+        [Test] public void ScreenContentLabelIsOneConstant()
+        {
+            Assert.That(StagePickerGUI.ScreenContentLabel, Is.EqualTo("Screen Type"));
+        }
+
         private static bool HasOverride(Object target, string propertyPath)
         {
             Object source = PrefabUtility.GetCorrespondingObjectFromSource(target);

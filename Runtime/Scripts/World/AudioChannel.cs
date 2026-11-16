@@ -79,24 +79,46 @@ namespace VirtualVenues.WorldCreator
     /// Music is only used through this marker. Stage Speakers always use Stream. Old ids still work:
     /// background-music / ambient-music = Music, ambient-audio / ambient-environment = Ambience, rides = Sound Effects.
     /// The VirtualVenues app does the routing when the world loads; nothing changes at edit time.
+    /// Priority / Duck floor: see <see cref="AudioPriority"/>; 0 (the default) changes nothing.
     /// </summary>
     [AddComponentMenu("VirtualVenues/Audio Channel")]
     public class AudioChannel : MonoBehaviour
     {
         [Tooltip("Channel id: music, ambience, sfx, or a custom id from the world's Audio Channel Set.")]
         [SerializeField] private string _channel = AudioChannels.SoundEffects;
+        [Tooltip(AudioPriority.PriorityTooltip)]
+        [SerializeField] private int _priority = AudioPriority.DefaultPriority;
+        [Tooltip(AudioPriority.DuckFloorTooltip)]
+        [SerializeField, Range(0f, 1f)] private float _duckFloor = AudioPriority.DefaultDuckFloor;
 
         public string Channel => _channel;
+
+        /// <summary>0 = no priority. Higher turns down lower-priority audio near it while it plays (see <see cref="AudioPriority"/>).
+        /// Speakers below this marker use their own priority.</summary>
+        public int Priority
+        {
+            get => _priority;
+            set { if (_priority == value) { return; } _priority = value; AudioPriority.onPriorityChanged?.Invoke(this); }
+        }
+
+        /// <summary>0..1: how far these sources go down when higher-priority audio is at full strength. Default 0.05.</summary>
+        public float DuckFloor
+        {
+            get => _duckFloor;
+            set { value = AudioPriority.ClampFloor(value); if (_duckFloor == value) { return; } _duckFloor = value; AudioPriority.onPriorityChanged?.Invoke(this); }
+        }
 
         private static readonly List<AudioChannel> _instances = new List<AudioChannel>();
         public static List<AudioChannel> Instances => _instances;
         public static Action<AudioChannel> onAudioChannelAdded = null;
+        public static Action<AudioChannel> onAudioChannelRemoved = null;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStaticState()
         {
             _instances.Clear();
             onAudioChannelAdded = null;
+            onAudioChannelRemoved = null;
         }
 
         private void Awake()
@@ -108,7 +130,13 @@ namespace VirtualVenues.WorldCreator
 
         private void OnDestroy()
         {
-            _instances.Remove(this);
+            if (_instances.Remove(this)) { onAudioChannelRemoved?.Invoke(this); }
+        }
+
+        private void OnValidate()
+        {
+            _duckFloor = AudioPriority.ClampFloor(_duckFloor);
+            if (Application.isPlaying) { AudioPriority.onPriorityChanged?.Invoke(this); }  // Inspector edits in Play mode
         }
 
         /// <summary>Fills <paramref name="sources"/> with the AudioSources whose nearest AudioChannel is this one.</summary>

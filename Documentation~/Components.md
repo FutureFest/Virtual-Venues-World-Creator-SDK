@@ -22,14 +22,15 @@ Lighting, sky and fog come from the main scene's own Lighting settings. The worl
 | Component | Add it | Key fields | Needs | Kind | Test player |
 |---|---|---|---|---|---|
 | `Stage` | **New Stage** (prefab `Stage`: stage + screen + booths) | `_stageIndex` int, `_activateOnStart` (off = dark until someone enters a `StageTrigger`) | — | marker | no |
-| `Screen` | prefab `Screen` | `_stageIndex` (a parent `Stage` wins), `_screenMesh` Renderer, `_defaultTexture` (empty = the mesh material's picture), `_source` Artist/Visuals, `_streamLayout` Whole video (prefab default) / Stacked, `_content` (**Shows**) Visuals (default) / Artist (green screen) | parent Stage or index | marker | no |
-| `Artist` | prefab `Artist` | `_stageIndex`, `_artistMesh`, `_pivot`, `_speakerSource`, `_streamLayout` Whole video (prefab default) / Stacked | parent Stage or index | marker | no |
-| `Speaker` | add component | `_stageIndex`, `_source` Artist/Visuals, `_channel` Mono/StereoLeft/StereoRight | `AudioSource` | marker | no |
-| `StageTrigger` | **Stage Trigger** (20×10×20 box) | `_stage` (auto: nearest), `_activateOnInitialize` | `Collider` (trigger) | marker | no |
-| `Fixture` | **Fixtures/Moving Head Fixture**; PAR and Strobe via the Stage's "+" scene gizmo; prefabs `Moving Head Fixture`, `PAR Fixture`, `Strobe Fixture` | `_stage`, `_type` PAR/MovingHead/Strobe, `_mirrorPanRotation` | under a Stage | marker (DMX) | no |
+| `Screen` | prefab `Screen` | `_stageIndex` (a parent `Stage` wins), `_screenMesh` Renderer, `_materialIndex` (**Material Slot**, default 0), `_defaultTexture` (empty = the mesh material's picture), `_source` Artist/Visuals, `_streamLayout` Whole video (prefab default) / Stacked, `_content` (**Screen Type**) Visuals (default) / Artist (green screen) | parent Stage or index | marker | no |
+| `Artist` | prefab `Artist` | `_stageIndex`, `_artistMesh`, `_materialIndex` (**Material Slot**, default 0), `_pivot`, `_speakerSource`, `_streamLayout` Whole video (prefab default) / Stacked | parent Stage or index | marker | no |
+| `Speaker` | add component | `_stageIndex`, `_source` Artist/Visuals, `_channel` Mono/StereoLeft/StereoRight, `_priority` (**Priority**, default 0), `_duckFloor` (**Duck floor**, default 5%); range = the AudioSource's Min/Max Distance (**Show audio range**) | `AudioSource` | marker | no |
+| `StageTrigger` | **Stage Trigger** (20×10×20 box) | `_stage` (auto: parent Stage, else nearest), `_activateOnInitialize` | `Collider` (trigger) | marker | no |
+| `Fixture` | **Fixtures/Moving Head Fixture**; PAR and Strobe via the Stage's "+" scene gizmo; prefabs `Moving Head Fixture`, `PAR Fixture`, `Strobe Fixture` | `_stage` (auto: parent Stage, else nearest), `_type` PAR/MovingHead/Strobe, `_mirrorPanRotation` | under a Stage | marker (DMX) | no |
 | `RoomBoundary` | add component | `stageIndex`, `volume` Collider, `privacyBarrier` GameObject | a trigger volume | self-contained | no listener offline |
 | `AmbientAudio` | add component (**Ambient Audio**) | AudioSource min/max distance | `AudioSource` | self-contained | silent offline |
-| `AudioChannel` | add component | `_channel` id: `music`, `ambience`, `sfx` or a custom id | `AudioSource` here or below | marker | no (app mixer) |
+| `AudioChannel` | add component | `_channel` id: `music`, `ambience`, `sfx` or a custom id; `_priority` (**Priority**, default 0), `_duckFloor` (**Duck floor**, default 5%) | `AudioSource` here or below | marker | no (app mixer) |
+| `AudioOcclusionZone` | add component (**Audio Occlusion Zone**) | `_shape` Box/Sphere, `_center`, `_size` / `_radius` (local), `_priority` (default 1), `_edgeBlend` m (default 2) | — | marker | no (app mixer) |
 | `AudioChannelSet` | add component, one per world (or the **Add Audio Channel Set** button on an `AudioChannel`) | `_channels`: id, display name, parent (Music, Ambience or Sound Effects), default volume; max 8 | — | marker | no |
 
 `RoomAmbientAudio` is the old name of `AmbientAudio`: it still works in published worlds but is hidden from Add
@@ -49,6 +50,30 @@ the channel on an `AudioChannel`. The app only sets each source's mixer group; y
 Old ids still work on markers and custom-channel parents: `background-music` and `ambient-music` = `music`,
 `ambient-audio` and `ambient-environment` = `ambience`, `rides` = `sfx`. They can't be custom channel ids.
 
+**Audio priority (ducking).** Every `AudioChannel` (whatever its channel) and every `Speaker` has a **Priority**
+(default 0) and a **Duck floor** (default 5%). 0 = no priority: with equal priorities you hear all overlapping audio as
+before. A higher number turns down lower-priority audio as the listener gets closer to it, but only while it is really
+playing (a stage with no live stream, or a stopped or muted AudioSource, ducks nothing; nor does audio the player
+muted in the mixer). Its strength follows the higher source's own range: full inside its AudioSource's **Min
+Distance**, none beyond **Max Distance**, a straight line between (a 2D AudioSource that is not under an
+`AmbientAudio` is heard everywhere, so it ducks everywhere). The lower source goes down at most to its own Duck floor,
+over about a quarter of a second. Several higher sources do not stack: the strongest one counts. Stages duck each other
+the same way, so a boat with its own Speaker (priority 2) can sail through the main stage (priority 1) and take over
+near it. Ducking is one more gain on top of everything else: the players' channel sliders and mute, the stage's distance
+fade and your own volume scripts keep working, and a ducked source gets its volume back exactly. A `Speaker` under an
+`AudioChannel` uses the Speaker's own Priority: stream audio never goes through the marker's channel. Sources added
+under a marker after the world loaded are not covered (as with channel routing), and voice chat is never ducked.
+Layouts carry a Speaker's values as `stageMedia.speakerPriority` (absent = 0) and `stageMedia.speakerDuckFloor`
+(a whole percent string, absent or "" = 5%); there is no web world editor row. Older app builds ignore both.
+
+**Audio occlusion zones.** An `AudioOcclusionZone` (a box or sphere in the object's local space, no collider) keeps
+an area's sound apart: while the listener is inside, audio located outside the zone with a lower priority than the
+zone's own **Priority** (default 1, so it works on default-priority audio) goes down to its Duck floor; audio inside
+the zone is untouched, and audio with a higher priority than the zone still comes through. **Edge blend** (default
+2 m) fades it in from the zone's edge inwards. The Scene view draws the zone and, fainter, the edge-blend line.
+`RoomBoundary` stays the hard, all-or-nothing room gate for streams and voice (and booking privacy); the zone is the
+soft, priority-aware one, and it is part of audio priority rather than a separate system.
+
 **Whole video or stacked video.** **Stream Layout** (under **Stream**) says which part of the video frame a `Screen`
 or `Artist` shows. **Whole video** shows the full frame: a movie, or a full-frame artist or visuals stream. Newly
 placed Screens and Artists start as Whole video. **Stacked** is one video carrying two pictures, the artist on top
@@ -63,16 +88,37 @@ of the SDK prefabs, or are added from code, are Stacked until set. Older app bui
 mesh material's tiling, a layout marker's half, and no no-stream picture when `Default Texture` is empty.
 
 **Artist layer on a screen.** For an artist in front of the visuals, flat rather than a cut-out that turns to face
-players, use two `Screen`s: a visuals Screen behind, and in front of it a Screen with **Shows** (under **Stream
+players, use two `Screen`s: a visuals Screen behind, and in front of it a Screen with **Screen Type** (under **Stream
 Layout**) set to **Artist (green screen)**. That screen keys out the green screen with the same shader as the `Artist`
-cut-out, but stays flat. Stream Layout works as on any screen: **Stacked** shows the top half (the artist), **Whole
-video** a full-frame artist stream. Changing Shows swaps the mesh to the matching SDK material (the Artist's chroma key
-materials for Artist), as one undoable change; a material of your own is left as it is. The `Artist` component is for
-the cut-out behind the booth. Do not put a `Screen` and an `Artist` on the same object: they drive the same mesh and
-the Inspector warns about it. Older app builds ignore Shows and show the screen unkeyed.
+cut-out, but stays flat. Stream Layout works as on any screen: **Stacked** uses the top half (the artist), **Whole
+video** a full-frame artist stream. Changing Screen Type swaps the mesh to the matching SDK material (the Artist's chroma
+key materials for Artist), as one undoable change; a material of your own is left as it is. The `Artist` component is
+for the cut-out behind the booth. Do not put a `Screen` and an `Artist` on the same object: they drive the same mesh and
+the Inspector warns about it. Older app builds ignore Screen Type and show the screen unkeyed.
 
-Stage parts find their stage index from a parent `Stage` first, then their own `_stageIndex`. Visuals screens
-show black until the app's visuals stream is live. Shader `Custom/UnlitChromaKeyURP` keys out the artist video.
+**Meshes with several materials.** When a `Screen`'s or `Artist`'s mesh has more than one material (say slot 0 is the
+screen face and slot 1 a gold frame), the Inspector shows **Material Slot**, listing the mesh's materials as
+`index: name`. Pick the slot the video goes on; the other materials are left alone, in the editor (Stream Layout and
+Screen Type only swap the material in that slot) and in the world (the stream, the shader and the no-stream picture
+use only that slot, and the tiling/offset come from that slot's material). With one material the field is hidden and
+slot 0 is used. A slot past the mesh's last one uses the last slot. Layout data carries it as `stageMedia.materialIndex`
+(default 0). Older app builds put the stream on every material of the mesh.
+
+**Picking the stage.** Stage parts find their stage from a parent `Stage` first, then the Stage in their **Stage**
+slot (or their own `_stageIndex`). **Refresh** next to the slot picks again: the Stage the object sits under, else the
+nearest Stage in the scene, replacing whatever was there (one undo step; on a prefab instance it is an override). Use it
+after moving a Screen, Speaker or Artist next to another Stage. If an object was given a Stage and later moved under a
+different one, the Inspector warns that the world still uses the assigned Stage until you click Refresh. `StageTrigger`
+and `Fixture` look their Stage up the same way when added or reset. Visuals screens show black until the app's visuals
+stream is live. Shader `Custom/UnlitChromaKeyURP` keys out the artist video.
+
+**Speaker range.** A `Speaker` plays at full volume within its AudioSource's **Min Distance** and fades in a straight
+line to silent at **Max Distance** (the app's own fade, not the AudioSource's rolloff curve). Tick **Show audio range**
+on a Speaker to draw both in the Scene view for every Speaker: the inner sphere ("Full volume") and the outer sphere
+("Silent beyond"). It is an editor preference and is not saved in the world.
+
+Every Stage component (Stage, Stage Trigger, Screen, Artist, Speaker, Fixture, Ambient Audio, Room Boundary, Audio Occlusion Zone) shows the
+VirtualVenues logo as its icon in the Inspector and in the Scene view.
 
 ## Controls
 
@@ -296,6 +342,9 @@ Markers expose `Configure` so code can set them without `SerializedObject`:
 `Artist.Configure(int stageIndex, Vector3 artistPivotOffset, string speakerSource, string streamLayout)`
 (`streamLayout`: `"whole"` = Whole video, `""` or anything else = Stacked; see `StageStreamLayouts.Parse` / `Format`),
 `Speaker.Configure(int stageIndex, string speakerSource, int speakerChannel)`,
+`Speaker.ConfigureAudioPriority(int priority, float duckFloor)` (also the `Priority` / `DuckFloor` properties on
+`Speaker` and `AudioChannel`, and `Priority` on `AudioOcclusionZone`; `AudioPriority.ParseFloor` / `FormatFloor` for the
+layout string),
 `SpawnPoint.Configure(bool isDefault, string team)`, `TriggerZone.Configure(string zoneName)`,
 `BounceZoneData.Configure(Transform direction, float force)`,
 `PushZoneData.Configure(Transform direction, float initialForce, float force)`,

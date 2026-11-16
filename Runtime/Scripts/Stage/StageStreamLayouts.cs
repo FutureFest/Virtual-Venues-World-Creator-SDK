@@ -38,7 +38,7 @@ namespace VirtualVenues.WorldCreator
         /// <summary>
         /// Whole: the full frame, (1, 1) / (0, 0). Stacked: the top half for an Artist, (1, 0.5) / (0, -0.5), the bottom
         /// half for a Screen, (1, 0.5) / (0, 0). -0.5 rather than 0.5 so AVPro's vertical-flip path needs no texture wrap.
-        /// Pass artist true for an Artist and for a Screen set to Shows: Artist (it shows the artist, the top half).
+        /// Pass artist true for an Artist and for a Screen whose Screen Type is Artist (it shows the artist, the top half).
         /// </summary>
         public static void GetDefaultTransform(StreamLayout streamLayout, bool artist, out Vector2 tiling, out Vector2 offset)
         {
@@ -79,13 +79,43 @@ namespace VirtualVenues.WorldCreator
         }
     }
 
+    /// <summary>
+    /// The material slot a Screen or Artist puts the stream on (MaterialIndex), for a mesh with several materials, e.g.
+    /// slot 0 = the screen face and slot 1 = a gold frame. An index past the last slot uses the last slot, a negative one
+    /// slot 0, so a mesh swapped for one with fewer materials still shows the stream.
+    /// </summary>
+    public static class StageMaterialSlots
+    {
+        /// <summary>index clamped to the renderer's material slots. 0 for no renderer or a renderer without materials.</summary>
+        public static int Clamp(Renderer renderer, int index)
+        {
+            return Clamp(renderer != null ? renderer.sharedMaterials.Length : 0, index);
+        }
+
+        /// <summary>index clamped to 0..slotCount-1. 0 when slotCount is 0 or less.</summary>
+        public static int Clamp(int slotCount, int index)
+        {
+            if (slotCount <= 0) { return 0; }
+            return Mathf.Clamp(index, 0, slotCount - 1);
+        }
+
+        /// <summary>The shared material in the (clamped) slot, or null for no renderer or no materials.</summary>
+        public static Material SharedMaterial(Renderer renderer, int index)
+        {
+            if (renderer == null) { return null; }
+            Material[] materials = renderer.sharedMaterials;
+            return materials.Length == 0 ? null : materials[Clamp(materials.Length, index)];
+        }
+    }
+
 #if UNITY_EDITOR
     /// <summary>
     /// Editor only. The SDK's stage material for each marker kind and StreamLayout, and the swap the inspector runs when
-    /// the creator changes Stream Layout, or a Screen's Shows (a Screen that shows the artist takes the Artist's chroma key
+    /// the creator changes Stream Layout, or a Screen's Screen Type (a Screen set to Artist takes the Artist's chroma key
     /// materials). The materials are found by GUID, so this works wherever the SDK is installed,
     /// and a built world only carries the materials its markers reference. The material also carries the no-stream
-    /// placeholder picture and the tiling/offset the world uses at runtime.
+    /// placeholder picture and the tiling/offset the world uses at runtime. Only the marker's Material Slot
+    /// (MaterialIndex) is swapped; the mesh's other materials (a frame, say) are left alone.
     /// </summary>
     public static class StageStreamLayoutAssets
     {
@@ -97,7 +127,7 @@ namespace VirtualVenues.WorldCreator
 
         private static readonly string[] SdkMaterialGuids = { ArtistStackedMaterialGuid, ArtistWholeMaterialGuid, ScreenStackedMaterialGuid, ScreenWholeMaterialGuid };
 
-        /// <summary>artist: the chroma key pair, for an Artist or a Screen set to Shows: Artist. Else the plain Screen pair.</summary>
+        /// <summary>artist: the chroma key pair, for an Artist or a Screen whose Screen Type is Artist. Else the plain Screen pair.</summary>
         public static Material GetMaterial(bool artist, StreamLayout streamLayout)
         {
             if (artist) { return Load<Material>(streamLayout == StreamLayout.Whole ? ArtistWholeMaterialGuid : ArtistStackedMaterialGuid); }
@@ -110,11 +140,26 @@ namespace VirtualVenues.WorldCreator
             return material == null || Array.IndexOf(SdkMaterialGuids, GuidOf(material)) >= 0;
         }
 
-        /// <summary>True when the marker's mesh has a material of the creator's own, which a Stream Layout or Shows change leaves alone.</summary>
+        /// <summary>
+        /// True when the marker's mesh has a material of the creator's own in the marker's Material Slot, which a Stream
+        /// Layout or Screen Type change leaves alone.
+        /// </summary>
         public static bool HasCustomMaterial(UnityEngine.Object marker)
         {
-            Renderer mesh = marker is Artist artist ? artist.Renderer : marker is Screen screen ? screen.Renderer : null;
-            return mesh != null && !IsSdkMaterial(mesh.sharedMaterial);
+            Renderer mesh = MarkerMesh(marker);
+            return mesh != null && !IsSdkMaterial(StageMaterialSlots.SharedMaterial(mesh, MarkerMaterialIndex(marker)));
+        }
+
+        /// <summary>The Screen's or Artist's surface mesh, else null.</summary>
+        public static Renderer MarkerMesh(UnityEngine.Object marker)
+        {
+            return marker is Artist artist ? artist.Renderer : marker is Screen screen ? screen.Renderer : null;
+        }
+
+        /// <summary>The Screen's or Artist's Material Slot as authored (not clamped), else 0.</summary>
+        public static int MarkerMaterialIndex(UnityEngine.Object marker)
+        {
+            return marker is Artist artist ? artist.MaterialIndex : marker is Screen screen ? screen.MaterialIndex : 0;
         }
 
         /// <summary>
@@ -137,7 +182,8 @@ namespace VirtualVenues.WorldCreator
             SetAndSwap(marker, "_content", (int)content);
         }
 
-        // Writes one marker field, then picks the SDK material from the marker's Stream Layout and, on a Screen, Shows.
+        // Writes one marker field, then picks the SDK material from the marker's Stream Layout and, on a Screen, Screen Type,
+        // and puts it in the marker's Material Slot (clamped to the mesh's slots).
         private static void SetAndSwap(UnityEngine.Object marker, string field, int value)
         {
             bool artist = marker is Artist;
@@ -148,15 +194,18 @@ namespace VirtualVenues.WorldCreator
             markerObject.ApplyModifiedProperties();
 
             Renderer mesh = markerObject.FindProperty(artist ? "_artistMesh" : "_screenMesh").objectReferenceValue as Renderer;
-            if (mesh == null || !IsSdkMaterial(mesh.sharedMaterial)) { return; }
+            if (mesh == null) { return; }
+            UnityEditor.SerializedProperty slotProp = markerObject.FindProperty("_materialIndex");
+            int slot = StageMaterialSlots.Clamp(mesh, slotProp != null ? slotProp.intValue : 0);
+            if (!IsSdkMaterial(StageMaterialSlots.SharedMaterial(mesh, slot))) { return; }
             StreamLayout streamLayout = (StreamLayout)markerObject.FindProperty("_streamLayout").intValue;
             bool keyed = artist || markerObject.FindProperty("_content").intValue == (int)ScreenContent.Artist;
             Material material = GetMaterial(keyed, streamLayout);
             if (material == null) { return; }
             UnityEditor.SerializedObject meshObject = new UnityEditor.SerializedObject(mesh);
             UnityEditor.SerializedProperty materials = meshObject.FindProperty("m_Materials");
-            if (materials.arraySize == 0) { materials.arraySize = 1; }
-            materials.GetArrayElementAtIndex(0).objectReferenceValue = material;
+            if (materials.arraySize == 0) { materials.arraySize = 1; slot = 0; }
+            materials.GetArrayElementAtIndex(slot).objectReferenceValue = material;
             meshObject.ApplyModifiedProperties();
         }
 

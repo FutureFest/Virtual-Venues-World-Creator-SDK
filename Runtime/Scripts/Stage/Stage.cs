@@ -51,6 +51,49 @@ namespace VirtualVenues.WorldCreator
 
         public static Action<Stage> onStageAdded = null;
 
+        /// <summary>
+        /// The Stage a marker belongs to when it is (re)resolved: a Stage in the marker's parents wins, else the nearest
+        /// active Stage in the marker's scene. Null when there is none. The Inspector's Refresh button on Screen, Speaker
+        /// and Artist uses it, and so do Stage Trigger and Fixture when they look up their stage.
+        /// </summary>
+        public static Stage FindFor(Component marker)
+        {
+            if (marker == null) { return null; }
+            Stage parent = marker.GetComponentInParent<Stage>(true);
+            if (parent != null) { return parent; }
+
+            Stage nearest = null;
+            float best = float.MaxValue;
+            Vector3 at = marker.transform.position;
+            foreach (Stage stage in StagesInScene(marker.gameObject.scene))
+            {
+                if (stage == null || !stage.gameObject.activeInHierarchy) { continue; }
+                float distance = (stage.transform.position - at).sqrMagnitude;
+                if (distance < best)
+                {
+                    best = distance;
+                    nearest = stage;
+                }
+            }
+            return nearest;
+        }
+
+        // Every Stage in the scene (the prefab stage's scene in prefab mode), active or not.
+        private static List<Stage> StagesInScene(UnityEngine.SceneManagement.Scene scene)
+        {
+            List<Stage> stages = new List<Stage>();
+            if (!scene.IsValid() || !scene.isLoaded)
+            {
+                stages.AddRange(_instances);
+                return stages;
+            }
+            foreach (GameObject root in scene.GetRootGameObjects())
+            {
+                stages.AddRange(root.GetComponentsInChildren<Stage>(true));
+            }
+            return stages;
+        }
+
 #if UNITY_EDITOR
         // A Stage added in the editor takes the lowest stage number no other Stage in its scene uses.
         private void Reset()
@@ -100,7 +143,8 @@ namespace VirtualVenues.WorldCreator
     /// Inspector for the Screen, Speaker and Artist markers. Creators pick a Stage instead of typing its
     /// number: nested markers take the parent Stage, standalone ones take a Stage dragged into the slot or
     /// picked from the scene's Stage markers. The raw _stageIndex stays serialized for layout-configured
-    /// markers, which have no Stage reference, and follows the picked Stage via each marker's OnValidate.
+    /// markers, which have no Stage reference, and follows the picked Stage via each marker's OnValidate. Refresh picks the
+    /// Stage again (the parent Stage, else the nearest one), so a marker moved next to another Stage can adopt it.
     /// </summary>
     public static class StagePickerGUI
     {
@@ -121,9 +165,11 @@ namespace VirtualVenues.WorldCreator
             for (bool enter = true; it.NextVisible(enter); enter = false)
             {
                 if (it.name == "m_Script" || it.name == "_stage" || it.name == "_stageIndex") { continue; }
+                if (it.name == AudioPriorityGUI.PriorityField || it.name == AudioPriorityGUI.DuckFloorField) { continue; }  // Speaker draws its own block
                 if (it.name == "_streamIndex") { DrawStreamField(it, MarkerStageIndex(so.targetObject)); continue; }
                 if (it.name == "_streamLayout") { DrawStreamLayoutField(it, so); continue; }
                 if (it.name == "_content") { DrawScreenContentField(it, so); continue; }
+                if (it.name == "_materialIndex") { DrawMaterialSlotField(it, so); continue; }
                 EditorGUILayout.PropertyField(it, true);
             }
             so.ApplyModifiedProperties();
@@ -178,9 +224,15 @@ namespace VirtualVenues.WorldCreator
             streamProp.intValue = values[picked];
         }
 
-        private const string WholeLine = "Shows the whole video frame: a movie, or a full-frame artist/visuals stream.";
-        private const string StackedArtistLine = "Shows the top half of a stacked video (artist on top, visuals below). One stream carries both, in perfect sync.";
-        private const string StackedScreenLine = "Shows the bottom half of a stacked video (artist on top, visuals below). One stream carries both, in perfect sync.";
+        /// <summary>
+        /// The Inspector label of a Screen's _content field (ScreenContent). Every line that names the setting uses this, so
+        /// renaming it is one edit here (the web world editor has its own copy, SCREEN_CONTENT_LABEL in uwe-editor.js).
+        /// </summary>
+        public const string ScreenContentLabel = "Screen Type";
+
+        private const string WholeLine = "Uses the whole video frame: a movie, or a full-frame artist/visuals stream.";
+        private const string StackedArtistLine = "Uses the top half of a stacked video (artist on top, visuals below). One stream carries both, in perfect sync.";
+        private const string StackedScreenLine = "Uses the bottom half of a stacked video (artist on top, visuals below). One stream carries both, in perfect sync.";
         private const string CustomMaterialLine = " The mesh has its own material, so it was left as it is: its own tiling and offset are used when the world runs.";
         private const string MixedLayoutLine = "The selected objects show different parts of the video.";
         // Whole first: it is what a newly placed Screen or Artist starts with.
@@ -219,36 +271,37 @@ namespace VirtualVenues.WorldCreator
 
         private static string StreamLayoutHelpLine(UnityEngine.Object marker, StreamLayout streamLayout)
         {
-            string line = streamLayout == StreamLayout.Whole ? WholeLine : ShowsArtist(marker) ? StackedArtistLine : StackedScreenLine;
+            string line = streamLayout == StreamLayout.Whole ? WholeLine : IsArtistSurface(marker) ? StackedArtistLine : StackedScreenLine;
             return StageStreamLayoutAssets.HasCustomMaterial(marker) ? line + CustomMaterialLine : line;
         }
 
-        // An Artist, or a Screen set to Shows: Artist. Stacked, both show the top half.
-        private static bool ShowsArtist(UnityEngine.Object marker)
+        // An Artist, or a Screen whose Screen Type is Artist. Stacked, both use the top half.
+        private static bool IsArtistSurface(UnityEngine.Object marker)
         {
             return marker is Artist || (marker is Screen screen && screen.Content == ScreenContent.Artist);
         }
 
-        private const string VisualsContentLine = "Shows the video as it is: visuals, a movie, slides.";
+        private const string VisualsContentLine = "The video as it is: visuals, a movie, slides.";
         private const string ArtistContentLine = "Keys out the green screen, like the Artist cut-out, but stays flat. Put it in front of a visuals Screen.";
         private const string CustomMaterialContentLine = " A mesh with its own material was left as it is.";
-        private const string MixedContentLine = "The selected screens show different things.";
+        private const string MixedContentLine = "The selected screens have different " + ScreenContentLabel + " settings.";
         private static readonly GUIContent[] ScreenContentLabels = { new GUIContent("Visuals"), new GUIContent("Artist (green screen)") };
         private static readonly int[] ScreenContentValues = { (int)ScreenContent.Visuals, (int)ScreenContent.Artist };
 
-        // The Screen "Shows" popup, then one line on what it does. Picking also swaps the mesh's SDK stage material on every
-        // selected screen (StageStreamLayoutAssets.SetScreenContent: the Artist's chroma key pair for Artist), in one undo step.
+        // The Screen Type popup (ScreenContentLabel), then one line on what it does. Picking also swaps the mesh's SDK stage
+        // material on every selected screen (StageStreamLayoutAssets.SetScreenContent: the Artist's chroma key pair for Artist),
+        // in one undo step.
         private static void DrawScreenContentField(SerializedProperty contentProp, SerializedObject so)
         {
             EditorGUI.showMixedValue = contentProp.hasMultipleDifferentValues;
             EditorGUI.BeginChangeCheck();
-            int picked = EditorGUILayout.IntPopup(new GUIContent("Shows", contentProp.tooltip), contentProp.intValue, ScreenContentLabels, ScreenContentValues);
+            int picked = EditorGUILayout.IntPopup(new GUIContent(ScreenContentLabel, contentProp.tooltip), contentProp.intValue, ScreenContentLabels, ScreenContentValues);
             bool changed = EditorGUI.EndChangeCheck();
             EditorGUI.showMixedValue = false;
             if (changed)
             {
                 Undo.IncrementCurrentGroup();
-                Undo.SetCurrentGroupName("Change Screen Shows");
+                Undo.SetCurrentGroupName("Change " + ScreenContentLabel);
                 int group = Undo.GetCurrentGroup();
                 foreach (UnityEngine.Object target in so.targetObjects) { StageStreamLayoutAssets.SetScreenContent(target, (ScreenContent)picked); }
                 Undo.CollapseUndoOperations(group);
@@ -264,7 +317,43 @@ namespace VirtualVenues.WorldCreator
         }
 
         private const string ScreenAndArtistLine = "This object has both a Screen and an Artist. They drive the same mesh and fight over it. " +
-            "For a flat artist layer with the green screen keyed out, use a Screen set to Shows: Artist (green screen) and remove the Artist component.";
+            "For a flat artist layer with the green screen keyed out, use a Screen with " + ScreenContentLabel + " set to Artist (green screen) and remove the Artist component.";
+
+        private const string MaterialSlotLabel = "Material Slot";
+
+        // The Screen/Artist "Material Slot" popup: the mesh's materials as "index: name". Only shown when the mesh has more than
+        // one material; with one material slot 0 is the only choice. A slot past the mesh's last one is listed as such (the
+        // world clamps it to the last slot, StageMaterialSlots).
+        private static void DrawMaterialSlotField(SerializedProperty slotProp, SerializedObject so)
+        {
+            Renderer mesh = null;
+            foreach (UnityEngine.Object target in so.targetObjects)
+            {
+                Renderer targetMesh = StageStreamLayoutAssets.MarkerMesh(target);
+                if (targetMesh != null && targetMesh.sharedMaterials.Length > 1) { mesh = targetMesh; break; }
+            }
+            if (mesh == null) { return; }
+
+            Material[] materials = mesh.sharedMaterials;
+            List<GUIContent> labels = new List<GUIContent>();
+            List<int> values = new List<int>();
+            for (int i = 0; i < materials.Length; i++)
+            {
+                labels.Add(new GUIContent($"{i}: {(materials[i] != null ? materials[i].name : "(no material)")}"));
+                values.Add(i);
+            }
+            if (!slotProp.hasMultipleDifferentValues && !values.Contains(slotProp.intValue))
+            {
+                labels.Add(new GUIContent($"{slotProp.intValue}: (not on this mesh, slot {StageMaterialSlots.Clamp(materials.Length, slotProp.intValue)} is used)"));
+                values.Add(slotProp.intValue);
+            }
+
+            EditorGUI.showMixedValue = slotProp.hasMultipleDifferentValues;
+            EditorGUI.BeginChangeCheck();
+            int picked = EditorGUILayout.IntPopup(new GUIContent(MaterialSlotLabel, slotProp.tooltip), slotProp.intValue, labels.ToArray(), values.ToArray());
+            if (EditorGUI.EndChangeCheck()) { slotProp.intValue = Mathf.Max(0, picked); }
+            EditorGUI.showMixedValue = false;
+        }
 
         /// <summary>True for a Screen or an Artist whose GameObject has both components.</summary>
         public static bool HasScreenAndArtist(UnityEngine.Object marker)
@@ -289,24 +378,38 @@ namespace VirtualVenues.WorldCreator
             Component marker = so.targetObject as Component;
             if (marker == null) { return; }
 
+            SerializedProperty stageProp = so.FindProperty("_stage");
+            SerializedProperty indexProp = so.FindProperty("_stageIndex");
+
             Stage parent = marker.GetComponentInParent<Stage>(true);
             if (parent != null)
             {
-                using (new EditorGUI.DisabledScope(true))
+                using (new EditorGUILayout.HorizontalScope())
                 {
-                    EditorGUILayout.TextField(new GUIContent("Stage", "Taken from the Stage this object sits under."), StageLabel(parent.StageIndex, parent.DisplayName));
+                    using (new EditorGUI.DisabledScope(true))
+                    {
+                        EditorGUILayout.TextField(new GUIContent("Stage", "Taken from the Stage this object sits under."), StageLabel(parent.StageIndex, parent.DisplayName));
+                    }
+                    DrawRefreshButton(so);
+                }
+                // A Stage assigned while the object stood on its own stays saved after it is moved under another Stage.
+                if (!stageProp.hasMultipleDifferentValues && stageProp.objectReferenceValue is Stage assigned && assigned != parent)
+                {
+                    EditorGUILayout.HelpBox($"This object is still assigned to '{assigned.name}' (stage {assigned.StageIndex}), and the world uses that one. " +
+                        $"Click {RefreshLabel} to take the Stage it sits under.", MessageType.Warning);
                 }
                 return;
             }
 
-            SerializedProperty stageProp = so.FindProperty("_stage");
-            SerializedProperty indexProp = so.FindProperty("_stageIndex");
-
-            EditorGUI.BeginChangeCheck();
-            EditorGUILayout.PropertyField(stageProp, new GUIContent("Stage", "Drag a Stage marker here, or pick one with the circle button."));
-            if (EditorGUI.EndChangeCheck() && stageProp.objectReferenceValue is Stage dragged)
+            using (new EditorGUILayout.HorizontalScope())
             {
-                indexProp.intValue = dragged.StageIndex;
+                EditorGUI.BeginChangeCheck();
+                EditorGUILayout.PropertyField(stageProp, new GUIContent("Stage", "Drag a Stage marker here, or pick one with the circle button."));
+                if (EditorGUI.EndChangeCheck() && stageProp.objectReferenceValue is Stage dragged)
+                {
+                    indexProp.intValue = dragged.StageIndex;
+                }
+                DrawRefreshButton(so);
             }
 
             if (stageProp.objectReferenceValue == null && !stageProp.hasMultipleDifferentValues)
@@ -316,6 +419,42 @@ namespace VirtualVenues.WorldCreator
                     : "Pick a stage. Without one, this won't show or play any stream.";
                 EditorGUILayout.HelpBox(hint, MessageType.Warning);
             }
+        }
+
+        public const string RefreshLabel = "Refresh";
+
+        private static void DrawRefreshButton(SerializedObject so)
+        {
+            GUIContent content = new GUIContent(RefreshLabel, "Pick the Stage again: the Stage this object sits under, else the nearest Stage in the scene.");
+            if (!GUILayout.Button(content, EditorStyles.miniButton, GUILayout.Width(60))) { return; }
+            RefreshStage(so.targetObjects);
+            so.Update();
+        }
+
+        /// <summary>
+        /// The Inspector's Refresh: assigns each Screen, Speaker or Artist the Stage it sits under, else the nearest Stage in its
+        /// scene (Stage.FindFor), replacing whatever Stage it had, and copies that Stage's number. One undo step; written
+        /// through SerializedObjects, so it records as a prefab instance override. A marker with no Stage to find keeps its own.
+        /// </summary>
+        public static void RefreshStage(UnityEngine.Object[] markers)
+        {
+            Undo.IncrementCurrentGroup();
+            Undo.SetCurrentGroupName("Refresh Stage");
+            int group = Undo.GetCurrentGroup();
+            foreach (UnityEngine.Object marker in markers)
+            {
+                if (!(marker is Component component)) { continue; }
+                Stage stage = Stage.FindFor(component);
+                if (stage == null) { continue; }
+                SerializedObject markerObject = new SerializedObject(marker);
+                SerializedProperty stageProp = markerObject.FindProperty("_stage");
+                if (stageProp == null) { continue; }
+                stageProp.objectReferenceValue = stage;
+                SerializedProperty indexProp = markerObject.FindProperty("_stageIndex");
+                if (indexProp != null) { indexProp.intValue = stage.StageIndex; }
+                markerObject.ApplyModifiedProperties();
+            }
+            Undo.CollapseUndoOperations(group);
         }
 
         // Stages in the marker's own scene (the prefab stage's scene in prefab mode), sorted by number.

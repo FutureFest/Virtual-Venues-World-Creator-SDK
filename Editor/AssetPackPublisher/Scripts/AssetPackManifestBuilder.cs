@@ -152,6 +152,8 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         public string streamLayout;
         /// <summary>Screen: "" = Visuals, "artist" = the artist with the green screen keyed out (ScreenContents). Exported from the marker.</summary>
         public string screenContent;
+        /// <summary>Screen/Artist: the surface mesh's material slot the stream goes on (MaterialIndex), 0 = the first. Exported from the marker.</summary>
+        public int materialIndex;
         public bool startInactive;
     }
 
@@ -416,6 +418,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 c.stageMedia.screenSource = StageStreams.Format(screen.StreamIndex);
                 c.stageMedia.streamLayout = StageStreamLayouts.Format(screen.StreamLayout);
                 c.stageMedia.screenContent = ScreenContents.Format(screen.Content);
+                c.stageMedia.materialIndex = screen.MaterialIndex;
                 list.Add(c);
             }
 
@@ -445,6 +448,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 c.stageMedia.stageIndex = artist.StageIndex;
                 c.stageMedia.speakerSource = StageStreams.Format(artist.StreamIndex);
                 c.stageMedia.streamLayout = StageStreamLayouts.Format(artist.StreamLayout);
+                c.stageMedia.materialIndex = artist.MaterialIndex;
                 if (artist.Pivot != null)
                 {
                     Vector3 p = artist.Pivot.localPosition;
@@ -536,6 +540,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                     artistPivotOffset = new Vec3 { x = 0f, y = 0f, z = 0f },
                     streamLayout = string.Empty,
                     screenContent = string.Empty,
+                    materialIndex = 0,
                     startInactive = false,
                 },
                 light = new MfLightParams

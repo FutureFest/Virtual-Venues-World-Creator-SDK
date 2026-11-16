@@ -2,6 +2,60 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.10.24] - 2026-11-15
+
+### Added
+- **Audio priority (ducking).** **Priority** (int, default 0) and **Duck floor** (default 5%) on every
+  **AudioChannel** (any channel) and every **Speaker**, in a small "Audio priority" block in the Inspector. 0 = no
+  priority: equal priorities play as before. A higher number turns down lower-priority audio the closer the listener is
+  to it (full inside its AudioSource's Min Distance, none beyond Max Distance), only while it really plays (a stage
+  with no live stream, or a stopped, muted or player-muted source, ducks nothing). Lower audio goes down at most to
+  its own Duck floor, smoothed over about 0.25 s; the strongest higher source counts (no stacking). Stages duck each
+  other too (a boat stage through the main stage). The app applies it as one more gain on top of the channel sliders,
+  mute, the stage distance fade and the world's own volume scripts. A Speaker under an AudioChannel uses its own
+  Priority. `Priority` / `DuckFloor` properties, `Speaker.ConfigureAudioPriority(priority, duckFloor)`,
+  `AudioPriority` (defaults, labels, `ParseFloor` / `FormatFloor`, `onPriorityChanged`), `AudioChannel.onAudioChannelRemoved`
+  and `Speaker.onSpeakerRemoved`.
+- **AudioOcclusionZone** (Stage component, VirtualVenues logo icon): a box or sphere with its own **Priority** (default 1)
+  and **Edge blend** (default 2 m). While the listener is inside, lower-priority audio located outside the zone goes down
+  to its Duck floor; audio inside is untouched. Part of audio priority; no collider; Scene-view gizmo with the
+  edge-blend line. `RoomBoundary` stays the hard room gate.
+- Layouts: `stageMedia.speakerPriority` (absent = 0) and `stageMedia.speakerDuckFloor` (whole percent string, absent or
+  "" = 5%) for Speakers. No web world editor row.
+
+Worlds saved with older SDKs read Priority 0 and Duck floor 5%, so nothing changes until a creator sets a priority.
+Needs a matching app build; older app builds ignore the new fields.
+
+## [0.10.23] - 2026-11-15
+
+### Changed
+- The **Shows** popup on **Screen** is now labelled **Screen Type** (Inspector, help lines, warnings, docs and the web
+  world editor row). The options stay **Visuals** / **Artist (green screen)**; the field (`_content`), the enum
+  (`ScreenContent`) and the layout key (`stageMedia.screenContent`) are unchanged. The label lives in
+  `StagePickerGUI.ScreenContentLabel` (C#) and `SCREEN_CONTENT_LABEL` (web world editor).
+- **StageTrigger** and **Fixture** now take the Stage they sit under first, and only then the nearest active Stage in
+  their own scene (before: the nearest Stage in any loaded scene, ignoring the parent). Shared as `Stage.FindFor`.
+
+### Added
+- **Material Slot** on **Screen** and **Artist** (`MaterialIndex`, default 0). The Inspector shows a popup
+  (`index: material name`) only when the mesh has more than one material. The video, the tiling/offset read in Awake
+  and the Stream Layout / Screen Type material swap use that slot; an index past the mesh's materials uses the last
+  one. Layouts store it as `stageMedia.materialIndex` (absent = 0); there is no web world editor row.
+  `Screen.Configure(stageIndex, source, streamLayout, content, materialIndex)` and
+  `Artist.Configure(stageIndex, pivot, source, streamLayout, materialIndex)` set it from code; the older overloads
+  keep slot 0.
+- **Refresh** next to the stage picker on every stage marker (Screen, Artist, Speaker, StageTrigger, Fixture): takes
+  the parent Stage, or else the nearest one, as one undoable change that is recorded as a prefab override. The
+  Inspector warns when a marker under a Stage is still assigned to another one.
+- **Show audio range** on **Speaker**: Scene-view spheres for the AudioSource's Min Distance (**Full volume**) and Max
+  Distance (**Silent beyond**), the range the player fades the stream over. An editor preference, off by default.
+- The VirtualVenues logo is the script icon of the Stage components (Stage, Screen, Artist, Speaker, StageTrigger,
+  Fixture, AmbientAudio, RoomAmbientAudio, RoomBoundary).
+
+It takes effect after the matching FutureFestXR player update. That update also puts the video only on the chosen
+slot of a mesh with several materials (before, the video went on every material of the mesh). An older player uses
+slot 0.
+
 ## [0.10.22] - 2026-11-15
 
 ### Added
