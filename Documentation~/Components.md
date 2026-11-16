@@ -22,7 +22,7 @@ Lighting, sky and fog come from the main scene's own Lighting settings. The worl
 | Component | Add it | Key fields | Needs | Kind | Test player |
 |---|---|---|---|---|---|
 | `Stage` | **New Stage** (prefab `Stage`: stage + screen + booths) | `_stageIndex` int, `_activateOnStart` (off = dark until someone enters a `StageTrigger`) | — | marker | no |
-| `Screen` | prefab `Screen` | `_stageIndex` (a parent `Stage` wins), `_screenMesh` Renderer, `_defaultTexture` (empty = the mesh material's picture), `_source` Artist/Visuals, `_streamLayout` Whole video (prefab default) / Stacked | parent Stage or index | marker | no |
+| `Screen` | prefab `Screen` | `_stageIndex` (a parent `Stage` wins), `_screenMesh` Renderer, `_defaultTexture` (empty = the mesh material's picture), `_source` Artist/Visuals, `_streamLayout` Whole video (prefab default) / Stacked, `_content` (**Shows**) Visuals (default) / Artist (green screen) | parent Stage or index | marker | no |
 | `Artist` | prefab `Artist` | `_stageIndex`, `_artistMesh`, `_pivot`, `_speakerSource`, `_streamLayout` Whole video (prefab default) / Stacked | parent Stage or index | marker | no |
 | `Speaker` | add component | `_stageIndex`, `_source` Artist/Visuals, `_channel` Mono/StereoLeft/StereoRight | `AudioSource` | marker | no |
 | `StageTrigger` | **Stage Trigger** (20×10×20 box) | `_stage` (auto: nearest), `_activateOnInitialize` | `Collider` (trigger) | marker | no |
@@ -61,6 +61,15 @@ the marker is still the no-stream picture; the SDK prefabs leave it empty. A mar
 created by a layout) shows the whole frame for Whole video and its half for Stacked. Markers that are not instances
 of the SDK prefabs, or are added from code, are Stacked until set. Older app builds ignore Stream Layout: they use the
 mesh material's tiling, a layout marker's half, and no no-stream picture when `Default Texture` is empty.
+
+**Artist layer on a screen.** For an artist in front of the visuals, flat rather than a cut-out that turns to face
+players, use two `Screen`s: a visuals Screen behind, and in front of it a Screen with **Shows** (under **Stream
+Layout**) set to **Artist (green screen)**. That screen keys out the green screen with the same shader as the `Artist`
+cut-out, but stays flat. Stream Layout works as on any screen: **Stacked** shows the top half (the artist), **Whole
+video** a full-frame artist stream. Changing Shows swaps the mesh to the matching SDK material (the Artist's chroma key
+materials for Artist), as one undoable change; a material of your own is left as it is. The `Artist` component is for
+the cut-out behind the booth. Do not put a `Screen` and an `Artist` on the same object: they drive the same mesh and
+the Inspector warns about it. Older app builds ignore Shows and show the screen unkeyed.
 
 Stage parts find their stage index from a parent `Stage` first, then their own `_stageIndex`. Visuals screens
 show black until the app's visuals stream is live. Shader `Custom/UnlitChromaKeyURP` keys out the artist video.
@@ -281,6 +290,8 @@ player at a random `SpawnPoint` and simulates what the **Test player** columns s
 Markers expose `Configure` so code can set them without `SerializedObject`:
 `Stage.Configure(int stageIndex, bool activateOnStart = true)`, `Screen.Configure(int stageIndex, string source)`,
 `Screen.Configure(int stageIndex, string source, string streamLayout)`,
+`Screen.Configure(int stageIndex, string source, string streamLayout, string content)`
+(`content`: `"artist"` = Artist (green screen), `""` or anything else = Visuals; see `ScreenContents.Parse` / `Format`),
 `Artist.Configure(int stageIndex, Vector3 artistPivotOffset, string speakerSource)`,
 `Artist.Configure(int stageIndex, Vector3 artistPivotOffset, string speakerSource, string streamLayout)`
 (`streamLayout`: `"whole"` = Whole video, `""` or anything else = Stacked; see `StageStreamLayouts.Parse` / `Format`),

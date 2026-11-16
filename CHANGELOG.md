@@ -2,6 +2,24 @@
 
 All notable changes to `com.virtualvenues.sdk`.
 
+## [0.10.22] - 2026-11-15
+
+### Added
+- **Shows** on **Screen** (`ScreenContent`, Inspector popup under **Stream Layout**): **Visuals** (the default, and what
+  every existing screen reads) or **Artist (green screen)**. Artist keys out the green screen with the same shader as
+  the `Artist` cut-out, but the screen stays flat: put it in front of a visuals Screen for an artist layer. With
+  **Stacked** it shows the top half (the artist), with **Whole video** a full-frame artist stream. Changing Shows or
+  Stream Layout swaps the mesh's SDK material for the matching one (Artist uses `Artist-Calibrate-UV` /
+  `Artist-Calibrate-UV-Whole`), as one undoable change; a material of your own is left as it is. A layout screen with
+  no mesh material shows the top half for Artist + Stacked. `ScreenContents` holds the layout string;
+  `Screen.Configure(stageIndex, source, streamLayout, content)` sets it from code. Layouts store it as
+  `stageMedia.screenContent`: `"artist"` = Artist; `""`, absent or any other value = Visuals. The web world editor
+  shows it as **Shows** next to **Stream layout**. The `Artist` component stays the cut-out that turns to face players.
+- The Inspector warns when one object has both a `Screen` and an `Artist`: they drive the same mesh. Use a Screen set
+  to Shows: Artist instead.
+
+It takes effect after the matching FutureFestXR player update; an older player shows an Artist screen unkeyed.
+
 ## [0.10.21] - 2026-11-15
 
 ### Changed

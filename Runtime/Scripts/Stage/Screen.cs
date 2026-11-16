@@ -24,10 +24,14 @@ namespace VirtualVenues.WorldCreator
         [FormerlySerializedAs("_source")]
         [SerializeField, Min(0)] private int _streamIndex = 0;
         [Tooltip("Which part of the video frame this screen shows. Whole video: the full frame, for a movie or a full-frame visuals stream. " +
-                 "Stacked: the bottom half of one video that carries the artist on top and the visuals below.")]
+                 "Stacked: the bottom half of one video that carries the artist on top and the visuals below (the top half when it shows the artist).")]
         // Stacked (0) is also what a screen saved before this field existed reads, so published worlds keep playing stacked.
         [FormerlySerializedAs("_videoArea")]
         [SerializeField] private StreamLayout _streamLayout = StreamLayout.Stacked;
+        [Tooltip("What this screen shows. Visuals: the video as it is. Artist (green screen): the artist with the green screen keyed out, " +
+                 "like the Artist cut-out, but flat. Put it in front of a visuals Screen.")]
+        // Visuals (0) is also what a screen saved before this field existed reads, so published worlds keep the plain screen.
+        [SerializeField] private ScreenContent _content = ScreenContent.Visuals;
 
         public static List<Screen> Instances => _instances;
         public static Action<Screen> onScreenAdded = null;
@@ -47,10 +51,13 @@ namespace VirtualVenues.WorldCreator
         public Texture2D DefaultTexture => _defaultTexture;
         public string TexturePropertyName => _texturePropertyName;
         // What Awake read from the mesh material (for either stream layout: in the SDK the stream layout picks the material), else
-        // the stream layout's code default (StageStreamLayouts): the whole frame, or the bottom half of a stacked video.
+        // the stream layout's code default (StageStreamLayouts): the whole frame, or the bottom half of a stacked video
+        // (the top half when the screen shows the artist).
         public Vector2 TextureOffset { get { GetTransform(out _, out Vector2 offset); return offset; } }
         public Vector2 TextureTiling { get { GetTransform(out Vector2 tiling, out _); return tiling; } }
         public StreamLayout StreamLayout => _streamLayout;
+        // Visuals: the plain screen shader. Artist: the Artist's chroma key shader on this flat screen (the app picks it).
+        public ScreenContent Content => _content;
         public string ScreenSource => _screenSource;
         public int StreamIndex => _streamIndex;
         [Obsolete("Use StreamIndex.")]
@@ -82,6 +89,16 @@ namespace VirtualVenues.WorldCreator
         {
             _streamLayout = StageStreamLayouts.Parse(streamLayout);
             Configure(stageIndex, source);
+        }
+
+        /// <summary>
+        /// As Configure(stageIndex, source, streamLayout), plus what this screen shows: "artist" = the artist with the
+        /// green screen keyed out, anything else ("" included) = Visuals (see ScreenContents).
+        /// </summary>
+        public void Configure(int stageIndex, string source, string streamLayout, string content)
+        {
+            _content = ScreenContents.Parse(content);
+            Configure(stageIndex, source, streamLayout);
         }
 
 #if UNITY_EDITOR
@@ -116,7 +133,7 @@ namespace VirtualVenues.WorldCreator
                 offset = _screenTextureOffset;
                 return;
             }
-            StageStreamLayouts.GetDefaultTransform(_streamLayout, false, out tiling, out offset);
+            StageStreamLayouts.GetDefaultTransform(_streamLayout, _content == ScreenContent.Artist, out tiling, out offset);
         }
 
         private void Start()

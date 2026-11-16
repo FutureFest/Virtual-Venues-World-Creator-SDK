@@ -347,6 +347,198 @@ namespace VirtualVenues.Tests
             }
         }
 
+        // ---- Screen "Shows" (ScreenContent): Visuals or Artist (green screen) ----
+
+        private static Material ScreenMaterial(ScreenContent content, StreamLayout streamLayout)
+        {
+            return StageStreamLayoutAssets.GetMaterial(content == ScreenContent.Artist, streamLayout);
+        }
+
+        [Test] public void ScreenShowsVisualsByDefault()
+        {
+            Assert.That((int)ScreenContent.Visuals, Is.EqualTo(0), "0 must stay Visuals: published worlds have no value");
+            Assert.That(System.Enum.GetValues(typeof(ScreenContent)).Length, Is.EqualTo(2));
+            var go = new GameObject("ScreenContentDefault");
+            try { Assert.That(go.AddComponent<Screen>().Content, Is.EqualTo(ScreenContent.Visuals)); }
+            finally { Object.DestroyImmediate(go); }
+            foreach (string prefabName in new[] { "Screen", "Stage" })
+            {
+                Assert.That(((Screen)Marker(Resources.Load<GameObject>(prefabName), false)).Content, Is.EqualTo(ScreenContent.Visuals), prefabName);
+            }
+        }
+
+        [Test] public void ScreenContentParseAndFormatRoundTrip()
+        {
+            foreach (ScreenContent content in System.Enum.GetValues(typeof(ScreenContent)))
+            {
+                Assert.That(ScreenContents.Parse(ScreenContents.Format(content)), Is.EqualTo(content));
+            }
+            Assert.That(ScreenContents.Format(ScreenContent.Visuals), Is.EqualTo(""));
+            Assert.That(ScreenContents.Format(ScreenContent.Artist), Is.EqualTo("artist"));
+            Assert.That(ScreenContents.Parse("Artist"), Is.EqualTo(ScreenContent.Artist));
+            foreach (string visuals in new[] { null, "", "visuals", "Visuals", "1", "whole", "keyed" })
+            {
+                Assert.That(ScreenContents.Parse(visuals), Is.EqualTo(ScreenContent.Visuals), visuals ?? "null");
+            }
+        }
+
+        // Shows picks the pair (Artist = the chroma key materials), Stream Layout the one in it.
+        [TestCase(ScreenContent.Visuals, StreamLayout.Whole, "Screen-Calibrate-UV-Whole.mat")]
+        [TestCase(ScreenContent.Visuals, StreamLayout.Stacked, "Screen-Calibrate-UV.mat")]
+        [TestCase(ScreenContent.Artist, StreamLayout.Whole, "Artist-Calibrate-UV-Whole.mat")]
+        [TestCase(ScreenContent.Artist, StreamLayout.Stacked, "Artist-Calibrate-UV.mat")]
+        public void ScreenShowsAndStreamLayoutPickTheMaterial(ScreenContent content, StreamLayout streamLayout, string materialFile)
+        {
+            var go = (GameObject)PrefabUtility.InstantiatePrefab(Resources.Load<GameObject>("Screen"));
+            try
+            {
+                var screen = (Screen)Marker(go, false);
+                StageStreamLayoutAssets.SetScreenContent(screen, content);
+                StageStreamLayoutAssets.SetStreamLayout(screen, streamLayout);
+                Assert.That(screen.Content, Is.EqualTo(content));
+                Assert.That(screen.StreamLayout, Is.EqualTo(streamLayout));
+                Assert.That(AssetDatabase.GetAssetPath(screen.Renderer.sharedMaterial), Does.EndWith("/" + materialFile));
+                Assert.That(screen.Renderer.sharedMaterial, Is.SameAs(ScreenMaterial(content, streamLayout)));
+                Assert.That(StageStreamLayoutAssets.HasCustomMaterial(screen), Is.False);
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
+
+        // Changing either dropdown alone swaps to the material of both, from every combination.
+        [Test] public void ChangingShowsOrStreamLayoutSwapsToTheMaterialOfBoth()
+        {
+            var go = (GameObject)PrefabUtility.InstantiatePrefab(Resources.Load<GameObject>("Screen"));
+            try
+            {
+                var screen = (Screen)Marker(go, false);
+                foreach (ScreenContent content in new[] { ScreenContent.Artist, ScreenContent.Visuals, ScreenContent.Artist })
+                {
+                    foreach (StreamLayout streamLayout in new[] { StreamLayout.Stacked, StreamLayout.Whole })
+                    {
+                        StageStreamLayoutAssets.SetScreenContent(screen, content);
+                        Assert.That(screen.Renderer.sharedMaterial, Is.SameAs(ScreenMaterial(content, screen.StreamLayout)));
+                        StageStreamLayoutAssets.SetStreamLayout(screen, streamLayout);
+                        Assert.That(screen.Renderer.sharedMaterial, Is.SameAs(ScreenMaterial(content, streamLayout)));
+                    }
+                }
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
+
+        // On a prefab instance (the Screen prefab, and the screen inside the Stage prefab): Shows and the mesh material change
+        // together, record as prefab overrides and undo as one step. The Default Texture is never touched.
+        [TestCase("Screen")]
+        [TestCase("Stage")]
+        public void SetScreenContentIsAnUndoablePrefabOverride(string prefabName)
+        {
+            var go = (GameObject)PrefabUtility.InstantiatePrefab(Resources.Load<GameObject>(prefabName));
+            try
+            {
+                var screen = (Screen)Marker(go, false);
+                Renderer mesh = screen.Renderer;
+                Undo.IncrementCurrentGroup();
+                int group = Undo.GetCurrentGroup();
+                StageStreamLayoutAssets.SetScreenContent(screen, ScreenContent.Artist);
+                Undo.CollapseUndoOperations(group);
+
+                Assert.That(screen.Content, Is.EqualTo(ScreenContent.Artist));
+                Assert.That(mesh.sharedMaterial, Is.SameAs(ScreenMaterial(ScreenContent.Artist, StreamLayout.Whole)));
+                Assert.That(screen.DefaultTexture, Is.Null);
+                Assert.That(HasOverride(screen, "_content"), Is.True);
+                Assert.That(HasOverride(screen, "_defaultTexture"), Is.False);
+                Assert.That(HasOverride(mesh, "m_Materials.Array.data[0]"), Is.True);
+
+                Undo.PerformUndo();
+                Assert.That(screen.Content, Is.EqualTo(ScreenContent.Visuals));
+                Assert.That(mesh.sharedMaterial, Is.SameAs(ScreenMaterial(ScreenContent.Visuals, StreamLayout.Whole)));
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
+
+        // A creator's own material stays (Shows still changes); no material at all takes the SDK one. An Artist has no Shows.
+        [Test] public void SetScreenContentLeavesACustomMaterialAlone()
+        {
+            var go = (GameObject)PrefabUtility.InstantiatePrefab(Resources.Load<GameObject>("Screen"));
+            var artistGo = (GameObject)PrefabUtility.InstantiatePrefab(Resources.Load<GameObject>("Artist"));
+            var custom = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+            try
+            {
+                var screen = (Screen)Marker(go, false);
+                screen.Renderer.sharedMaterial = custom;
+                StageStreamLayoutAssets.SetScreenContent(screen, ScreenContent.Artist);
+                Assert.That(screen.Content, Is.EqualTo(ScreenContent.Artist));
+                Assert.That(screen.Renderer.sharedMaterial, Is.SameAs(custom));
+                StageStreamLayoutAssets.SetStreamLayout(screen, StreamLayout.Stacked);
+                Assert.That(screen.Renderer.sharedMaterial, Is.SameAs(custom));
+
+                screen.Renderer.sharedMaterial = null;
+                StageStreamLayoutAssets.SetScreenContent(screen, ScreenContent.Artist);
+                Assert.That(screen.Renderer.sharedMaterial, Is.SameAs(ScreenMaterial(ScreenContent.Artist, StreamLayout.Stacked)));
+
+                var artist = (Artist)Marker(artistGo, true);
+                Material artistMaterial = artist.Renderer.sharedMaterial;
+                StageStreamLayoutAssets.SetScreenContent(artist, ScreenContent.Visuals);
+                Assert.That(artist.Renderer.sharedMaterial, Is.SameAs(artistMaterial));
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+                Object.DestroyImmediate(artistGo);
+                Object.DestroyImmediate(custom);
+            }
+        }
+
+        // A layout screen has no mesh material: Shows Artist + Stacked is the top half, like an Artist; Whole is the full frame.
+        [Test] public void ArtistScreenWithoutAMaterialShowsTheTopHalf()
+        {
+            var go = new GameObject("ScreenContentNoMesh");
+            try
+            {
+                var screen = go.AddComponent<Screen>();
+                RunAwake(screen);
+                screen.Configure(1, "Artist", "", "artist");
+                Assert.That(screen.Content, Is.EqualTo(ScreenContent.Artist));
+                Assert.That(screen.StreamLayout, Is.EqualTo(StreamLayout.Stacked));
+                Assert.That(screen.TextureTiling, Is.EqualTo(Half)); Assert.That(screen.TextureOffset, Is.EqualTo(TopOffset));
+                Assert.That(screen.StreamIndex, Is.EqualTo(0)); Assert.That(screen.StageIndex, Is.EqualTo(1));
+
+                screen.Configure(1, "Artist", "whole", "Artist");
+                Assert.That(screen.TextureTiling, Is.EqualTo(Vector2.one)); Assert.That(screen.TextureOffset, Is.EqualTo(Vector2.zero));
+
+                // The older overloads leave Shows as it is.
+                screen.Configure(1, "Artist", "");
+                Assert.That(screen.Content, Is.EqualTo(ScreenContent.Artist));
+                Assert.That(screen.TextureOffset, Is.EqualTo(TopOffset));
+
+                screen.Configure(1, "Visuals", "", "");
+                Assert.That(screen.Content, Is.EqualTo(ScreenContent.Visuals));
+                Assert.That(screen.TextureTiling, Is.EqualTo(Half)); Assert.That(screen.TextureOffset, Is.EqualTo(Vector2.zero));
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
+
+        // The Inspector warns when one object has both a Screen and an Artist; no SDK prefab does.
+        [Test] public void ScreenAndArtistOnOneObjectIsFlagged()
+        {
+            var go = new GameObject("ScreenAndArtist");
+            try
+            {
+                var screen = go.AddComponent<Screen>();
+                Assert.That(StagePickerGUI.HasScreenAndArtist(screen), Is.False);
+                var artist = go.AddComponent<Artist>();
+                Assert.That(StagePickerGUI.HasScreenAndArtist(screen), Is.True);
+                Assert.That(StagePickerGUI.HasScreenAndArtist(artist), Is.True);
+                Assert.That(StagePickerGUI.HasScreenAndArtist(null), Is.False);
+            }
+            finally { Object.DestroyImmediate(go); }
+            foreach (string prefabName in new[] { "Screen", "Artist", "Stage" })
+            {
+                GameObject prefab = Resources.Load<GameObject>(prefabName);
+                foreach (Screen screen in prefab.GetComponentsInChildren<Screen>(true)) { Assert.That(StagePickerGUI.HasScreenAndArtist(screen), Is.False, prefabName); }
+                foreach (Artist artist in prefab.GetComponentsInChildren<Artist>(true)) { Assert.That(StagePickerGUI.HasScreenAndArtist(artist), Is.False, prefabName); }
+            }
+        }
+
         private static bool HasOverride(Object target, string propertyPath)
         {
             Object source = PrefabUtility.GetCorrespondingObjectFromSource(target);

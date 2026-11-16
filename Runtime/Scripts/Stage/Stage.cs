@@ -115,6 +115,7 @@ namespace VirtualVenues.WorldCreator
         {
             so.Update();
             DrawVenuePicker?.Invoke();
+            DrawScreenAndArtistWarning(so);
             DrawStagePicker(so);
             SerializedProperty it = so.GetIterator();
             for (bool enter = true; it.NextVisible(enter); enter = false)
@@ -122,6 +123,7 @@ namespace VirtualVenues.WorldCreator
                 if (it.name == "m_Script" || it.name == "_stage" || it.name == "_stageIndex") { continue; }
                 if (it.name == "_streamIndex") { DrawStreamField(it, MarkerStageIndex(so.targetObject)); continue; }
                 if (it.name == "_streamLayout") { DrawStreamLayoutField(it, so); continue; }
+                if (it.name == "_content") { DrawScreenContentField(it, so); continue; }
                 EditorGUILayout.PropertyField(it, true);
             }
             so.ApplyModifiedProperties();
@@ -217,8 +219,69 @@ namespace VirtualVenues.WorldCreator
 
         private static string StreamLayoutHelpLine(UnityEngine.Object marker, StreamLayout streamLayout)
         {
-            string line = streamLayout == StreamLayout.Whole ? WholeLine : marker is Artist ? StackedArtistLine : StackedScreenLine;
+            string line = streamLayout == StreamLayout.Whole ? WholeLine : ShowsArtist(marker) ? StackedArtistLine : StackedScreenLine;
             return StageStreamLayoutAssets.HasCustomMaterial(marker) ? line + CustomMaterialLine : line;
+        }
+
+        // An Artist, or a Screen set to Shows: Artist. Stacked, both show the top half.
+        private static bool ShowsArtist(UnityEngine.Object marker)
+        {
+            return marker is Artist || (marker is Screen screen && screen.Content == ScreenContent.Artist);
+        }
+
+        private const string VisualsContentLine = "Shows the video as it is: visuals, a movie, slides.";
+        private const string ArtistContentLine = "Keys out the green screen, like the Artist cut-out, but stays flat. Put it in front of a visuals Screen.";
+        private const string CustomMaterialContentLine = " A mesh with its own material was left as it is.";
+        private const string MixedContentLine = "The selected screens show different things.";
+        private static readonly GUIContent[] ScreenContentLabels = { new GUIContent("Visuals"), new GUIContent("Artist (green screen)") };
+        private static readonly int[] ScreenContentValues = { (int)ScreenContent.Visuals, (int)ScreenContent.Artist };
+
+        // The Screen "Shows" popup, then one line on what it does. Picking also swaps the mesh's SDK stage material on every
+        // selected screen (StageStreamLayoutAssets.SetScreenContent: the Artist's chroma key pair for Artist), in one undo step.
+        private static void DrawScreenContentField(SerializedProperty contentProp, SerializedObject so)
+        {
+            EditorGUI.showMixedValue = contentProp.hasMultipleDifferentValues;
+            EditorGUI.BeginChangeCheck();
+            int picked = EditorGUILayout.IntPopup(new GUIContent("Shows", contentProp.tooltip), contentProp.intValue, ScreenContentLabels, ScreenContentValues);
+            bool changed = EditorGUI.EndChangeCheck();
+            EditorGUI.showMixedValue = false;
+            if (changed)
+            {
+                Undo.IncrementCurrentGroup();
+                Undo.SetCurrentGroupName("Change Screen Shows");
+                int group = Undo.GetCurrentGroup();
+                foreach (UnityEngine.Object target in so.targetObjects) { StageStreamLayoutAssets.SetScreenContent(target, (ScreenContent)picked); }
+                Undo.CollapseUndoOperations(group);
+            }
+            if (contentProp.hasMultipleDifferentValues) { EditorGUILayout.HelpBox(MixedContentLine, MessageType.None); return; }
+
+            string line = contentProp.intValue == (int)ScreenContent.Artist ? ArtistContentLine : VisualsContentLine;
+            foreach (UnityEngine.Object target in so.targetObjects)
+            {
+                if (StageStreamLayoutAssets.HasCustomMaterial(target)) { line += CustomMaterialContentLine; break; }
+            }
+            EditorGUILayout.HelpBox(line, MessageType.None);
+        }
+
+        private const string ScreenAndArtistLine = "This object has both a Screen and an Artist. They drive the same mesh and fight over it. " +
+            "For a flat artist layer with the green screen keyed out, use a Screen set to Shows: Artist (green screen) and remove the Artist component.";
+
+        /// <summary>True for a Screen or an Artist whose GameObject has both components.</summary>
+        public static bool HasScreenAndArtist(UnityEngine.Object marker)
+        {
+            if (!(marker is Screen) && !(marker is Artist)) { return false; }
+            Component component = (Component)marker;
+            return component.GetComponent<Screen>() != null && component.GetComponent<Artist>() != null;
+        }
+
+        private static void DrawScreenAndArtistWarning(SerializedObject so)
+        {
+            foreach (UnityEngine.Object target in so.targetObjects)
+            {
+                if (!HasScreenAndArtist(target)) { continue; }
+                EditorGUILayout.HelpBox(ScreenAndArtistLine, MessageType.Warning);
+                return;
+            }
         }
 
         private static void DrawStagePicker(SerializedObject so)

@@ -17,6 +17,18 @@ namespace VirtualVenues.WorldCreator
     }
 
     /// <summary>
+    /// What a Screen shows. Visuals is the video as it is (the plain screen shader). Artist keys out the green screen
+    /// with the Artist cut-out's chroma key but stays flat: an artist layer in front of a visuals Screen. Visuals is 0
+    /// because screens saved before this setting existed (published worlds, layouts without the key) must stay plain.
+    /// Only a Screen has it: the Artist component always keys and turns to face players.
+    /// </summary>
+    public enum ScreenContent
+    {
+        [InspectorName("Visuals")] Visuals = 0,
+        [InspectorName("Artist (green screen)")] Artist = 1
+    }
+
+    /// <summary>
     /// The code default tiling/offset for each StreamLayout, and its layout string: "whole" = Whole, anything else = Stacked.
     /// A Screen or Artist whose mesh has a material uses that material's own tiling/offset for either stream layout (in the
     /// SDK the stream layout picks the material); the code default is only for markers with no mesh material (layout-created).
@@ -26,6 +38,7 @@ namespace VirtualVenues.WorldCreator
         /// <summary>
         /// Whole: the full frame, (1, 1) / (0, 0). Stacked: the top half for an Artist, (1, 0.5) / (0, -0.5), the bottom
         /// half for a Screen, (1, 0.5) / (0, 0). -0.5 rather than 0.5 so AVPro's vertical-flip path needs no texture wrap.
+        /// Pass artist true for an Artist and for a Screen set to Shows: Artist (it shows the artist, the top half).
         /// </summary>
         public static void GetDefaultTransform(StreamLayout streamLayout, bool artist, out Vector2 tiling, out Vector2 offset)
         {
@@ -51,10 +64,26 @@ namespace VirtualVenues.WorldCreator
         }
     }
 
+    /// <summary>A Screen's ScreenContent as a layout string: "artist" = Artist, anything else ("" included) = Visuals.</summary>
+    public static class ScreenContents
+    {
+        /// <summary>"artist" is Artist. "", null and anything else are Visuals.</summary>
+        public static ScreenContent Parse(string value)
+        {
+            return string.Equals(value, "artist", StringComparison.OrdinalIgnoreCase) ? ScreenContent.Artist : ScreenContent.Visuals;
+        }
+
+        public static string Format(ScreenContent content)
+        {
+            return content == ScreenContent.Artist ? "artist" : "";
+        }
+    }
+
 #if UNITY_EDITOR
     /// <summary>
     /// Editor only. The SDK's stage material for each marker kind and StreamLayout, and the swap the inspector runs when
-    /// the creator changes Stream Layout. The materials are found by GUID, so this works wherever the SDK is installed,
+    /// the creator changes Stream Layout, or a Screen's Shows (a Screen that shows the artist takes the Artist's chroma key
+    /// materials). The materials are found by GUID, so this works wherever the SDK is installed,
     /// and a built world only carries the materials its markers reference. The material also carries the no-stream
     /// placeholder picture and the tiling/offset the world uses at runtime.
     /// </summary>
@@ -68,6 +97,7 @@ namespace VirtualVenues.WorldCreator
 
         private static readonly string[] SdkMaterialGuids = { ArtistStackedMaterialGuid, ArtistWholeMaterialGuid, ScreenStackedMaterialGuid, ScreenWholeMaterialGuid };
 
+        /// <summary>artist: the chroma key pair, for an Artist or a Screen set to Shows: Artist. Else the plain Screen pair.</summary>
         public static Material GetMaterial(bool artist, StreamLayout streamLayout)
         {
             if (artist) { return Load<Material>(streamLayout == StreamLayout.Whole ? ArtistWholeMaterialGuid : ArtistStackedMaterialGuid); }
@@ -80,7 +110,7 @@ namespace VirtualVenues.WorldCreator
             return material == null || Array.IndexOf(SdkMaterialGuids, GuidOf(material)) >= 0;
         }
 
-        /// <summary>True when the marker's mesh has a material of the creator's own, which a Stream Layout change leaves alone.</summary>
+        /// <summary>True when the marker's mesh has a material of the creator's own, which a Stream Layout or Shows change leaves alone.</summary>
         public static bool HasCustomMaterial(UnityEngine.Object marker)
         {
             Renderer mesh = marker is Artist artist ? artist.Renderer : marker is Screen screen ? screen.Renderer : null;
@@ -94,16 +124,34 @@ namespace VirtualVenues.WorldCreator
         /// </summary>
         public static void SetStreamLayout(UnityEngine.Object marker, StreamLayout streamLayout)
         {
+            SetAndSwap(marker, "_streamLayout", (int)streamLayout);
+        }
+
+        /// <summary>
+        /// Sets what a Screen shows and swaps its mesh material by the same rules as SetStreamLayout: Artist takes the
+        /// Artist (chroma key) material of its Stream Layout, Visuals the Screen one. Does nothing on an Artist or Speaker.
+        /// </summary>
+        public static void SetScreenContent(UnityEngine.Object marker, ScreenContent content)
+        {
+            if (!(marker is Screen)) { return; }
+            SetAndSwap(marker, "_content", (int)content);
+        }
+
+        // Writes one marker field, then picks the SDK material from the marker's Stream Layout and, on a Screen, Shows.
+        private static void SetAndSwap(UnityEngine.Object marker, string field, int value)
+        {
             bool artist = marker is Artist;
             if (!artist && !(marker is Screen)) { return; }
 
             UnityEditor.SerializedObject markerObject = new UnityEditor.SerializedObject(marker);
-            markerObject.FindProperty("_streamLayout").intValue = (int)streamLayout;
+            markerObject.FindProperty(field).intValue = value;
             markerObject.ApplyModifiedProperties();
 
             Renderer mesh = markerObject.FindProperty(artist ? "_artistMesh" : "_screenMesh").objectReferenceValue as Renderer;
             if (mesh == null || !IsSdkMaterial(mesh.sharedMaterial)) { return; }
-            Material material = GetMaterial(artist, streamLayout);
+            StreamLayout streamLayout = (StreamLayout)markerObject.FindProperty("_streamLayout").intValue;
+            bool keyed = artist || markerObject.FindProperty("_content").intValue == (int)ScreenContent.Artist;
+            Material material = GetMaterial(keyed, streamLayout);
             if (material == null) { return; }
             UnityEditor.SerializedObject meshObject = new UnityEditor.SerializedObject(mesh);
             UnityEditor.SerializedProperty materials = meshObject.FindProperty("m_Materials");

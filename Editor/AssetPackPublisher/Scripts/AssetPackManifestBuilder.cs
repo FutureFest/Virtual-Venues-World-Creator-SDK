@@ -150,6 +150,8 @@ namespace VirtualVenues.Editor.AssetPackPublisher
         public Vec3 artistPivotOffset;
         /// <summary>Screen/Artist: "whole" = Whole video, "" = Stacked (StageStreamLayouts). Exported from the marker.</summary>
         public string streamLayout;
+        /// <summary>Screen: "" = Visuals, "artist" = the artist with the green screen keyed out (ScreenContents). Exported from the marker.</summary>
+        public string screenContent;
         public bool startInactive;
     }
 
@@ -413,6 +415,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                 c.stageMedia.stageIndex = screen.StageIndex;
                 c.stageMedia.screenSource = StageStreams.Format(screen.StreamIndex);
                 c.stageMedia.streamLayout = StageStreamLayouts.Format(screen.StreamLayout);
+                c.stageMedia.screenContent = ScreenContents.Format(screen.Content);
                 list.Add(c);
             }
 
@@ -532,6 +535,7 @@ namespace VirtualVenues.Editor.AssetPackPublisher
                     speakerChannel = 0,
                     artistPivotOffset = new Vec3 { x = 0f, y = 0f, z = 0f },
                     streamLayout = string.Empty,
+                    screenContent = string.Empty,
                     startInactive = false,
                 },
                 light = new MfLightParams
